@@ -1,0 +1,431 @@
+/**
+ * Pokemon Online - Shared Types
+ *
+ * All types shared between the Vue frontend, the Cloudflare Worker backend,
+ * and the game engine. Static config types (Species, Skill, ...) describe the
+ * game world; dynamic types (PokemonInstance, PlayerSave) describe player data.
+ *
+ * Design rule (frozen): static config is never written into player saves.
+ * The PokemonInstance model keeps Species (template) and instance (player data)
+ * strictly separated.
+ */
+
+// ───────────────────────────── Primitives ─────────────────────────────
+
+export const TYPE_NAMES = [
+  'normal', 'fire', 'water', 'grass', 'electric', 'ice', 'fighting', 'poison',
+  'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+] as const;
+export type TypeName = (typeof TYPE_NAMES)[number];
+
+export type StatKey = 'hp' | 'atk' | 'def' | 'spd';
+
+export interface Stats {
+  hp: number;
+  atk: number;
+  def: number;
+  spd: number;
+}
+
+export type StatusKind = 'burn' | 'poison' | 'paralyze' | 'freeze' | 'sleep' | 'confuse';
+
+export type GrowthRate = 'fast' | 'medium-fast' | 'medium-slow' | 'slow' | 'fluctuating';
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary' | 'mythical';
+
+// ───────────────────────────── Static config ─────────────────────────────
+
+export interface LearnsetEntry {
+  level: number;
+  skill: string;
+}
+
+export interface Evolution {
+  to: number;
+  level?: number;
+  item?: string;
+}
+
+/**
+ * Species - the static template for a kind of Pokemon (e.g. #006 Charizard).
+ * There are 151 of these (Gen 1). Each is configuration only.
+ *
+ * The unified 4-stat system (Principle: unify atk/spAtk -> atk, def/spDef -> def)
+ * means `base` already holds HP / Attack / Defense / Speed.
+ */
+export interface Species {
+  id: number;
+  name: string; // Chinese name
+  enName: string; // english lowercase slug
+  types: TypeName[];
+  base: Stats; // unified 4 base stats
+  expYield: number;
+  growthRate: GrowthRate;
+  abilities: string[]; // ability ids, [0] = default
+  hiddenAbility?: string;
+  learnset: LearnsetEntry[]; // active skills learned by level
+  passivePool: string[]; // passives this species may roll (梦幻式 pool)
+  evolution?: Evolution[];
+  rarity: Rarity;
+  dex: string;
+  height: number; // meters
+  weight: number; // kg
+  catchFlavor?: string;
+}
+
+export type SkillCategory = 'physical' | 'special' | 'status';
+
+export interface SkillEffect {
+  kind: 'dot' | 'heal' | 'buff' | 'debuff' | 'stun' | 'lifesteal' | 'shield' | 'status';
+  target?: 'self' | 'enemy';
+  stat?: StatKey;
+  stages?: number; // -6..6
+  chance?: number; // 0..1
+  duration?: number; // seconds
+  magnitude?: number; // heal / dot dmg / shield hp
+  status?: StatusKind;
+}
+
+/**
+ * Skill - an active move. Per frozen design: independent cooldown, NO MP/PP.
+ * A normal attack (id 'struggle'/'tackle-ish') is always available so output
+ * never stops when every skill is on cooldown.
+ */
+export interface Skill {
+  id: string;
+  name: string;
+  type: TypeName;
+  category: SkillCategory;
+  power: number; // 0 for status moves
+  accuracy: number; // 0..100, 0 means always hits
+  cooldown: number; // seconds (independent CD)
+  range: 'melee' | 'ranged';
+  rangeTiles: number; // effective distance in arena units
+  castTime?: number; // windup seconds (default 0)
+  effect?: SkillEffect;
+  priority?: number; // AI tie-breaker, higher = preferred
+  description: string;
+}
+
+export type PassiveKind =
+  | 'stat' | 'typeBoost' | 'typeResist' | 'crit' | 'speed'
+  | 'hpRegen' | 'lifesteal' | 'cdReduction' | 'evasion' | 'accuracy';
+
+export interface PassiveEffect {
+  kind: PassiveKind;
+  stat?: StatKey;
+  mult?: number; // e.g. 1.1 = +10%
+  add?: number; // flat add (per level)
+  type?: TypeName;
+  chance?: number;
+  magnitude?: number; // for hpRegen fraction, lifesteal, etc.
+}
+
+/**
+ * PassiveSkill - 梦幻西游-style passive. Inherited through breeding with a
+ * multi-skill cap. These modify stats/elements rather than being actively cast.
+ */
+export interface PassiveSkill {
+  id: string;
+  name: string;
+  description: string;
+  effect: PassiveEffect;
+  tier: 1 | 2 | 3; // power tier for pool selection
+}
+
+export type AbilityTrigger =
+  | 'onEnter' | 'onAttack' | 'onHit' | 'onLowHp' | 'passive'
+  | 'onFaint' | 'onSwitch' | 'onTurnStart';
+
+export type AbilityKind =
+  | 'weather' | 'statBoost' | 'typeImmunity' | 'typeBoost' | 'hpRegen'
+  | 'shield' | 'counter' | 'speedBoost' | 'critBoost' | 'damageReduction' | 'custom';
+
+export interface AbilityEffect {
+  kind: AbilityKind;
+  stat?: StatKey;
+  mult?: number;
+  type?: TypeName;
+  magnitude?: number;
+  chance?: number;
+  stages?: number;
+  status?: StatusKind;
+}
+
+/**
+ * Ability - 宝可梦特性. Kept through breeding; very low chance to mutate into
+ * another of the species' abilities.
+ */
+export interface Ability {
+  id: string;
+  name: string;
+  description: string;
+  trigger: AbilityTrigger;
+  effect: AbilityEffect;
+}
+
+export type TargetPriority = 'nearest' | 'weakest' | 'threat' | 'random';
+export type SkillBias = 'power' | 'speed' | 'utility' | 'balanced';
+export type RangePreference = 'melee' | 'ranged' | 'adaptive';
+
+/**
+ * Personality - replaces 梦幻's five-element system. Per frozen design it
+ * changes AI behavior, NOT raw stats, so the same species can fight in totally
+ * different styles. This is a core source of depth and variety.
+ */
+export interface Personality {
+  id: string;
+  name: string;
+  description: string;
+  aggression: number; // 0..1, higher prefers aggressive plays
+  rangePreference: RangePreference; // desired engagement distance
+  riskTolerance: number; // 0..1, higher uses high-cd/high-power skills eagerly
+  targetPriority: TargetPriority;
+  skillBias: SkillBias; // which skills the AI gravitates to
+  defensiveThreshold: number; // HP fraction below which AI plays defensively
+  fleeChance?: number; // PVE wild pokemon flee tendency
+}
+
+// ───────────────────────────── Maps & items ─────────────────────────────
+
+export interface EncounterEntry {
+  speciesId: number;
+  weight: number;
+  minLevel: number;
+  maxLevel: number;
+  time?: 'day' | 'night' | 'any';
+  rarity?: Rarity;
+}
+
+/**
+ * GameMap - the world Pokemon and NPC "live in" (Principle 5: world first).
+ * Encounters are ecological (weighted tables, optionally time-gated) rather
+ * than fixed single spawns. Maps connect to form an explorable world with
+ * hidden areas.
+ */
+export interface GameMap {
+  id: string;
+  name: string;
+  description: string;
+  width: number;
+  height: number;
+  /** tile codes: 0 grass/walkable, 1 tree/blocked, 2 water, 3 tall-grass(encounter), 4 path, 5 sand, 6 rock, 7 door/warp */
+  tiles: number[][];
+  encounters: EncounterEntry[];
+  connected: { to: string; x: number; y: number; label?: string }[];
+  /** explicit warp tiles (door/warp code 7) -> destination map + position */
+  warps: { x: number; y: number; toMapId: string; toX: number; toY: number }[];
+  hidden?: boolean;
+  ambient?: string;
+  unlockHint?: string;
+  music?: string;
+}
+
+export type ItemKind = 'consumable' | 'material' | 'key' | 'evolution' | 'ball';
+
+export interface ItemEffect {
+  kind: 'heal' | 'revive' | 'exp' | 'evolve' | 'buff' | 'cure';
+  magnitude?: number;
+  target?: 'pokemon' | 'team';
+  statusCured?: StatusKind | 'all';
+}
+
+export interface Item {
+  id: string;
+  name: string;
+  description: string;
+  kind: ItemKind;
+  effect?: ItemEffect;
+  price?: number;
+  icon?: string;
+}
+
+// ───────────────────────────── Dynamic (player) data ─────────────────────────────
+
+export interface IV {
+  hp: number;
+  atk: number;
+  def: number;
+  spd: number;
+} // each 0..31
+
+/**
+ * PokemonInstance - a specific Pokemon a player owns. The valuable thing is the
+ * instance (unique growth history), not the species template. Everything that
+ * varies per-mon lives here.
+ */
+export interface PokemonInstance {
+  uid: string;
+  speciesId: number;
+  nickname?: string;
+  level: number;
+  exp: number;
+  iv: IV;
+  growth: number; // 0.8..1.2 multiplier, capped by species rarity
+  personality: string;
+  ability: string; // may differ from species default via mutation
+  activeSkills: string[]; // up to 4
+  passiveSkills: string[]; // inherited passives (梦幻式 multi-skill cap)
+  currentHp: number;
+  status?: StatusKind | null;
+  friendship: number;
+  origin: 'caught' | 'bred' | 'gift';
+  lineage?: { parentA?: string; parentB?: string; speciesA?: number; speciesB?: number; at: number };
+  caughtAt: number;
+  caughtMapId?: string;
+}
+
+export interface PokedexEntry {
+  speciesId: number;
+  seen: boolean;
+  caught: boolean;
+  released?: boolean;
+  firstSeenAt: number;
+  firstCaughtAt?: number;
+  count: number;
+}
+
+export interface PlayerSettings {
+  music: boolean;
+  sfx: boolean;
+  battleSpeed: number; // 1, 2, 3
+}
+
+/**
+ * PlayerSave - the entire player state. The Worker stores this (as a JSON blob)
+ * because the backend is a save server, not a compute server. Static config is
+ * referenced by id only, never duplicated in here.
+ *
+ * Carry model: a single `roster` of up to ROSTER_MAX (20) carried Pokemon. No
+ * warehouse yet (a future `warehouse` field is reserved). Two ordered loadouts:
+ * `pveTeam` (3, sequential deployment) and `pvpTeam` (3, simultaneous 3v3).
+ */
+export interface PlayerSave {
+  version: number;
+  playerId: string;
+  username: string;
+  createdAt: number;
+  updatedAt: number;
+  playtime: number;
+  currentMapId: string;
+  position: { x: number; y: number };
+  roster: string[]; // carried instance uids, up to ROSTER_MAX
+  instances: Record<string, PokemonInstance>;
+  pokedex: Record<number, PokedexEntry>;
+  items: Record<string, number>;
+  money: number;
+  pveTeam: string[]; // ordered 3 for PVE (sequential)
+  pvpTeam: string[]; // ordered 3 for PVP (simultaneous 3v3)
+  friends: string[]; // usernames
+  badges: string[];
+  settings: PlayerSettings;
+  lastBattleResult?: BattleResult;
+  stats: { battles: number; wins: number; caught: number; bred: number };
+}
+
+export interface BattleResult {
+  win: boolean;
+  expGained: number;
+  caught?: PokemonInstance;
+  releasedSpeciesId?: number;
+  log: string[];
+  opponent?: string;
+}
+
+// ───────────────────────────── Battle simulation ─────────────────────────────
+
+export interface TimedEffect {
+  id: string;
+  kind: string;
+  stat?: StatKey;
+  stages?: number;
+  remaining: number;
+  magnitude?: number;
+  type?: TypeName;
+  from?: string;
+}
+
+export interface BattleCombatant {
+  uid: string;
+  side: 'player' | 'enemy';
+  speciesId: number;
+  types: TypeName[];
+  level: number;
+  name: string;
+  personality: string;
+  ability: string;
+  activeSkills: string[];
+  passiveSkills: string[];
+  // computed from species + iv + growth + level
+  stats: Stats;
+  maxHp: number;
+  currentHp: number;
+  position: { x: number; y: number };
+  facing: 1 | -1;
+  // runtime
+  cooldowns: Record<string, number>; // skillId -> seconds remaining
+  normalAttackCd: number;
+  status: StatusKind | null;
+  statusTimer: number;
+  statStages: { atk: number; def: number; spd: number };
+  shields: number;
+  buffs: TimedEffect[];
+  castProgress: { skillId: string; remaining: number } | null;
+  alive: boolean;
+  iv: IV;
+  growth: number;
+  colorTint?: string;
+  displayLabel?: string;
+}
+
+export interface BattleEvent {
+  t: number;
+  type:
+    | 'move' | 'attack' | 'skill' | 'damage' | 'heal' | 'status'
+    | 'faint' | 'buff' | 'debuff' | 'info' | 'capture' | 'enter' | 'end';
+  actor?: string;
+  target?: string;
+  skillId?: string;
+  amount?: number;
+  message?: string;
+}
+
+export interface BattleState {
+  mode: 'pve' | 'pvp';
+  arena: { width: number; height: number };
+  combatants: BattleCombatant[];
+  events: BattleEvent[];
+  time: number;
+  ended: boolean;
+  winner?: 'player' | 'enemy' | 'draw';
+  tickRate: number;
+  speedMultiplier: number;
+  isWild: boolean;
+}
+
+// ───────────────────────────── API ─────────────────────────────
+
+export interface ApiResponse<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  username: string;
+  playerId: string;
+}
+
+export interface PublicTeamMember {
+  uid: string;
+  speciesId: number;
+  level: number;
+  nickname?: string;
+  personality: string;
+}
+
+export interface OpponentTeamResponse {
+  username: string;
+  team: PokemonInstance[];
+}

@@ -1,0 +1,126 @@
+import type { Personality } from '@pokemon-online/shared';
+
+/**
+ * Personalities replace 梦幻西游's five-element system. Per frozen design they
+ * change AI *behavior* (not raw stats), so two Pokemon of the same species can
+ * fight in completely different styles. This is a core source of depth.
+ *
+ * Fields are consumed by the battle AI (see engine/ai).
+ */
+export const PERSONALITIES: Personality[] = [
+  {
+    id: 'brave',
+    name: '勇敢',
+    description: '崇尚力量，总是冲向最近敌人全力输出。',
+    aggression: 0.9,
+    rangePreference: 'melee',
+    riskTolerance: 0.85,
+    targetPriority: 'nearest',
+    skillBias: 'power',
+    defensiveThreshold: 0.2,
+  },
+  {
+    id: 'timid',
+    name: '胆小',
+    description: '保持距离，专挑血量最低的目标下手，危急时想要逃跑。',
+    aggression: 0.3,
+    rangePreference: 'ranged',
+    riskTolerance: 0.25,
+    targetPriority: 'weakest',
+    skillBias: 'speed',
+    defensiveThreshold: 0.5,
+    fleeChance: 0.15,
+  },
+  {
+    id: 'cunning',
+    name: '狡猾',
+    description: '善用异常与削弱，瞄准虚弱目标逐个击破。',
+    aggression: 0.55,
+    rangePreference: 'adaptive',
+    riskTolerance: 0.5,
+    targetPriority: 'weakest',
+    skillBias: 'utility',
+    defensiveThreshold: 0.35,
+  },
+  {
+    id: 'stubborn',
+    name: '固执',
+    description: '只认一个目标死磕到底，偏爱高威力招式。',
+    aggression: 0.8,
+    rangePreference: 'melee',
+    riskTolerance: 0.7,
+    targetPriority: 'threat',
+    skillBias: 'power',
+    defensiveThreshold: 0.15,
+  },
+  {
+    id: 'cautious',
+    name: '谨慎',
+    description: '远程周旋，血量健康时也会留有余地。',
+    aggression: 0.35,
+    rangePreference: 'ranged',
+    riskTolerance: 0.4,
+    targetPriority: 'threat',
+    skillBias: 'balanced',
+    defensiveThreshold: 0.6,
+  },
+  {
+    id: 'reckless',
+    name: '鲁莽',
+    description: '不计后果地全力进攻，不到残血不退。',
+    aggression: 1.0,
+    rangePreference: 'melee',
+    riskTolerance: 1.0,
+    targetPriority: 'nearest',
+    skillBias: 'power',
+    defensiveThreshold: 0.1,
+  },
+  {
+    id: 'wise',
+    name: '智慧',
+    description: '针对最具威胁的敌人，灵活切换输出与辅助。',
+    aggression: 0.6,
+    rangePreference: 'adaptive',
+    riskTolerance: 0.55,
+    targetPriority: 'threat',
+    skillBias: 'utility',
+    defensiveThreshold: 0.4,
+  },
+  {
+    id: 'cool',
+    name: '冷静',
+    description: '耐心等待技能冷却，远程稳定输出。',
+    aggression: 0.45,
+    rangePreference: 'ranged',
+    riskTolerance: 0.45,
+    targetPriority: 'nearest',
+    skillBias: 'balanced',
+    defensiveThreshold: 0.45,
+  },
+  {
+    id: 'naughty',
+    name: '顽皮',
+    description: '难以捉摸，目标随机，风格多变。',
+    aggression: 0.65,
+    rangePreference: 'adaptive',
+    riskTolerance: 0.6,
+    targetPriority: 'random',
+    skillBias: 'balanced',
+    defensiveThreshold: 0.3,
+  },
+  {
+    id: 'relaxed',
+    name: '悠闲',
+    description: '不急不躁，偏向防御与续航。',
+    aggression: 0.25,
+    rangePreference: 'adaptive',
+    riskTolerance: 0.3,
+    targetPriority: 'nearest',
+    skillBias: 'utility',
+    defensiveThreshold: 0.55,
+  },
+];
+
+export const PERSONALITY_MAP: Record<string, Personality> = Object.fromEntries(
+  PERSONALITIES.map((p) => [p.id, p]),
+);

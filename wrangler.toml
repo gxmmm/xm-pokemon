@@ -1,0 +1,32 @@
+name = "pokemon-online"
+main = "apps/worker/src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve the built Vue SPA as static assets. The Worker runs first on every
+# request: it handles /api/* itself and forwards everything else to ASSETS.
+# single-page-application fallback enables client-side routing for /world etc.
+[assets]
+directory = "apps/web/dist"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
+
+# D1 database binding. Create with: wrangler d1 create pokemon-online
+# then paste the database_id below (or use --remote with .dev.vars locally).
+[[d1_databases]]
+binding = "DB"
+database_name = "pokemon-online"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Optional: KV for sessions if you prefer KV over D1 for sessions.
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "REPLACE_WITH_KV_ID"
+
+[vars]
+APP_NAME = "Pokemon Online"
+
+# Dev-only secrets (password pepper). Set in production with:
+#   wrangler secret put AUTH_PEPPER
+# [vars] is fine for a friend game but use secrets for anything real.

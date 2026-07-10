@@ -1,0 +1,10 @@
+{
+  "name": "@pokemon-online/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pokemon-online/shared": "*",
+    "@pokemon-online/config": "*"
+  }
+}

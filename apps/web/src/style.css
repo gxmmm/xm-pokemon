@@ -1,0 +1,159 @@
+:root {
+  --bg: #2b3a55;
+  --bg-dark: #1c2740;
+  --panel: #f8f8f8;
+  --panel-2: #e9ecef;
+  --ink: #2b2b2b;
+  --muted: #6b7280;
+  --accent: #ee1515;
+  --accent-2: #3b4cca;
+  --gold: #ffcb05;
+  --good: #3b9c3b;
+  --bad: #d23b3b;
+  --warn: #e0a800;
+  --grass: #7ac74c;
+  --hp: #4caf50;
+  --hp-bg: #c8e6c9;
+  --exp: #3b82f6;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--panel);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+a { color: var(--gold); text-decoration: none; }
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--accent-2);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  transition: transform .05s, filter .15s;
+  box-shadow: 0 2px 0 rgba(0,0,0,.2);
+}
+button:hover:not(:disabled) { filter: brightness(1.1); }
+button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0,0,0,.2); }
+button:disabled { opacity: .45; cursor: default; }
+button.ghost { background: transparent; color: var(--panel); border: 2px solid rgba(255,255,255,.4); box-shadow: none; }
+button.danger { background: var(--bad); }
+button.good { background: var(--good); }
+button.gold { background: var(--gold); color: #333; }
+button.sm { padding: 4px 8px; font-size: 12px; }
+
+.panel {
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 4px 0 rgba(0,0,0,.18);
+}
+.row { display: flex; gap: 10px; }
+.col { display: flex; flex-direction: column; gap: 10px; }
+.center { display: flex; align-items: center; justify-content: center; }
+.between { display: flex; align-items: center; justify-content: space-between; }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; }
+.muted { color: var(--muted); }
+.tiny { font-size: 12px; }
+.bold { font-weight: 700; }
+.h-title { font-size: 20px; font-weight: 800; color: var(--accent); letter-spacing: .5px; }
+
+/* bars */
+.bar { position: relative; height: 10px; background: #d9d9d9; border-radius: 6px; overflow: hidden; }
+.bar > span { display: block; height: 100%; transition: width .25s; }
+.hp-bar { background: var(--hp-bg); }
+.hp-bar > span { background: var(--hp); }
+.exp-bar > span { background: var(--exp); }
+
+/* type badges */
+.type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 1px rgba(0,0,0,.3);
+}
+
+/* nav */
+.app-nav {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--bg-dark);
+  overflow-x: auto;
+}
+.app-nav a {
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 14px;
+}
+.app-nav a.router-link-active { background: var(--accent); }
+
+/* inputs */
+input, select {
+  font-family: inherit;
+  padding: 8px 10px;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+}
+input:focus, select:focus { outline: none; border-color: var(--accent-2); }
+
+.view { padding: 12px; flex: 1; overflow-y: auto; }
+
+.poke-sprite { image-rendering: pixelated; }
+
+.grid { display: grid; gap: 10px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 640px) {
+  .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity .2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px;
+}
+.modal { background: var(--panel); color: var(--ink); border-radius: 14px; padding: 18px; max-width: 480px; width: 100%; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 4px; }

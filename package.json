@@ -1,0 +1,39 @@
+{
+  "name": "pokemon-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pokemon Online - a friend co-op Pokemon raising game. Design First, frontend-computed, Cloudflare Workers + D1 save server.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "dev:worker": "wrangler dev",
+    "dev": "concurrently -k -n web,worker -c magenta,cyan \"npm:dev:web\" \"npm:dev:worker\"",
+    "build": "npm run build:web",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "typecheck": "vue-tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit",
+    "smoke": "npx esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=.smoke.mjs --log-level=warning && node .smoke.mjs && rm -f .smoke.mjs",
+    "db:apply": "wrangler d1 execute pokemon-online --local --file=database/schema.sql",
+    "db:apply:remote": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
+    "db:seed": "wrangler d1 execute pokemon-online --local --file=database/seed.sql",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:db": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
+    "assets:download": "node scripts/download-sprites.mjs",
+    "postinstall": "node scripts/check-env.mjs || true"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241101.0",
+    "@types/node": "^22.9.0",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "vue-tsc": "^2.1.10",
+    "wrangler": "^3.86.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

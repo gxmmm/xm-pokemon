@@ -1,0 +1,11 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+*.log
+.DS_Store
+_extracted
+.claude
+.codex
+.vscode
+CLAUDE.md
