@@ -9,6 +9,7 @@ export const router = createRouter({
     { path: '/new', name: 'new', component: () => import('./views/NewGameView.vue'), meta: { requiresAuth: true } },
     { path: '/', redirect: '/world' },
     { path: '/world', name: 'world', component: () => import('./views/WorldView.vue'), meta: { requiresAuth: true, requiresSave: true } },
+    { path: '/map', name: 'world-map', component: () => import('./views/WorldMapView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/battle', name: 'battle', component: () => import('./views/BattleView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/team', name: 'team', component: () => import('./views/TeamView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/pokemon/:uid', name: 'pokemon', component: () => import('./views/PokemonDetailView.vue'), meta: { requiresAuth: true, requiresSave: true } },

@@ -1,5 +1,6 @@
 /** Pokemon Online - game engine (frontend-computed logic). */
 export * from './rng.ts';
+export * from './grid.ts';
 export * from './stats.ts';
 export * from './instance.ts';
 export * from './breeding.ts';

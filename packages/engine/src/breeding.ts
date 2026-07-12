@@ -1,16 +1,20 @@
-import type { PokemonInstance } from '@pokemon-online/shared';
-import { PASSIVE_SKILL_MAX } from '@pokemon-online/shared';
+import type { PokemonInstance, IV } from '@pokemon-online/shared';
+import { PASSIVE_SKILL_MAX, GROWTH_MIN } from '@pokemon-online/shared';
 import { getSpecies } from '@pokemon-online/config';
 import { rand } from './rng.ts';
-import { rollIv, rollGrowth, activeSkillsForLevel, genUid, maxHp, createWildInstance } from './instance.ts';
+import { activeSkillsForLevel, genUid, maxHp, createWildInstance, growthCeiling } from './instance.ts';
 
 /**
  * 炼妖 (Breeding) - 梦幻西游-style. Per frozen design:
  *  - Two parents produce ONE offspring; parents are consumed.
  *  - Offspring species is randomly the mother's or father's species (NO fusion).
- *  - IV (资质) and growth (成长) are re-rolled, capped by the offspring species.
- *  - Passive skills are randomly inherited, with a 梦幻式 multi-skill cap and a
- *    small chance to gain a new passive from the offspring's pool.
+ *  - IV (资质) = (parentA.iv + parentB.iv)/2 per stat * random(0.8..1.2), min 1,
+ *    NOT capped. The species model has a rarity ceiling for wild/caught, but a
+ *    bred offspring is uncapped - breeding is how stats climb past the ceiling.
+ *  - Growth (成长) fluctuates around the parents' average (±small random),
+ *    capped by the offspring species' rarity ceiling and the 1.3 hard cap.
+ *  - Passive skills (梦幻式): union of both parents' passives (dedup); each has
+ *    a 50% chance to be retained, up to PASSIVE_SKILL_MAX slots.
  *  - Active skills come from the offspring species' learnset.
  *  - Ability is inherited from a parent, with a very low chance to mutate into
  *    another of the offspring species' abilities.
@@ -24,26 +28,48 @@ export interface BreedResult {
   consumedUids: [string, string];
   speciesId: number;
   mutatedAbility: boolean;
-  newPassive?: string;
   info: string[];
+}
+
+/** Roll a bred offspring's IV: each stat = average of the parents' IVs for that
+ *  stat, multiplied by a random 0.8..1.2 factor, rounded, min 1, NOT capped by
+ *  the species ceiling (or 31) - breeding is how a stat exceeds the ceiling.
+ *  (No rarity floor here - per design the floor is wild-only; breeding uses the
+ *  pure formula so stat quality depends on the parents you raise.) */
+function rollBreedIv(a: IV, b: IV): IV {
+  const out = { hp: 0, atk: 0, def: 0, spd: 0 } as IV;
+  (Object.keys(out) as (keyof IV)[]).forEach((k) => {
+    const avg = (a[k] + b[k]) / 2;
+    out[k] = Math.max(1, Math.round(avg * rand.float(0.8, 1.2)));
+  });
+  return out;
+}
+
+/** Bred growth fluctuates around the parents' average, clamped to the offspring
+ *  species' rarity ceiling and the 1.3 hard cap. Can approach but never exceed. */
+function rollBreedGrowth(parentA: PokemonInstance, parentB: PokemonInstance, ceiling: number): number {
+  const base = (parentA.growth + parentB.growth) / 2;
+  const fluct = rand.float(-0.06, 0.06);
+  const g = Math.round((base + fluct) * 100) / 100;
+  return Math.max(GROWTH_MIN, Math.min(ceiling, g));
 }
 
 export function breed(parentA: PokemonInstance, parentB: PokemonInstance): BreedResult {
   const info: string[] = [];
-  // 1. species: random parent species (no fusion)
-  const useA = rand.chance(0.5);
+  // 1. species: 主宠 65% / 副宠 35% (no fusion). parentA is the 主宠 (main).
+  const useA = rand.chance(0.65);
   const speciesId = useA ? parentA.speciesId : parentB.speciesId;
   const species = getSpecies(speciesId);
-  info.push(`后代种族：${species.name}`);
+  info.push(`后代种族：${species.name}（${useA ? '主宠' : '副宠'}血脉）`);
 
   // 2. level - bred offspring start young; training is the long-term goal
   const level = 5;
 
-  // 3. IV re-rolled (capped by IV_MAX inherently)
-  const iv = rollIv();
+  // 3. IV inherited from parents' average +/- fluctuation (pure formula, NOT capped)
+  const iv = rollBreedIv(parentA.iv, parentB.iv);
 
-  // 4. growth re-rolled within species rarity ceiling
-  const growth = rollGrowth(species.rarity);
+  // 4. growth fluctuates around the parents' average, capped by species ceiling
+  const growth = rollBreedGrowth(parentA, parentB, growthCeiling(species.rarity));
 
   // 5. personality inherited from a random parent
   const personality = rand.chance(0.5) ? parentA.personality : parentB.personality;
@@ -67,24 +93,19 @@ export function breed(parentA: PokemonInstance, parentB: PokemonInstance): Breed
   // 7. active skills from offspring species learnset
   const activeSkills = activeSkillsForLevel(speciesId, level);
 
-  // 8. passive skills: random inheritance + small chance of a new one
+  // 8. passive skills: offspring's intrinsic passives are retained 100% (天生必带);
+  //    the rest of the parents' union rolls at 主宠 65% / 副宠 35%.
+  const intrinsicSet = new Set(species.intrinsicPassives ?? []);
+  const aSet = new Set(parentA.passiveSkills);
   const parentPassives = [...new Set([...parentA.passiveSkills, ...parentB.passiveSkills])];
-  const passiveSkills: string[] = [];
+  const passiveSkills: string[] = [...species.intrinsicPassives];
   for (const p of rand.shuffle(parentPassives)) {
     if (passiveSkills.length >= PASSIVE_SKILL_MAX) break;
-    if (rand.chance(0.45)) passiveSkills.push(p);
+    if (intrinsicSet.has(p)) continue; // already added as intrinsic (100%)
+    if (rand.chance(aSet.has(p) ? 0.65 : 0.35)) passiveSkills.push(p);
   }
   // ensure at least one passive if any source exists
   if (passiveSkills.length === 0 && parentPassives.length) passiveSkills.push(rand.pick(parentPassives));
-  let newPassive: string | undefined;
-  if (passiveSkills.length < PASSIVE_SKILL_MAX && species.passivePool.length && rand.chance(0.15)) {
-    const candidates = species.passivePool.filter((p) => !passiveSkills.includes(p));
-    if (candidates.length) {
-      newPassive = rand.pick(candidates);
-      passiveSkills.push(newPassive);
-      info.push(`✨ 领悟新被动：${newPassive}`);
-    }
-  }
 
   const offspring: PokemonInstance = {
     uid: genUid(),
@@ -118,7 +139,6 @@ export function breed(parentA: PokemonInstance, parentB: PokemonInstance): Breed
     consumedUids: [parentA.uid, parentB.uid],
     speciesId,
     mutatedAbility,
-    newPassive,
     info,
   };
 }

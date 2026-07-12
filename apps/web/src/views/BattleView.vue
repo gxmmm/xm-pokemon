@@ -3,12 +3,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, TYPE_COLORS } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
-import type { BattleCombatant } from '@pokemon-online/shared';
+import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
+import BattleCanvas from '../components/BattleCanvas.vue';
+import type { Biome } from '../battle/BattleField.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
@@ -21,9 +23,11 @@ const ended = ref(false);
 const resultMsg = ref('');
 const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
+const canvasRef = ref<InstanceType<typeof BattleCanvas> | null>(null);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
+const safeSim = computed<BattleSim>(() => sim.value as BattleSim);
 const combatants = computed<BattleCombatant[]>(() => { void tick.value; return sim.value?.state.combatants ?? []; });
 const playerComs = computed(() => combatants.value.filter((c) => c.side === 'player'));
 const enemyComs = computed(() => combatants.value.filter((c) => c.side === 'enemy'));
@@ -34,14 +38,6 @@ const log = computed<string[]>(() => {
 });
 const isOver = computed(() => { void tick.value; return sim.value?.isOver ?? false; });
 
-// PVE bench: ordered player team with status (active / fainted / waiting)
-const playerTeamUids = computed<string[]>(() => { void tick.value; return sim.value?.playerTeamUids ?? []; });
-function benchStatus(uid: string): 'active' | 'fainted' | 'waiting' {
-  const c = sim.value?.state.combatants.find((x) => x.uid === uid);
-  if (!c) return 'waiting';
-  return c.alive ? 'active' : 'fainted';
-}
-
 function hpRatio(c: BattleCombatant): number {
   return Math.max(0, c.currentHp / c.maxHp);
 }
@@ -49,13 +45,14 @@ function hpColor(c: BattleCombatant): string {
   const r = hpRatio(c);
   return r > 0.5 ? '#4caf50' : r > 0.2 ? '#e0a800' : '#d23b3b';
 }
-function posStyle(c: BattleCombatant): Record<string, string> {
-  return {
-    left: `${(c.position.x / 720) * 100}%`,
-    top: `${(c.position.y / 360) * 100}%`,
-    transform: `translate(-50%,-50%) scaleX(${c.facing})`,
-  };
-}
+const biome = computed<Biome>(() => {
+  if (battle.mode === 'pvp') return 'arena';
+  const id = battle.mapId ?? '';
+  if (id.includes('dragon')) return 'dragon';
+  if (id.includes('moon') || id.includes('tunnel') || id.includes('cave')) return 'cave';
+  if (id.includes('sea') || id.includes('water')) return 'water';
+  return 'grass';
+});
 function skillName(id: string | undefined): string {
   if (!id) return '';
   return SKILL_MAP[id]?.name ?? (id === '__normal__' ? '普通攻击' : id);
@@ -65,6 +62,18 @@ function instanceName(uid: string): string {
   return inst?.nickname || (inst ? getSpecies(inst.speciesId).name : '?');
 }
 
+// per-skill cooldown chips for a combatant: each active skill + the normal attack.
+// ready (cd<=0) -> bright skill initial; on cooldown -> dim countdown number.
+function skillCds(c: BattleCombatant): { id: string; name: string; char: string; color: string; cd: number }[] {
+  const list = c.activeSkills.map((id) => {
+    const sk = SKILL_MAP[id];
+    return { id, name: sk?.name ?? id, char: sk?.name?.[0] ?? '?', color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A', cd: c.cooldowns[id] ?? 0 };
+  });
+  list.push({ id: '__normal__', name: '普通攻击', char: '普', color: '#6b7280', cd: c.normalAttackCd });
+  return list;
+}
+const STATUS_TAG: Record<string, string> = { burn: '灼', poison: '毒', paralyze: '痹', freeze: '冰', sleep: '眠', confuse: '乱' };
+
 function frame(now: number): void {
   const realDt = Math.min(0.05, (now - (frame as unknown as { last?: number }).last!) / 1000);
   (frame as unknown as { last?: number }).last = now;
@@ -73,6 +82,7 @@ function frame(now: number): void {
     s.tick(realDt * speed.value);
     tick.value++;
   }
+  if (s) canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   if (s && s.isOver && !ended.value) onEnd();
   raf = requestAnimationFrame(frame);
 }
@@ -87,18 +97,16 @@ function onEnd(): void {
 }
 
 function handlePveEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
-  const wild = battle.wild;
-  if (winner === 'player' && wild) {
-    const total = defeatExpYield(wild, 'pve');
+  const group = battle.wild;
+  if (winner === 'player' && group.length) {
+    // sum EXP over the whole defeated wild group; all deployed PVE pokemon
+    // fought simultaneously, so each gets the full share (no bench).
+    let total = 0;
+    for (const w of group) { total += defeatExpYield(w, 'pve'); game.see(w.speciesId); }
     totalExp.value = total;
-    const foughtUids = new Set(sim.value!.state.combatants.filter((c) => c.side === 'player').map((c) => c.uid));
     const results: ExpGainResult[] = [];
-    for (const p of game.pveTeamInstances) {
-      const amt = foughtUids.has(p.uid) ? total : Math.floor(total * 0.3); // benched share
-      results.push(game.grantExp(p.uid, amt));
-    }
+    for (const p of game.pveTeamInstances) results.push(game.grantExp(p.uid, total));
     expResults.value = results;
-    game.see(wild.speciesId);
     resultMsg.value = '胜利！';
   } else {
     resultMsg.value = '你的宝可梦倒下了…';
@@ -122,9 +130,9 @@ function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
   }
 }
 
-function capture(): void {
+function capture(uid: string): void {
   if (game.rosterFull) return; // button is disabled; guard anyway
-  const wild = battle.wild;
+  const wild = battle.wild.find((w) => w.uid === uid);
   if (wild) {
     wild.currentHp = maxHp(wild);
     wild.status = null;
@@ -133,22 +141,22 @@ function capture(): void {
     wild.caughtMapId = battle.mapId;
     game.addCaughtInstance(wild);
   }
-  finalize(true);
+  finalize(wild);
 }
 
-function release(): void {
-  if (battle.wild) {
-    const e = game.save!.pokedex[battle.wild.speciesId];
+function releaseAll(): void {
+  for (const w of battle.wild) {
+    const e = game.save!.pokedex[w.speciesId];
     if (e) e.released = true;
   }
-  finalize(false);
+  finalize(undefined);
 }
 
-function finalize(caught: boolean): void {
+function finalize(caught: PokemonInstance | undefined): void {
   game.recordBattle({
     win: sim.value?.state.winner === 'player',
     expGained: totalExp.value,
-    caught: caught ? battle.wild ?? undefined : undefined,
+    caught,
     log: log.value,
   });
   game.healAll(); // auto full-heal entire roster after battle (frozen design)
@@ -182,40 +190,56 @@ onMounted(() => {
 });
 onUnmounted(() => cancelAnimationFrame(raf));
 
-const wildSpecies = computed(() => (battle.wild ? getSpecies(battle.wild.speciesId) : null));
-const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.value?.state.winner === 'player' && !!battle.wild);
+const wildGroup = computed<PokemonInstance[]>(() => battle.wild);
+const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.value?.state.winner === 'player' && wildGroup.value.length > 0);
 </script>
 
 <template>
   <div class="battle" v-if="sim">
-    <!-- PVE bench: ordered team with status -->
-    <div class="bench" v-if="battle.mode === 'pve' && playerTeamUids.length">
-      <div class="tiny muted">出战顺序（倒下自动换下一只）</div>
-      <div class="bench-row">
-        <div v-for="(uid, i) in playerTeamUids" :key="uid" class="bench-slot" :class="benchStatus(uid)">
-          <span class="ord">{{ i + 1 }}</span>
-          <PokemonSprite :species-id="game.getInstance(uid)?.speciesId ?? 0" :size="40" :faded="benchStatus(uid)==='fainted'" />
-          <span class="tiny">{{ instanceName(uid) }}</span>
+    <div class="battle-row">
+      <!-- LEFT: player team (outside arena) -->
+      <div class="side-panel player-side">
+        <div class="side-label">我方</div>
+        <div v-for="c in playerComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
+          <div class="mc-head">
+            <span class="bold tiny ell">{{ c.name }}</span>
+            <span class="chip sm-chip">Lv.{{ c.level }}</span>
+            <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
+          </div>
+          <div class="mc-skills">
+            <PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" />
+            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
+              <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
+              <span v-else>{{ s.char }}</span>
+            </div>
+            <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="arena" :class="{ over: isOver }">
-      <div class="com-info enemy-info" v-for="c in enemyComs" :key="c.uid">
-        <div class="between"><span class="bold">{{ c.name }}</span><span class="chip">Lv.{{ c.level }}</span></div>
-        <div class="bar hp-bar"><span :style="{ width: hpRatio(c)*100+'%', background: hpColor(c) }"></span></div>
-        <div class="tiny muted">{{ Math.ceil(c.currentHp) }}/{{ c.maxHp }} <span v-if="c.status">· {{ c.status }}</span></div>
+      <!-- ARENA -->
+      <div class="arena" :class="{ over: isOver }">
+        <BattleCanvas ref="canvasRef" :sim="safeSim" :biome="biome" />
       </div>
 
-      <div class="com-info player-info" v-for="c in playerComs" :key="c.uid">
-        <div class="between"><span class="bold">{{ c.name }}</span><span class="chip">Lv.{{ c.level }}</span></div>
-        <div class="bar hp-bar"><span :style="{ width: hpRatio(c)*100+'%', background: hpColor(c) }"></span></div>
-        <div class="tiny muted">{{ Math.ceil(c.currentHp) }}/{{ c.maxHp }} <span v-if="c.status">· {{ c.status }}</span></div>
-      </div>
-
-      <div v-for="c in combatants" :key="'s'+c.uid" class="sprite-slot" :style="posStyle(c)">
-        <PokemonSprite :species-id="c.speciesId" :back="c.side==='player'" :size="88" :faded="!c.alive" />
-        <div class="cast-tag tiny" v-if="c.castProgress">蓄力中…</div>
+      <!-- RIGHT: enemy team (outside arena) -->
+      <div class="side-panel enemy-side">
+        <div class="side-label">敌方</div>
+        <div v-for="c in enemyComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
+          <div class="mc-head">
+            <span class="bold tiny ell">{{ c.name }}</span>
+            <span class="chip sm-chip">Lv.{{ c.level }}</span>
+            <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
+          </div>
+          <div class="mc-skills">
+            <PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" />
+            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
+              <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
+              <span v-else>{{ s.char }}</span>
+            </div>
+            <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -232,16 +256,21 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
     <div class="modal-backdrop" v-if="ended">
       <div class="modal">
         <h2 class="h-title center">{{ resultMsg }}</h2>
-        <template v-if="showCapture && wildSpecies">
-          <div class="center col" style="margin:10px 0">
-            <PokemonSprite :species-id="wildSpecies.id" :size="96" />
-            <div class="bold">{{ wildSpecies.name }}</div>
-            <div class="row center" style="gap:4px">
-              <TypeBadge v-for="t in wildSpecies.types" :key="t" :type="t" size="sm" />
+        <template v-if="showCapture">
+          <p class="tiny center muted">击败了 {{ wildGroup.length }} 只宝可梦！可选择捕捉其中一只，或全部放生（放生保留图鉴记录）。战斗结束自动回满状态。</p>
+          <div class="wild-list">
+            <div v-for="w in wildGroup" :key="w.uid" class="wild-entry">
+              <PokemonSprite :species-id="w.speciesId" :size="64" />
+              <div class="grow">
+                <div class="bold">{{ getSpecies(w.speciesId).name }}</div>
+                <div class="row center" style="gap:4px">
+                  <TypeBadge v-for="t in getSpecies(w.speciesId).types" :key="t" :type="t" size="sm" />
+                </div>
+                <div class="tiny muted">Lv.{{ w.level }} · {{ PERSONALITY_MAP[w.personality ?? 'cool']?.name }}型</div>
+              </div>
+              <button class="gold sm" :disabled="game.rosterFull" @click="capture(w.uid)">捕捉</button>
             </div>
-            <div class="tiny muted">Lv.{{ battle.wild?.level }} · {{ PERSONALITY_MAP[battle.wild?.personality ?? 'cool']?.name }}</div>
           </div>
-          <p class="tiny center muted">击败后可选择捕捉或放生（捕捉100%成功，放生保留图鉴记录）。战斗结束自动回满状态。</p>
           <div v-if="expResults.length" class="exp-list">
             <div v-for="r in expResults" :key="r.uid" class="tiny">
               {{ instanceName(r.uid) }}：
@@ -252,8 +281,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           </div>
           <p v-if="game.rosterFull" class="tiny center" style="color:var(--bad)">携带已达上限({{ game.ROSTER_MAX }})，无法捕捉，请先放生再捕捉。</p>
           <div class="row" style="margin-top:12px">
-            <button class="gold grow" :disabled="game.rosterFull" @click="capture">捕捉</button>
-            <button class="ghost grow" @click="release">放生</button>
+            <button class="danger grow" @click="releaseAll">全部放生</button>
           </div>
         </template>
         <template v-else>
@@ -274,28 +302,54 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
 <style scoped>
 .battle { display:flex; flex-direction:column; gap:8px; }
-.bench { background: var(--bg-dark); border-radius: 10px; padding: 6px 10px; }
-.bench-row { display:flex; gap:8px; align-items:flex-end; }
-.bench-slot { display:flex; flex-direction:column; align-items:center; position:relative; opacity:.55; }
-.bench-slot.active { opacity:1; }
-.bench-slot.fainted { opacity:.35; }
-.bench-slot .ord { position:absolute; top:-2px; left:0; background:var(--accent); color:#fff; border-radius:50%; width:16px; height:16px; font-size:10px; display:flex; align-items:center; justify-content:center; z-index:1; }
+.wild-list { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
+.wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
+
+.battle-row { display:flex; gap:8px; align-items:center; justify-content:center; }
+.side-panel { width: 196px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
+.side-label { font-size:11px; font-weight:800; text-align:center; padding:2px; letter-spacing:1px; }
+.player-side .side-label { color:#8acfff; }
+.enemy-side .side-label { color:#ff9b9b; }
+
+.mon-card {
+  background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 6px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.15); border: 2px solid transparent;
+}
+.mon-card.fainted { opacity:.4; filter: grayscale(.6); }
+.mon-card.casting { border-color: var(--gold); box-shadow: 0 0 8px rgba(255,203,5,.6); }
+.mc-head { display:flex; align-items:center; gap:5px; }
+.mc-head .ell { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:78px; }
+.mc-hp { flex:1; min-width:30px; }
+.mc-skills { display:flex; align-items:center; gap:3px; margin-top:4px; flex-wrap:wrap; }
+
+.cd-chip {
+  width:22px; height:22px; border-radius:5px; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:11px; font-weight:800; text-shadow:0 1px 1px rgba(0,0,0,.45);
+}
+.cd-chip.ready { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
+.cd-chip:not(.ready) { opacity:.5; filter: grayscale(.4); }
+.status-tag { font-size:10px; font-weight:800; padding:0 4px; border-radius:4px; margin-left:auto; }
+.status-tag.burn { background:#e25822; color:#fff; }
+.status-tag.poison { background:#9b59b6; color:#fff; }
+.status-tag.paralyze { background:#f1c40f; color:#333; }
+.status-tag.freeze { background:#74b9ff; color:#333; }
+.status-tag.sleep { background:#7f8c8d; color:#fff; }
+.status-tag.confuse { background:#e84393; color:#fff; }
+
 .arena {
-  position: relative; width: 100%; aspect-ratio: 720/360; max-height: 50vh;
-  background: linear-gradient(#9bd6f5 0%, #cfeefd 60%, #b6e3a1 60%, #8fcf6e 100%);
-  border-radius: 12px; border: 4px solid #1c2740; overflow: hidden;
+  position: relative; flex: 1 1 0; min-width: 0; aspect-ratio: 20 / 14; max-height: 80vh;
+  background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
 }
 .arena.over { filter: brightness(.85); }
-.com-info {
-  position: absolute; width: 42%; max-width: 220px; background: rgba(255,255,255,.92);
-  border-radius: 8px; padding: 4px 8px; color: #2b2b2b; z-index: 2;
-}
-.enemy-info { top: 8px; right: 8px; }
-.player-info { bottom: 8px; left: 8px; }
-.sprite-slot { position: absolute; transition: left .06s linear, top .06s linear; z-index: 1; }
-.cast-tag { background: rgba(0,0,0,.6); color:#fff; border-radius:6px; padding:1px 6px; text-align:center; margin-top:-6px; }
-.log { min-height: 92px; max-height: 110px; overflow-y: auto; }
+.log { min-height: 70px; max-height: 92px; overflow-y: auto; }
 .log .tiny { line-height: 1.5; }
 .controls { display:flex; gap:6px; justify-content:center; }
 .exp-list { background: var(--panel-2); border-radius: 8px; padding: 8px; }
+
+@media (max-width: 860px) {
+  .battle-row { flex-direction:column; }
+  .side-panel { width:100%; flex-direction:row; flex-wrap:wrap; }
+  .side-panel .mon-card { flex:1 1 140px; min-width:120px; }
+  .arena { width:100%; flex:none; max-height:60vh; }
+}
 </style>

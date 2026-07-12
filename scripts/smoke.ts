@@ -1,4 +1,4 @@
-import { BattleSim, createWildInstance, breed, createStarter, computeStats, applyExp, getAvailableEvolutions, rollEncounter } from '@pokemon-online/engine';
+import { BattleSim, createWildInstance, breed, createStarter, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap } from '@pokemon-online/config';
 
 function assert(cond: boolean, msg: string): void {
@@ -18,19 +18,29 @@ sim.resolve(120);
 assert(sim.state.ended, 'battle ended');
 assert(sim.state.winner === 'player' || sim.state.winner === 'enemy' || sim.state.winner === 'draw', 'has winner');
 assert(sim.state.events.length > 5, 'events emitted');
-console.log('✓ pve battle winner:', sim.state.winner, 'events:', sim.state.events.length);
+// grid-movement stall sentinel: a real fight must land at least one hit. If the
+// melee stop band ever exceeds attack range, combatants stall out of reach and
+// the battle times out with zero attacks (the grid version of the old bug).
+const hitEvents = sim.state.events.filter((e) => e.type === 'attack' || e.type === 'damage').length;
+assert(hitEvents >= 1, `battle landed hits (hitEvents=${hitEvents}) - no stall`);
+console.log('✓ pve battle winner:', sim.state.winner, 'events:', sim.state.events.length, 'hits:', hitEvents);
 
-// 2b. PVE sequential bench: 3 player pokemon vs 1 strong wild -> verify
-//     switch-on-faint (an 'enter' event fires when the lead faints)
+// 2b. PVE simultaneous: 3 player pokemon vs 1 strong wild (all active at once).
+//     PVE is no longer sequential rotation - the whole team is on the field.
 const weakTeam = [createWildInstance(10, 3), createWildInstance(13, 3), createWildInstance(16, 3)];
 const strongWild = createWildInstance(143, 40); // Snorlax lvl40
-const benchSim = new BattleSim({ mode: 'pve', player: weakTeam, enemy: [strongWild], isWild: true });
-benchSim.resolve(200);
-assert(benchSim.playerTeamUids.length === 3, 'pve team has 3');
-const enters = benchSim.state.events.filter((e) => e.type === 'enter').length;
-assert(benchSim.state.ended, 'bench battle ended');
-assert(enters >= 1, `bench deployed next on faint (enters=${enters})`);
-console.log('✓ pve sequential bench: switches=', enters, 'winner=', benchSim.state.winner);
+const pveSim = new BattleSim({ mode: 'pve', player: weakTeam, enemy: [strongWild], isWild: true });
+pveSim.resolve(200);
+assert(pveSim.state.ended, 'pve simultaneous ended');
+assert(pveSim.state.combatants.filter((c) => c.side === 'player').length === 3, 'pve all 3 active at once');
+const pveHits = pveSim.state.events.filter((e) => e.type === 'attack' || e.type === 'damage').length;
+assert(pveHits >= 1, `pve simultaneous landed hits (${pveHits}) - no stall`);
+console.log('✓ pve simultaneous 3v1: winner=', pveSim.state.winner, 'hits=', pveHits);
+
+// 2c. wild group rolls 1~3
+const grp = rollWildGroup(getMap('route1'));
+assert(grp.length >= 1 && grp.length <= 3, `wild group size 1..3 (${grp.length})`);
+console.log('✓ wild group size:', grp.length);
 
 // 3. 3v3 PVP battle (simultaneous)
 const teamA = [createStarter(6), createStarter(9), createStarter(3)];

@@ -1,5 +1,5 @@
 import type { Species, TypeName, Stats, GrowthRate, Rarity, LearnsetEntry } from '@pokemon-online/shared';
-import { TYPE_LEARNSET } from './skills.ts';
+import { TYPE_LEARNSET, SKILL_MAP } from './skills.ts';
 import { TYPE_PASSIVE_POOL, GENERIC_PASSIVE_POOL } from './passive-skills.ts';
 
 /**
@@ -271,11 +271,22 @@ function buildLearnset(primary: TypeName): LearnsetEntry[] {
   return entries;
 }
 
-/** Build the passive pool from the primary type's passive pool + generic. */
-function buildPassivePool(primary: TypeName): string[] {
-  const pool = TYPE_PASSIVE_POOL[primary] ?? [];
-  const merged = [...new Set([...pool, ...GENERIC_PASSIVE_POOL])];
-  return merged.slice(0, 6);
+/** Build the passive pool from the primary type's passive pool + generic.
+ *  Deterministically picks a 4-5 passive subset seeded by species id, so each
+ *  species has its OWN fixed 梦幻 skill pool (not shared across same-type kin). */
+function buildPassivePool(primary: TypeName, id: number): string[] {
+  const typePool = TYPE_PASSIVE_POOL[primary] ?? [];
+  const master = [...new Set([...typePool, ...GENERIC_PASSIVE_POOL])];
+  // deterministic Fisher-Yates seeded by id (stable per species)
+  const arr = [...master];
+  let s = (id * 2654435761) >>> 0 || 1;
+  for (let i = arr.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    const j = s % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  const size = 4 + (id % 2); // 4 or 5 slots per species
+  return arr.slice(0, Math.min(size, arr.length));
 }
 
 function unifyStats(s: [number, number, number, number, number, number]): Stats {
@@ -287,6 +298,58 @@ function unifyStats(s: [number, number, number, number, number, number]): Stats 
 
 function baseStatTotal(s: Stats): number {
   return s.hp + s.atk + s.def + s.spd;
+}
+
+/** Derive a combat role from the species' leading base stat. */
+function roleFromStats(base: Stats): 'atk' | 'def' | 'spd' | 'hp' {
+  if (base.atk >= base.def && base.atk >= base.spd && base.atk >= base.hp) return 'atk';
+  if (base.def >= base.spd && base.def >= base.hp) return 'def';
+  if (base.spd >= base.hp) return 'spd';
+  return 'hp';
+}
+
+/** 1-2 intrinsic (天生必带) skills per species. Picked from the LOW-power half
+ *  of the primary type's move pool (basics like ember/water-gun/thunder-shock,
+ *  NOT ultimates like fire-blast/thunder - a level-5 wild/bred mustn't start with
+ *  its strongest move) with a role nudge (speedster prefers a ranged basic) and a
+ *  deterministic per-id offset, so:
+ *  - a bred offspring starts with a usable signature move (not tackle-only);
+ *  - same-role kin don't all share the same intrinsic (不雷同). */
+function buildIntrinsicSkills(primary: TypeName, base: Stats, id: number): string[] {
+  const pool = (TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal).filter((s) => s !== 'tackle');
+  if (pool.length === 0) return [];
+  const role = roleFromStats(base);
+  // damaging moves only, ascending by power (basics first)
+  const damaging = pool
+    .map((s) => ({ s, sk: SKILL_MAP[s] }))
+    .filter((x) => (x.sk?.power ?? 0) > 0)
+    .sort((a, b) => a.sk!.power - b.sk!.power);
+  if (damaging.length === 0) return [];
+  // restrict to the low-power half so we never hand out an ultimate at level 1
+  const lowTier = damaging.slice(0, Math.max(1, Math.ceil(damaging.length / 2)));
+  let startIdx = 0;
+  if (role === 'spd') {
+    const ri = lowTier.findIndex((x) => x.sk!.range === 'ranged');
+    if (ri >= 0) startIdx = ri;
+  }
+  const off = id % lowTier.length;
+  const count = lowTier.length === 1 ? 1 : 1 + (id % 2); // 1 or 2
+  const out: string[] = [];
+  for (let i = 0; i < lowTier.length && out.length < count; i++) {
+    out.push(lowTier[(startIdx + i + off) % lowTier.length].s);
+  }
+  return out;
+}
+
+/** 1-2 intrinsic (必带) passives per species, taken deterministically from the
+ *  front of the species' own (id-seeded) passive pool. The pool order already
+ *  differs per species, so the slice differs too -> same-type kin don't all
+ *  share the same intrinsic passives (尽量不雷同). Wild always hold these;
+ *  breeding retains them 100% (ignores the 65/35 roll). */
+function buildIntrinsicPassives(pool: string[], id: number): string[] {
+  if (pool.length === 0) return [];
+  const count = Math.min(pool.length, 1 + (id % 2)); // 1 or 2
+  return pool.slice(0, count);
 }
 
 export const SPECIES_LIST: Species[] = RAW.map((row) => {
@@ -312,6 +375,7 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
   const bst = baseStatTotal(base);
   const rarityMult = rarity === 'legendary' || rarity === 'mythical' ? 2.2 : rarity === 'rare' ? 1.3 : 1;
   const expYield = Math.max(20, Math.min(320, Math.round((bst / 5) * rarityMult)));
+  const passivePool = buildPassivePool(primary, id);
 
   return {
     id,
@@ -324,7 +388,9 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
     abilities,
     hiddenAbility,
     learnset: buildLearnset(primary),
-    passivePool: buildPassivePool(primary),
+    intrinsic: buildIntrinsicSkills(primary, base, id),
+    passivePool,
+    intrinsicPassives: buildIntrinsicPassives(passivePool, id),
     evolution: EVOLUTIONS[id],
     rarity,
     dex,

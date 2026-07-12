@@ -35,6 +35,9 @@ export const PASSIVE_MAP: Record<string, PassiveSkill> = Object.fromEntries(
   PASSIVE_SKILLS.map((p) => [p.id, p]),
 );
 
+/** Display label for each passive tier (低/中/高 级). Drives tooltip + color legend. */
+export const PASSIVE_TIER_LABEL: Record<number, string> = { 1: '初级', 2: '中级', 3: '高级' };
+
 /** Passives available to a given type pool (for species passivePool generation). */
 export const TYPE_PASSIVE_POOL: Record<string, string[]> = {
   fire: ['p-power', 'p-firepower', 'p-fireres', 'p-crit', 'p-might'],

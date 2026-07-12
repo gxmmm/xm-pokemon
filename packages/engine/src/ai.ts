@@ -2,15 +2,17 @@ import type { BattleCombatant, BattleState, Skill } from '@pokemon-online/shared
 import { PERSONALITY_MAP, SKILL_MAP, NORMAL_ATTACK, getSpecies, typeMultiplier } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
+import { rangeInCells, distCells, MELEE_DESIRED_CELLS } from './grid.ts';
 
 export interface AiPlan {
   targetUid: string;
-  desiredRange: number;
+  /** Desired engagement distance in grid-cell units. */
+  desiredRangeCells: number;
   preferredSkillId: string | null; // null => use normal attack / reposition
 }
 
 function dist(a: BattleCombatant, b: BattleCombatant): number {
-  return Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+  return distCells(a.position, b.position);
 }
 
 /** Deterministic expected damage (no crit/random) for AI scoring. */
@@ -100,8 +102,11 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       if (p.skillBias === 'power') score *= 1.3;
       else if (p.skillBias === 'speed') score *= skill.cooldown <= 2 ? 1.3 : 0.8;
       else if (p.skillBias === 'utility') score *= 0.85;
-      // risk tolerance: low risk hoards high-cd skills
-      const cdPenalty = skill.cooldown * (1 - p.riskTolerance) * 8;
+      // risk tolerance: low risk slightly hoards high-cd skills (prefers cheaper
+      // moves / normal attack) but the factor is small enough that a ready skill
+      // still beats the normal attack -- otherwise cautious personalities would
+      // never cast and fights degrade to normal-attack-only.
+      const cdPenalty = skill.cooldown * (1 - p.riskTolerance) * 2;
       score -= cdPenalty;
       // aggression boosts damage scoring vs alternatives
       score *= 0.5 + p.aggression * 0.7;
@@ -123,29 +128,44 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     }
   }
 
-  // ── desired range ── align with the chosen action so movement supports it.
-  // A Pokemon only kites to ranged distance if it actually has a ranged skill;
-  // otherwise (e.g. a melee-only tank) it must close in to melee to attack.
-  // Melee desiredRange is kept well under the normal-attack range (70) so the
-  // combatant actually lands hits instead of stalling just out of range.
+  // ── desired range (in grid cells) ── align with the chosen action so movement
+  // supports it. A Pokemon only kites to ranged distance if it actually has a
+  // ranged skill; otherwise (e.g. a melee-only tank) it must close in to melee.
+  // Melee desiredRange is kept at 1.0 cell so the stop band (1.0 + MOVE_BUFFER =
+  // 1.5) exactly equals the melee attack reach (1.5) - the fighter always lands
+  // hits instead of stalling just out of range (grid version of the old bug).
   const rangedSkills = c.activeSkills.map((id) => SKILL_MAP[id]).filter((s) => s?.range === 'ranged');
   const hasRangedSkill = rangedSkills.length > 0;
-  const maxRangedRange = hasRangedSkill ? Math.max(...rangedSkills.map((s) => s!.rangeTiles)) : 0;
-  let desiredRange: number;
+  const maxRangedRangeCells = hasRangedSkill ? Math.max(...rangedSkills.map((s) => rangeInCells(s!))) : 0;
+  let desiredRangeCells: number;
   const enemyTargetSkill = preferredSkill && preferredSkill.power > 0
     ? preferredSkill
     : preferredSkill && preferredSkill.effect?.target === 'enemy' ? preferredSkill : null;
   if (enemyTargetSkill) {
-    desiredRange = enemyTargetSkill.range === 'melee'
-      ? Math.min(50, enemyTargetSkill.rangeTiles * 0.8)
-      : Math.min(280, enemyTargetSkill.rangeTiles * 0.8);
+    desiredRangeCells = enemyTargetSkill.range === 'melee'
+      ? MELEE_DESIRED_CELLS
+      : Math.min(maxRangedRangeCells, rangeInCells(enemyTargetSkill) * 0.7);
   } else if ((lowHp || p.rangePreference === 'ranged') && hasRangedSkill) {
-    desiredRange = Math.min(260, maxRangedRange * 0.8); // kite within longest ranged skill
+    desiredRangeCells = Math.min(maxRangedRangeCells * 0.7, maxRangedRangeCells); // kite within longest ranged skill
   } else {
-    desiredRange = 48; // close in for normal attack / melee skills
+    desiredRangeCells = MELEE_DESIRED_CELLS; // close in for normal attack / melee skills
   }
 
-  return { targetUid: target.uid, desiredRange, preferredSkillId };
+  // ── advantaged press (breaks infinite kiting) ──
+  // A kiter that is clearly winning must stop running and CLOSE IN, otherwise a
+  // disadvantaged melee chases forever and a symmetric ranged pair orbits at max
+  // range forever. The disadvantaged side keeps kiting (runs); the advantaged
+  // side approaches, so the fight resolves. Target low -> commit to melee to
+  // finish; big HP lead (but target still healthy) -> press to ~half range so
+  // the kiter engages closer without suicidally diving a healthy melee.
+  const targetHpRatio = target.currentHp / target.maxHp;
+  const myHpRatio = c.currentHp / c.maxHp;
+  const pressing = targetHpRatio < 0.4 || (myHpRatio - targetHpRatio) > 0.2 || (p.aggression > 0.7 && myHpRatio > targetHpRatio + 0.05);
+  if (pressing && hasRangedSkill && desiredRangeCells >= 3) {
+    desiredRangeCells = targetHpRatio < 0.4 ? MELEE_DESIRED_CELLS : Math.max(MELEE_DESIRED_CELLS, Math.round(maxRangedRangeCells * 0.5));
+  }
+
+  return { targetUid: target.uid, desiredRangeCells, preferredSkillId };
 }
 
 // extend combatant type usage at runtime (currentTargetUid stored on the object)
@@ -158,6 +178,15 @@ declare module '@pokemon-online/shared' {
     plan?: AiPlan | null;
     dotAccumulator?: number;
     flinchUntil?: number;
+    /** Grid-step movement cooldown (seconds until next cell step). */
+    moveCd?: number;
+    /** Strafe direction (+1/-1) and step counter for circling behavior. */
+    strafeDir?: number;
+    strafeCount?: number;
+    /** Normal-attack reach in cells (ranged-type pokemon attack from range). */
+    normalRangeCells?: number;
+    /** Whether this combatant's normal attack is ranged (no contact). */
+    normalIsRanged?: boolean;
   }
 }
 

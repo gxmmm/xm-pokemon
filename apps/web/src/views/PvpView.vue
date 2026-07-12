@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useBattleStore } from '../stores/battle.ts';
+import { useMessage } from '../stores/message.ts';
 import { api } from '../api/client.ts';
 import { getSpecies } from '@pokemon-online/config';
 import type { PokemonInstance } from '@pokemon-online/shared';
@@ -10,6 +11,7 @@ import PokemonCard from '../components/PokemonCard.vue';
 
 const game = useGameStore();
 const battle = useBattleStore();
+const msg = useMessage();
 const router = useRouter();
 
 const friendName = ref('');
@@ -51,7 +53,7 @@ function startBattle(): void {
   if (!opponentTeam.value || opponentTeam.value.length === 0) return;
   const ok = battle.startPvp(opponentTeam.value, opponentName.value);
   if (ok) router.push({ name: 'battle' });
-  else alert('你的切磋队伍为空，请先在「队伍」页设置3只宝可梦');
+  else msg.warn('你的切磋队伍为空，请先在「队伍」页设置3只宝可梦');
 }
 </script>
 

@@ -56,6 +56,34 @@ export function maxHp(instance: Pick<PokemonInstance, 'speciesId' | 'iv' | 'grow
   return computeStats(instance).hp;
 }
 
+/** Breakdown of how a stat is calculated, for display (hover tooltips). */
+export interface StatBreakdown {
+  key: StatKey;
+  base: number;       // species base stat
+  iv: number;         // aptitude (资质) for this stat
+  level: number;
+  growth: number;
+  passiveMult: number;// aggregated passive stat multiplier (1 if none)
+  abilityMult: number;// ability stat multiplier (1 if none applies)
+  raw: number;        // after base+iv+level+growth, before passive/ability
+  final: number;      // the value computeStats would produce
+}
+
+/** Per-stat calculation breakdown (mirrors computeStats, step by step). */
+export function statBreakdown(instance: Pick<PokemonInstance, 'speciesId' | 'iv' | 'growth' | 'level' | 'passiveSkills' | 'ability'>, key: StatKey): StatBreakdown {
+  const species = getSpecies(instance.speciesId);
+  const base = species.base[key];
+  const iv = instance.iv[key];
+  const passiveMult = passiveStatMult(instance.passiveSkills, key);
+  const raw = baseStat(instance.speciesId, instance.iv, instance.growth, instance.level, key);
+  const afterPassive = Math.floor(raw * passiveMult);
+  const ab = ABILITY_MAP[instance.ability];
+  const abilityApplies = !!(ab?.effect.kind === 'statBoost' && ab.effect.stat === key && ab.effect.mult);
+  const abilityMult = abilityApplies ? ab!.effect.mult! : 1;
+  const final = abilityApplies ? Math.floor(afterPassive * abilityMult) : afterPassive;
+  return { key, base, iv, level: instance.level, growth: instance.growth, passiveMult, abilityMult, raw, final };
+}
+
 /** Battle stat-stage multiplier: stage -6..6 -> 0.25..4 (gen-style: 2/2..). */
 export function stageMult(stage: number): number {
   if (stage >= 0) return (2 + stage) / 2;

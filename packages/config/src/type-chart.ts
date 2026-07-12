@@ -35,6 +35,45 @@ export function typeMultiplier(attack: TypeName, defender: TypeName | TypeName[]
   return mult;
 }
 
+/** When attacking with `atk`, which defender types are strong (×2) / weak (×0.5) / immune (×0). */
+export function offensiveMatchups(atk: TypeName): { strong: TypeName[]; weak: TypeName[]; immune: TypeName[] } {
+  const strong: TypeName[] = [], weak: TypeName[] = [], immune: TypeName[] = [];
+  const row = TYPE_CHART[atk] ?? {};
+  for (const def of Object.keys(row) as TypeName[]) {
+    const m = row[def]!;
+    if (m === 2) strong.push(def);
+    else if (m === 0.5) weak.push(def);
+    else if (m === 0) immune.push(def);
+  }
+  return { strong, weak, immune };
+}
+
+/** When defending as `def`, which attacker types are super-effective (×2) / resisted (×0.5) / immune (×0). */
+export function defensiveMatchups(def: TypeName): { weak: TypeName[]; resist: TypeName[]; immune: TypeName[] } {
+  const weak: TypeName[] = [], resist: TypeName[] = [], immune: TypeName[] = [];
+  for (const atk of Object.keys(TYPE_CHART) as TypeName[]) {
+    const m = TYPE_CHART[atk]?.[def] ?? 1;
+    if (m === 2) weak.push(atk);
+    else if (m === 0.5) resist.push(atk);
+    else if (m === 0) immune.push(atk);
+  }
+  return { weak, resist, immune };
+}
+
+/** Compact hover text for a type badge: offensive strengths + defensive matchups. */
+export function typeTooltipText(t: TypeName): string {
+  const o = offensiveMatchups(t);
+  const d = defensiveMatchups(t);
+  const join = (arr: TypeName[]) => arr.length ? arr.map((x) => TYPE_LABELS_CN[x]).join('·') : '无';
+  return [
+    TYPE_LABELS_CN[t],
+    `克制(攻×2)：${join(o.strong)}`,
+    `弱点(受×2)：${join(d.weak)}`,
+    `抗性(受×0.5)：${join(d.resist)}`,
+    `免疫(受×0)：${join(d.immune)}`,
+  ].join('\n');
+}
+
 export const TYPE_COLORS: Record<TypeName, string> = {
   normal: '#A8A77A',
   fire: '#EE8130',

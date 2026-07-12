@@ -1,5 +1,5 @@
 import type { PokemonInstance, IV, StatusKind } from '@pokemon-online/shared';
-import { GROWTH_MIN, GROWTH_MAX, IV_MAX, ACTIVE_SKILL_MAX, MAX_LEVEL } from '@pokemon-online/shared';
+import { GROWTH_MIN, GROWTH_MAX, IV_MAX, ACTIVE_SKILL_MAX, PASSIVE_SKILL_MAX, MAX_LEVEL } from '@pokemon-online/shared';
 import { getSpecies, expForLevel, levelForExp, SKILL_MAP } from '@pokemon-online/config';
 import { rand, type RNG, mulberry32 } from './rng.ts';
 import { computeStats, maxHp } from './stats.ts';
@@ -8,23 +8,53 @@ export function genUid(): string {
   return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-export function rollIv(rng: RNG = Math.random): IV {
+export function rollIv(rng: RNG = Math.random, ceiling: number = IV_MAX, min: number = 0): IV {
+  const cap = Math.max(min, Math.min(IV_MAX, Math.floor(ceiling)));
+  const span = cap - min + 1;
   return {
-    hp: Math.floor(rng() * (IV_MAX + 1)),
-    atk: Math.floor(rng() * (IV_MAX + 1)),
-    def: Math.floor(rng() * (IV_MAX + 1)),
-    spd: Math.floor(rng() * (IV_MAX + 1)),
+    hp: min + Math.floor(rng() * span),
+    atk: min + Math.floor(rng() * span),
+    def: min + Math.floor(rng() * span),
+    spd: min + Math.floor(rng() * span),
   };
 }
 
-/** Growth ceiling by rarity - rarer species can grow stronger (受种族上限限制). */
-function growthCeiling(rarity: string): number {
+/** IV (资质) ceiling by rarity - rarer species can reach higher aptitude.
+ *  Wild/caught IVs roll within [0, ceiling]; breeding is the ONLY way to break
+ *  through it (see breeding.rollBreedIv). Mirrors the growth ceiling pattern. */
+export function ivCeiling(rarity: string): number {
   switch (rarity) {
     case 'legendary':
-    case 'mythical': return GROWTH_MAX;          // 1.2
-    case 'rare': return 1.15;
-    case 'uncommon': return 1.1;
-    default: return 1.05;
+    case 'mythical': return 31;
+    case 'rare': return 29;
+    case 'uncommon': return 26;
+    default: return 24;
+  }
+}
+
+/** Bred-offspring IV FLOOR by rarity - rarer species have a higher minimum so
+ *  breeding for a rare species doesn't produce near-zero-IV junk (资质过于随机).
+ *  Wild/caught still roll from 1 (createWildInstance); this floor is bred-only. */
+export function ivFloor(rarity: string): number {
+  switch (rarity) {
+    case 'legendary':
+    case 'mythical': return 12;
+    case 'rare': return 8;
+    case 'uncommon': return 5;
+    default: return 3;
+  }
+}
+
+/** Growth ceiling by rarity - rarer species can grow stronger (受种族上限限制).
+ *  Cap is 1.3 (GROWTH_MAX); breeding fluctuates growth around the parents'
+ *  average but cannot exceed the offspring species' ceiling (no breakthrough). */
+export function growthCeiling(rarity: string): number {
+  switch (rarity) {
+    case 'legendary':
+    case 'mythical': return GROWTH_MAX;          // 1.3
+    case 'rare': return 1.2;
+    case 'uncommon': return 1.15;
+    default: return 1.1;
   }
 }
 
@@ -33,11 +63,16 @@ export function rollGrowth(rarity: string, rng: RNG = Math.random): number {
   return Math.round(rand.float(GROWTH_MIN, ceil) * 100) / 100;
 }
 
-/** Active skills a species has learned at or below `level` (up to ACTIVE_SKILL_MAX). */
+/** Active skills a species has learned at or below `level` (up to ACTIVE_SKILL_MAX).
+ *  Intrinsic (天生必带) skills are always known and take priority. */
 export function activeSkillsForLevel(speciesId: number, level: number): string[] {
   const species = getSpecies(speciesId);
-  const learned = species.learnset.filter((e) => e.level <= level).sort((a, b) => b.level - a.level);
   const skills: string[] = [];
+  // intrinsic (天生必带) skills are always known, regardless of level
+  for (const s of species.intrinsic ?? []) {
+    if (!skills.includes(s)) skills.push(s);
+  }
+  const learned = species.learnset.filter((e) => e.level <= level).sort((a, b) => b.level - a.level);
   for (const e of learned) {
     if (skills.length >= ACTIVE_SKILL_MAX) break;
     if (!skills.includes(e.skill)) skills.push(e.skill);
@@ -54,22 +89,27 @@ export function createWildInstance(
 ): PokemonInstance {
   const species = getSpecies(speciesId);
   const rng = opts.rng ?? Math.random;
-  const iv = rollIv(rng);
+  // wild IV is floored by rarity (rarer species roll higher minimums) and capped
+  // by the rarity ceiling; breeding is uncapped and uses its own formula.
+  const iv = rollIv(rng, ivCeiling(species.rarity), ivFloor(species.rarity));
   const growth = rollGrowth(species.rarity, rng);
   // personality random from all personalities
   const personalityIds = ['brave', 'timid', 'cunning', 'stubborn', 'cautious', 'reckless', 'wise', 'cool', 'naughty', 'relaxed'];
   const personality = personalityIds[Math.floor(rng() * personalityIds.length)];
   const ability = species.abilities[0] ?? 'keen-eye';
   const activeSkills = activeSkillsForLevel(speciesId, level);
-  // 1-2 starting passives from the species pool
-  const passiveSkills: string[] = [];
-  if (species.passivePool.length) {
-    passiveSkills.push(species.passivePool[Math.floor(rng() * species.passivePool.length)]);
-    if (rng() < 0.3 && species.passivePool.length > 1) {
-      let second = species.passivePool[Math.floor(rng() * species.passivePool.length)];
-      if (second === passiveSkills[0]) second = species.passivePool[(species.passivePool.indexOf(second) + 1) % species.passivePool.length];
-      if (!passiveSkills.includes(second)) passiveSkills.push(second);
+  // intrinsic passives are always held; remaining slots fill randomly from the
+  // rest of the species' fixed pool (1~5 total, like before).
+  const passiveSkills: string[] = [...species.intrinsicPassives];
+  const rest = [...species.passivePool].filter((p) => !passiveSkills.includes(p));
+  if (rest.length) {
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
     }
+    const slots = Math.max(0, PASSIVE_SKILL_MAX - passiveSkills.length);
+    const want = Math.floor(rng() * (Math.min(slots, rest.length) + 1)); // 0..slots
+    passiveSkills.push(...rest.slice(0, want));
   }
   const inst: PokemonInstance = {
     uid: genUid(),

@@ -1,18 +1,20 @@
-import type { BattleState, BattleCombatant, BattleEvent, PokemonInstance, StatusKind, TypeName, TimedEffect } from '@pokemon-online/shared';
-import { ARENA, BATTLE_TICK } from '@pokemon-online/shared';
+import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect } from '@pokemon-online/shared';
+import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
 import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
 import { decide } from './ai.ts';
+import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena } from './grid.ts';
 
 export interface BattleSimOptions {
   mode: 'pve' | 'pvp';
   player: PokemonInstance[];
   enemy: PokemonInstance[];
-  /** sequential = 1 active per side + bench, deploy next on faint (PVE).
-   *  simultaneous = all active at once (PVP 3v3). Defaults from mode. */
+  /** simultaneous = all active at once (PVE & PVP both use this now). */
   deployment?: 'sequential' | 'simultaneous';
+  /** Player's 3-slot starting formation (阵型). Slot i -> player[i]. Omit for default. */
+  formation?: { x: number; y: number }[];
   isWild?: boolean;
   speed?: number;
   seed?: number;
@@ -23,15 +25,46 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 function dist(a: BattleCombatant, b: BattleCombatant): number {
-  return Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+  return distCells(a.position, b.position);
 }
 
-function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', index: number, total: number): BattleCombatant {
+function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', index: number, total: number, formPos?: { x: number; y: number }): BattleCombatant {
   const species = getSpecies(inst.speciesId);
   const stats = computeStats(inst);
-  const x = side === 'player' ? 140 : ARENA.width - 140;
-  const spacing = total > 1 ? 80 : 0;
-  const y = ARENA.height / 2 + (index - (total - 1) / 2) * spacing;
+  const cols = BATTLE_GRID.cols;
+  const rows = BATTLE_GRID.rows;
+  // Player uses the save's formation slot (if valid); otherwise the default
+  // left-side spread. Enemy always uses the right-side default spread.
+  let gx: number;
+  let gy: number;
+  if (side === 'player' && formPos && isCellInArena(formPos.x, formPos.y)) {
+    gx = formPos.x;
+    gy = formPos.y;
+  } else {
+    gx = side === 'player' ? Math.floor(cols * 0.2) : Math.floor(cols * 0.8);
+    gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * 2), 1, rows - 2);
+  }
+  // Active skills start at a PARTIAL cooldown (40%) rather than ready, so the
+  // opening is normal-attack-only and abilities ramp up as their CDs elapse --
+  // but they come online fast enough to interleave with normal attacks during
+  // the fight (a full starting CD meant short fights never saw skills at all).
+  // Normal attack stays ready. "处于CD中" (countdown shows) is preserved.
+  const cooldowns: Record<string, number> = {};
+  const activeSkills = [...inst.activeSkills];
+  for (const sid of activeSkills) {
+    const sk = SKILL_MAP[sid];
+    if (sk) cooldowns[sid] = sk.cooldown * 0.4;
+  }
+  // A ranged-type pokemon (owns any ranged skill) also fires its normal attack
+  // from range, so it keeps dealing damage while kiting at range -- otherwise a
+  // ranged fighter only acts when a skill is off CD and looks idle between CDs.
+  // Melee-only pokemon keep the 1.5-cell melee reach. This is the per-combatant
+  // "合适施法距离" for the normal attack; skill ranges still come from config.
+  const rangedSkills = activeSkills.map((id) => SKILL_MAP[id]).filter((s) => s?.range === 'ranged');
+  const normalIsRanged = rangedSkills.length > 0;
+  const normalRangeCells = normalIsRanged
+    ? Math.max(...rangedSkills.map((s) => rangeInCells(s!)))
+    : MELEE_RANGE_CELLS;
   return {
     uid: inst.uid,
     side,
@@ -41,15 +74,18 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     name: inst.nickname || species.name,
     personality: inst.personality,
     ability: inst.ability,
-    activeSkills: [...inst.activeSkills],
+    activeSkills,
     passiveSkills: [...inst.passiveSkills],
     stats,
     maxHp: stats.hp,
     currentHp: inst.currentHp > 0 ? Math.min(inst.currentHp, stats.hp) : stats.hp,
-    position: { x, y: clamp(y, 50, ARENA.height - 50) },
+    position: { x: gx, y: gy },
+    pixel: { x: gx, y: gy },
     facing: side === 'player' ? 1 : -1,
-    cooldowns: {},
+    cooldowns,
     normalAttackCd: 0,
+    normalRangeCells,
+    normalIsRanged,
     status: inst.status ?? null,
     statusTimer: 0,
     statStages: { atk: 0, def: 0, spd: 0 },
@@ -64,6 +100,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     plan: null,
     dotAccumulator: 0,
     flinchUntil: 0,
+    moveCd: 0,
   };
 }
 
@@ -82,11 +119,12 @@ export class BattleSim {
   playerBench: PokemonInstance[] = [];
   enemyBench: PokemonInstance[] = [];
   private ended = false;
+  private seqCounter = 0;
 
   constructor(opts: BattleSimOptions) {
     const seed = opts.seed ?? hashSeed(opts.player.map((p) => p.uid).join(',') + '|' + opts.enemy.map((p) => p.uid).join(','));
     this.rng = mulberry32(seed);
-    this.deployment = opts.deployment ?? (opts.mode === 'pve' ? 'sequential' : 'simultaneous');
+    this.deployment = opts.deployment ?? 'simultaneous';
     this.playerTeamUids = opts.player.map((p) => p.uid);
     this.enemyTeamUids = opts.enemy.map((p) => p.uid);
 
@@ -103,11 +141,11 @@ export class BattleSim {
       this.playerBench = [];
       this.enemyBench = [];
     }
-    const player = activePlayer.map((p, i) => instanceToCombatant(p, 'player', i, activePlayer.length));
+    const player = activePlayer.map((p, i) => instanceToCombatant(p, 'player', i, activePlayer.length, opts.formation?.[i]));
     const enemy = activeEnemy.map((p, i) => instanceToCombatant(p, 'enemy', i, activeEnemy.length));
     this.state = {
       mode: opts.mode,
-      arena: { width: ARENA.width, height: ARENA.height },
+      arena: { cols: BATTLE_GRID.cols, rows: BATTLE_GRID.rows },
       combatants: [...player, ...enemy],
       events: [],
       time: 0,
@@ -128,8 +166,8 @@ export class BattleSim {
     return this.state.ended;
   }
 
-  private emit(type: BattleEvent['type'], actor?: string, target?: string, skillId?: string, amount?: number, message?: string): void {
-    this.state.events.push({ t: +this.state.time.toFixed(2), type, actor, target, skillId, amount, message });
+  private emit(type: BattleEvent['type'], actor?: string, target?: string, skillId?: string, amount?: number, message?: string, vfx?: BattleVfx): void {
+    this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx });
     if (this.state.events.length > 400) this.state.events.splice(0, this.state.events.length - 400);
   }
 
@@ -189,14 +227,14 @@ export class BattleSim {
       if (c.status === 'poison' || c.status === 'burn') {
         const dmg = Math.max(1, Math.floor(c.maxHp * 0.0625));
         c.currentHp -= dmg;
-        this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到${c.status === 'burn' ? '灼伤' : '中毒'}伤害`);
+        this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到${c.status === 'burn' ? '灼伤' : '中毒'}伤害`, { kind: 'impact', type: c.status === 'burn' ? 'fire' : 'poison', amount: dmg });
       }
       // dot buffs
       for (const b of c.buffs) {
         if (b.kind === 'dot' && b.magnitude) {
           const dmg = Math.max(1, Math.floor(c.maxHp * b.magnitude));
           c.currentHp -= dmg;
-          this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到持续伤害`);
+          this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到持续伤害`, { kind: 'impact', amount: dmg });
         }
       }
       if (c.currentHp <= 0) this.faint(c);
@@ -242,23 +280,78 @@ export class BattleSim {
     }
   }
 
-  private moveToward(c: BattleCombatant, target: BattleCombatant, desiredRange: number, dt: number): void {
+  private stepDelay(c: BattleCombatant): number {
+    // seconds per grid step; faster Pokemon step sooner
+    return clamp(0.28 - effectiveStat(c, 'spd') * 0.0006, 0.12, 0.28);
+  }
+
+  private isCellFree(cell: { x: number; y: number }, exceptUid: string): boolean {
+    if (!isCellInArena(cell.x, cell.y)) return false; // outside the oval = stands
+    return !this.state.combatants.some((o) => o.alive && o.uid !== exceptUid && o.position.x === cell.x && o.position.y === cell.y);
+  }
+
+  /** Smooth the render position toward the logical cell center (visual only). */
+  private updatePixel(c: BattleCombatant, dt: number): void {
+    const k = 1 - Math.exp(-dt * 14);
+    c.pixel.x += (c.position.x - c.pixel.x) * k;
+    c.pixel.y += (c.position.y - c.pixel.y) * k;
+  }
+
+  /** Step one grid cell. Outside the desired band it closes in / kites away;
+   *  inside the band it strafes perpendicular to the target (circling), which
+   *  produces vertical (up/down) movement instead of a flat left-right march.
+   *  No-op while the step cooldown is running. */
+  private stepMove(c: BattleCombatant, target: BattleCombatant, desiredRangeCells: number): void {
+    c.facing = target.position.x >= c.position.x ? 1 : -1;
+    if ((c.moveCd ?? 0) > 0) return;
     const dx = target.position.x - c.position.x;
     const dy = target.position.y - c.position.y;
-    const d = Math.hypot(dx, dy) || 0.001;
-    const speed = (30 + effectiveStat(c, 'spd') * 0.5);
-    if (d > desiredRange + 6) {
-      c.position.x += (dx / d) * speed * dt;
-      c.position.y += (dy / d) * speed * dt;
-      c.facing = dx >= 0 ? 1 : -1;
-    } else if (desiredRange >= 150 && d < desiredRange - 6) {
-      // kite away to keep range
-      c.position.x -= (dx / d) * speed * dt;
-      c.position.y -= (dy / d) * speed * 0.5 * dt;
-      c.facing = dx >= 0 ? 1 : -1;
+    const d = Math.hypot(dx, dy);
+    const wantKite = desiredRangeCells >= 3; // ranged keep-distance band
+    const tooFar = d > desiredRangeCells + MOVE_BUFFER;
+    const tooClose = wantKite && d < desiredRangeCells - 1;
+    const inBand = !tooFar && !tooClose;
+
+    let bx = 0; let by = 0;
+    if (tooFar) { bx = Math.sign(dx); by = Math.sign(dy); }          // close in
+    else if (tooClose) { bx = -Math.sign(dx); by = -Math.sign(dy); } // back off
+    else {
+      // in band: strafe perpendicular to the target line (circle it)
+      c.strafeDir = (c.strafeDir ?? 1);
+      bx = Math.sign(-dy) * c.strafeDir;
+      by = Math.sign(dx) * c.strafeDir;
+      c.strafeCount = (c.strafeCount ?? 0) + 1;
+      if (c.strafeCount >= 3) { c.strafeCount = 0; c.strafeDir *= -1; } // oscillate -> up/down pacing
     }
-    c.position.x = clamp(c.position.x, 30, ARENA.width - 30);
-    c.position.y = clamp(c.position.y, 40, ARENA.height - 40);
+
+    // candidate neighbor cells, king-move preferred (diagonal closes fastest)
+    const candidates: { x: number; y: number }[] = [];
+    if (bx !== 0 && by !== 0) {
+      candidates.push({ x: c.position.x + bx, y: c.position.y + by });
+      candidates.push({ x: c.position.x + bx, y: c.position.y });
+      candidates.push({ x: c.position.x, y: c.position.y + by });
+    } else if (bx !== 0) {
+      candidates.push({ x: c.position.x + bx, y: c.position.y });
+    } else if (by !== 0) {
+      candidates.push({ x: c.position.x, y: c.position.y + by });
+    }
+    for (const cell of candidates) {
+      if (this.isCellFree(cell, c.uid)) {
+        c.position.x = cell.x;
+        c.position.y = cell.y;
+        c.moveCd = this.stepDelay(c);
+        return;
+      }
+    }
+    // strafe blocked -> flip and retry once, else drift toward target so we
+    // never get stuck motionless (preserves the no-stall invariant).
+    if (inBand) {
+      c.strafeDir = -((c.strafeDir ?? 1));
+      const fx = Math.sign(dx), fy = Math.sign(dy);
+      for (const cell of [{ x: c.position.x + fx, y: c.position.y + fy }, { x: c.position.x + fx, y: c.position.y }, { x: c.position.x, y: c.position.y + fy }]) {
+        if (this.isCellFree(cell, c.uid)) { c.position.x = cell.x; c.position.y = cell.y; c.moveCd = this.stepDelay(c); return; }
+      }
+    }
   }
 
   private startCast(c: BattleCombatant, skillId: string): void {
@@ -267,7 +360,7 @@ export class BattleSim {
     const cast = skill.castTime ?? 0;
     if (cast > 0) {
       c.castProgress = { skillId, remaining: cast };
-      this.emit('skill', c.uid, undefined, skillId, undefined, `${c.name} 开始蓄力 ${skill.name}...`);
+      this.emit('skill', c.uid, undefined, skillId, undefined, `${c.name} 开始蓄力 ${skill.name}...`, { kind: 'cast', type: skill.type });
     } else {
       this.resolveSkill(c, skillId);
     }
@@ -286,12 +379,13 @@ export class BattleSim {
       target.statusTimer = -1;
     }
     const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
-    this.emit('status', undefined, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`);
+    this.emit('status', undefined, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
   }
 
   private addStatStage(c: BattleCombatant, stat: 'atk' | 'def' | 'spd', stages: number): void {
     c.statStages[stat] = clamp(c.statStages[stat] + stages, -6, 6);
-    this.emit(stages >= 0 ? 'buff' : 'debuff', c.uid, undefined, undefined, undefined, `${c.name} 的${stat === 'atk' ? '攻击' : stat === 'def' ? '防御' : '速度'}${stages >= 0 ? '提升' : '下降'}了！`);
+    const up = stages >= 0;
+    this.emit(up ? 'buff' : 'debuff', c.uid, undefined, undefined, undefined, `${c.name} 的${stat === 'atk' ? '攻击' : stat === 'def' ? '防御' : '速度'}${up ? '提升' : '下降'}了！`, { kind: up ? 'buff' : 'debuff' });
   }
 
   private applyEffect(caster: BattleCombatant, target: BattleCombatant | undefined, skillId: string, damageDealt: number): void {
@@ -304,7 +398,7 @@ export class BattleSim {
         if (self) {
           const amt = Math.floor(self.maxHp * (e.magnitude ?? 0.5));
           self.currentHp = Math.min(self.maxHp, self.currentHp + amt);
-          this.emit('heal', self.uid, undefined, undefined, amt, `${self.name} 回复了HP`);
+          this.emit('heal', self.uid, undefined, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
           if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2);
         }
         break;
@@ -312,7 +406,7 @@ export class BattleSim {
         if (self) {
           self.shields += e.magnitude ?? 100;
           self.buffs.push({ id: 'shield_' + Date.now(), kind: 'shield', remaining: e.duration ?? 3, magnitude: e.magnitude });
-          this.emit('buff', self.uid, undefined, undefined, undefined, `${self.name} 张开了护盾`);
+          this.emit('buff', self.uid, undefined, undefined, undefined, `${self.name} 张开了护盾`, { kind: 'shield' });
         }
         break;
       case 'buff':
@@ -327,7 +421,7 @@ export class BattleSim {
       case 'dot':
         if (self && e.magnitude) {
           self.buffs.push({ id: 'dot_' + Date.now(), kind: 'dot', remaining: e.duration ?? 6, magnitude: e.magnitude, from: caster.uid });
-          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 被施加了持续伤害`);
+          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 被施加了持续伤害`, { kind: 'status', status: e.status });
         }
         break;
       case 'stun':
@@ -335,14 +429,14 @@ export class BattleSim {
           self.flinchUntil = this.state.time + (e.duration ?? 1);
           self.plan = null;
           self.nextDecisionAt = this.state.time + (e.duration ?? 1);
-          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 畏缩了`);
+          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 畏缩了`, { kind: 'status', status: 'paralyze' });
         }
         break;
       case 'lifesteal':
         if (damageDealt > 0 && e.magnitude) {
           const heal = Math.floor(damageDealt * e.magnitude);
           caster.currentHp = Math.min(caster.maxHp, caster.currentHp + heal);
-          this.emit('heal', caster.uid, undefined, undefined, heal, `${caster.name} 吸取了生命`);
+          this.emit('heal', caster.uid, undefined, undefined, heal, `${caster.name} 吸取了生命`, { kind: 'heal', amount: heal });
         }
         break;
     }
@@ -365,16 +459,25 @@ export class BattleSim {
     const skill = SKILL_MAP[skillId] ?? NORMAL_ATTACK;
     const res = computeDamage(attacker, defender, skill, this.rng);
     for (const m of res.log) this.emit('info', attacker.uid, defender.uid, skillId, undefined, m);
-    if (res.missed) return { dealt: 0, immune: false };
+    if (res.missed) {
+      this.emit('damage', attacker.uid, defender.uid, skillId, 0, undefined, { kind: 'miss', type: skill.type, missed: true });
+      return { dealt: 0, immune: false };
+    }
     if (res.immune) {
       if (res.healed && res.healed > 0) {
         defender.currentHp = Math.min(defender.maxHp, defender.currentHp + res.healed);
-        this.emit('heal', defender.uid, undefined, undefined, res.healed, `${defender.name} 回复了HP`);
+        this.emit('heal', defender.uid, undefined, undefined, res.healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: res.healed });
       }
       if (defender.ability === 'flash-fire') defender.flashFireBoost = true;
       return { dealt: 0, immune: true };
     }
     let dmg = res.damage;
+    // Ranged normal attacks fire from a safe distance, so they hit softer than
+    // melee normal attacks -- a balance lever so kiting isn't free DPS. Skills
+    // (the ranged type's real weapons, with CDs) are unaffected.
+    if (skillId === NORMAL_ATTACK.id && attacker.normalIsRanged) {
+      dmg = Math.max(1, Math.floor(dmg * 0.8));
+    }
     // shield absorb
     if (defender.shields > 0) {
       const absorbed = Math.min(defender.shields, dmg);
@@ -382,14 +485,15 @@ export class BattleSim {
       dmg -= absorbed;
     }
     defender.currentHp -= dmg;
-    this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined);
+    this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined, { kind: 'impact', type: skill.type, amount: dmg });
     if (defender.currentHp <= 0) {
       this.faint(defender);
       // moxie
       if (attacker.ability === 'moxie' && attacker.alive) this.addStatStage(attacker, 'atk', 1);
     } else {
-      // contact on-hit abilities
-      this.applyOnHitAbilities(attacker, defender, skill.range === 'melee');
+      // contact on-hit abilities (a ranged normal attack does not make contact)
+      const contact = skillId === NORMAL_ATTACK.id ? !attacker.normalIsRanged : skill.range === 'melee';
+      this.applyOnHitAbilities(attacker, defender, contact);
     }
     return { dealt: dmg, immune: false };
   }
@@ -400,7 +504,7 @@ export class BattleSim {
     c.currentHp = 0;
     c.status = null;
     c.castProgress = null;
-    this.emit('faint', c.uid, undefined, undefined, undefined, `${c.name} 倒下了！`);
+    this.emit('faint', c.uid, undefined, undefined, undefined, `${c.name} 倒下了！`, { kind: 'faint' });
   }
 
   private resolveSkill(c: BattleCombatant, skillId: string): void {
@@ -410,7 +514,8 @@ export class BattleSim {
     const target = this.find(c.currentTargetUid);
     if (skill.power > 0) {
       if (!target || !target.alive) return;
-      this.emit('skill', c.uid, target.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`);
+      const vfxKind = skill.range === 'ranged' ? 'projectile' : 'melee';
+      this.emit('skill', c.uid, target.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: vfxKind, type: skill.type });
       const { dealt } = this.dealDamage(c, target, skillId);
       // secondary effect on damage skills
       if (skill.effect && target.alive) {
@@ -422,14 +527,14 @@ export class BattleSim {
       }
     } else {
       // status / utility
-      this.emit('skill', c.uid, target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`);
+      this.emit('skill', c.uid, target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       const e = skill.effect;
       const tgt = e?.target === 'enemy' ? target : c;
       // accuracy for enemy-target status
       if (e?.target === 'enemy' && tgt) {
         const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
         if (this.rng() > acc) {
-          this.emit('info', c.uid, tgt.uid, skillId, undefined, `但是没有命中...`);
+          this.emit('info', c.uid, tgt.uid, skillId, undefined, `但是没有命中...`, { kind: 'miss', type: skill.type, missed: true });
           return;
         }
       }
@@ -439,7 +544,8 @@ export class BattleSim {
 
   private normalAttack(c: BattleCombatant, target: BattleCombatant): void {
     c.normalAttackCd = NORMAL_ATTACK.cooldown;
-    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`);
+    const ranged = !!c.normalIsRanged;
+    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: NORMAL_ATTACK.type });
     this.dealDamage(c, target, NORMAL_ATTACK.id);
   }
 
@@ -473,9 +579,11 @@ export class BattleSim {
       }
       for (const id of Object.keys(c.cooldowns)) c.cooldowns[id] = Math.max(0, c.cooldowns[id]! - dt * (2 - cdr));
       c.normalAttackCd = Math.max(0, c.normalAttackCd - dt);
+      c.moveCd = Math.max(0, (c.moveCd ?? 0) - dt);
       this.statusTick(c, dt);
       this.passiveRegen(c, dt);
       this.speedBoost(c, dt);
+      this.updatePixel(c, dt);
     }
     for (const c of this.state.combatants) {
       if (!c.alive) continue;
@@ -501,7 +609,7 @@ export class BattleSim {
         // self hit
         const dmg = Math.max(1, Math.floor(c.maxHp * 0.08));
         c.currentHp -= dmg;
-        this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`);
+        this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });
         if (c.currentHp <= 0) this.faint(c);
         c.nextDecisionAt = this.state.time + 0.3;
         continue;
@@ -515,22 +623,25 @@ export class BattleSim {
       if (!c.plan) continue;
       const target = this.find(c.plan.targetUid);
       if (!target || !target.alive) { c.plan = null; continue; }
-      // movement
-      this.moveToward(c, target, c.plan.desiredRange, dt);
+      // movement (grid step)
+      this.stepMove(c, target, c.plan.desiredRangeCells);
       // action
       if (c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0) {
         const skill = SKILL_MAP[c.plan.preferredSkillId];
         if (skill) {
           const selfCast = skill.effect?.target === 'self' || skill.power === 0 && skill.effect?.target !== 'enemy';
-          if (selfCast || dist(c, target) <= skill.rangeTiles) {
+          if (selfCast || dist(c, target) <= rangeInCells(skill)) {
             this.startCast(c, c.plan.preferredSkillId);
             c.plan = null;
             continue;
           }
         }
       }
-      // normal attack fallback
-      if (dist(c, target) <= NORMAL_ATTACK.rangeTiles && c.normalAttackCd <= 0) {
+      // normal attack fallback. A ranged-type pokemon fires from range, so it
+      // keeps dealing damage while kiting (advancing or backing off) between
+      // skill CDs; the range is per-combatant (normalRangeCells). Direction of
+      // the preceding stepMove is irrelevant -- in-range => can fire.
+      if (dist(c, target) <= (c.normalRangeCells ?? MELEE_RANGE_CELLS) && c.normalAttackCd <= 0) {
         this.normalAttack(c, target);
       }
     }

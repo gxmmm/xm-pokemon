@@ -3,6 +3,7 @@ import { onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from './stores/auth.ts';
 import { useGameStore } from './stores/game.ts';
+import MessageHost from './components/MessageHost.vue';
 
 const auth = useAuthStore();
 const game = useGameStore();
@@ -57,6 +58,8 @@ const navItems = [
         </transition>
       </router-view>
     </main>
+    <!-- global in-game messages (toasts + confirm modal) -->
+    <MessageHost />
   </div>
 </template>
 

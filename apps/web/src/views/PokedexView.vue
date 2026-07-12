@@ -1,52 +1,176 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
-import { SPECIES_LIST } from '@pokemon-online/config';
+import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL } from '@pokemon-online/config';
+import { ivCeiling, growthCeiling } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
+import Tip from '../components/Tip.vue';
+import type { PassiveSkill, Rarity, Ability, Skill } from '@pokemon-online/shared';
 
 const game = useGameStore();
 const caught = computed(() => game.dexCount);
 const seen = computed(() => game.dexSeen);
 
-function entry(id: number) {
-  return game.save?.pokedex[id];
+const selectedId = ref<number | null>(null);
+const species = computed(() => (selectedId.value ? getSpecies(selectedId.value) : null));
+const entry = computed(() => (selectedId.value ? game.save?.pokedex[selectedId.value] : undefined));
+const isSeen = computed(() => !!entry.value?.seen);
+
+const ivCeil = computed(() => (species.value ? ivCeiling(species.value.rarity) : 31));
+const growthCeil = computed(() => (species.value ? growthCeiling(species.value.rarity) : 1.3));
+
+const RARITY_LABEL: Record<Rarity, string> = {
+  common: '常见', uncommon: '少见', rare: '稀有', legendary: '传说', mythical: '幻兽',
+};
+
+function entryOf(id: number) { return game.save?.pokedex[id]; }
+function select(id: number): void { selectedId.value = id; }
+
+const TRIGGER_LABEL: Record<string, string> = {
+  onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时',
+  onTurnStart: '回合开始时', onFaint: '击倒对手时', onSwitch: '撤退时',
+};
+function abilityTip(a: Ability): string { return `${a.description}\n触发：${TRIGGER_LABEL[a.trigger] ?? a.trigger}`; }
+function passiveTip(p: PassiveSkill | undefined, intrinsic = false): string {
+  if (!p) return '';
+  return `${p.name}（${PASSIVE_TIER_LABEL[p.tier] ?? '?'}${intrinsic ? '·必带' : ''}）\n${p.description}`;
+}
+function skillTip(s: Skill | undefined): string {
+  if (!s) return '';
+  const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
+  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles}`;
 }
 </script>
 
 <template>
-  <div v-if="game.save">
-    <div class="panel" style="margin-bottom:12px">
-      <div class="between">
-        <h2 class="h-title" style="margin:0">宝可梦图鉴</h2>
-        <span class="chip">已收集 {{ caught }}/151 · 见过 {{ seen }}</span>
-      </div>
-      <p class="tiny muted">探索世界、击败与捕捉宝可梦来丰富图鉴。放生也会保留记录。</p>
-    </div>
-    <div class="grid grid-4">
-      <div v-for="sp in SPECIES_LIST" :key="sp.id" class="dex-cell" :class="{ caught: entry(sp.id)?.caught, seen: entry(sp.id)?.seen && !entry(sp.id)?.caught }">
-        <div class="num">#{{ String(sp.id).padStart(3,'0') }}</div>
-        <PokemonSprite v-if="entry(sp.id)?.seen" :species-id="sp.id" :size="56" :faded="!entry(sp.id)?.caught" />
-        <div v-else class="silhouette">❔</div>
-        <div class="name">{{ entry(sp.id)?.seen ? sp.name : '？？？' }}</div>
-        <div v-if="entry(sp.id)?.seen" class="row center" style="gap:2px">
-          <TypeBadge v-for="t in sp.types" :key="t" :type="t" size="sm" />
+  <div v-if="game.save" class="dex-layout">
+    <!-- LEFT: 种族网格 -->
+    <div class="dex-left">
+      <div class="panel" style="margin-bottom:12px">
+        <div class="between">
+          <h2 class="h-title" style="margin:0;font-size:18px">宝可梦图鉴</h2>
+          <span class="chip">收集 {{ caught }}/151 · 见过 {{ seen }}</span>
         </div>
-        <div class="tiny" v-if="entry(sp.id)?.caught">持有 {{ entry(sp.id)?.count }}</div>
-        <div class="tiny" v-else-if="entry(sp.id)?.released" style="color:var(--warn)">已放生</div>
+      </div>
+      <div class="grid grid-4">
+        <div
+          v-for="sp in SPECIES_LIST" :key="sp.id" class="dex-cell"
+          :class="{ caught: entryOf(sp.id)?.caught, seen: entryOf(sp.id)?.seen && !entryOf(sp.id)?.caught, selected: selectedId===sp.id }"
+          @click="select(sp.id)"
+        >
+          <div class="num">#{{ String(sp.id).padStart(3,'0') }}</div>
+          <PokemonSprite v-if="entryOf(sp.id)?.seen" :species-id="sp.id" :size="48" :faded="!entryOf(sp.id)?.caught" />
+          <div v-else class="silhouette">❔</div>
+          <div class="name">{{ entryOf(sp.id)?.seen ? sp.name : '？？？' }}</div>
+          <div v-if="entryOf(sp.id)?.caught" class="tiny muted">持有 {{ entryOf(sp.id)?.count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: 种族详情（资质上限 / 全部技能） -->
+    <div class="dex-right panel">
+      <div v-if="species && isSeen" class="detail">
+        <div class="row" style="align-items:center;gap:12px">
+          <PokemonSprite :species-id="species.id" :size="88" :faded="!entry?.caught" />
+          <div class="grow">
+            <div class="between">
+              <span class="h-title" style="margin:0;font-size:18px">{{ species.name }}</span>
+              <span class="chip">#{{ String(species.id).padStart(3,'0') }}</span>
+            </div>
+            <div class="row" style="gap:6px;margin:4px 0;flex-wrap:wrap">
+              <TypeBadge v-for="t in species.types" :key="t" :type="t" />
+              <span class="chip">{{ RARITY_LABEL[species.rarity] }}</span>
+            </div>
+            <div class="tiny muted">{{ species.dex }}</div>
+          </div>
+        </div>
+
+        <div class="sub bold">基础属性</div>
+        <div class="grid grid-2 tiny">
+          <div>生命：{{ species.base.hp }}</div>
+          <div>攻击：{{ species.base.atk }}</div>
+          <div>防御：{{ species.base.def }}</div>
+          <div>速度：{{ species.base.spd }}</div>
+        </div>
+
+        <div class="sub bold">资质 / 成长上限 <span class="tiny muted" style="font-weight:400">（野外个体在此内随机 · 炼妖不封顶）</span></div>
+        <div class="tiny">
+          资质上限：{{ ivCeil }}（最低1）<br />
+          成长上限：×{{ growthCeil }}
+        </div>
+
+        <div class="sub bold">全部可能技能 <span class="tiny muted" style="font-weight:400">（天生必带·升级习得）</span></div>
+        <div v-for="s in species.intrinsic" :key="'in-'+s" class="tiny skill-row">
+          <span class="lv-chip" style="background:var(--gold);color:#333">天生</span>
+          <Tip :text="skillTip(SKILL_MAP[s])"><span class="bold">{{ SKILL_MAP[s]?.name }}</span></Tip>
+          <TypeBadge :type="SKILL_MAP[s]?.type ?? 'normal'" size="sm" />
+          <span class="muted">威力{{ SKILL_MAP[s]?.power || 0 }} · {{ SKILL_MAP[s]?.range==='melee'?'近战':'远程' }}</span>
+        </div>
+        <div v-for="e in species.learnset" :key="e.level + '-' + e.skill" class="tiny skill-row">
+          <span class="lv-chip">Lv.{{ e.level }}</span>
+          <Tip :text="skillTip(SKILL_MAP[e.skill])"><span class="bold">{{ SKILL_MAP[e.skill]?.name }}</span></Tip>
+          <TypeBadge :type="SKILL_MAP[e.skill]?.type ?? 'normal'" size="sm" />
+          <span class="muted">威力{{ SKILL_MAP[e.skill]?.power || 0 }} · {{ SKILL_MAP[e.skill]?.range==='melee'?'近战':'远程' }}</span>
+        </div>
+
+        <div class="sub bold">特性池</div>
+        <div v-for="aid in species.abilities" :key="aid" class="tiny">
+          <Tip :text="ABILITY_MAP[aid] ? abilityTip(ABILITY_MAP[aid]) : ''"><span class="chip">{{ ABILITY_MAP[aid]?.name ?? aid }}</span></Tip>
+          {{ ABILITY_MAP[aid]?.description }}
+        </div>
+        <div v-if="species.hiddenAbility" class="tiny muted">隐藏特性：{{ ABILITY_MAP[species.hiddenAbility]?.name ?? species.hiddenAbility }}</div>
+
+        <div class="sub bold">梦幻技能池 <span class="tiny muted" style="font-weight:400">（种族固定 · 野生随机持有1~5 · 灰=初级/蓝=中级/金=高级 · 标必带为天生持有）</span></div>
+        <div v-if="species.passivePool.length===0" class="tiny muted">无</div>
+        <div v-for="pid in species.passivePool" :key="pid" class="tiny">
+          <Tip :text="passiveTip(PASSIVE_MAP[pid], species.intrinsicPassives.includes(pid))">
+            <span class="chip" :style="species.intrinsicPassives.includes(pid) ? 'background:var(--gold);color:#333' : ''">{{ PASSIVE_MAP[pid]?.name ?? pid }}<span v-if="species.intrinsicPassives.includes(pid)">·必带</span></span>
+          </Tip>
+          {{ PASSIVE_MAP[pid]?.description }}
+        </div>
+
+        <div class="sub bold" v-if="species.evolution && species.evolution.length">进化</div>
+        <div v-if="species.evolution && species.evolution.length" class="tiny row" style="gap:6px;flex-wrap:wrap;align-items:center">
+          <template v-for="(e, i) in species.evolution" :key="e.to">
+            <span v-if="i>0">/</span>
+            <span class="chip">{{ getSpecies(e.to).name }}（Lv.{{ e.level }}）</span>
+          </template>
+        </div>
+
+        <div class="tiny muted sub" v-if="!entry?.caught" style="color:var(--warn)">尚未捕获该宝可梦</div>
+      </div>
+      <div v-else-if="species && !isSeen" class="empty">
+        <div class="silhouette big">❔</div>
+        <div class="tiny muted center" style="margin-top:8px">尚未发现该宝可梦</div>
+      </div>
+      <div v-else class="empty">
+        <div class="tiny muted center">选择左侧图鉴查看详情</div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.dex-layout { display:flex; gap:12px; align-items:flex-start; }
+.dex-left { flex:1; min-width:0; }
+.dex-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; }
+@media (max-width: 900px) { .dex-layout { flex-direction:column; } .dex-right { width:100%; position:static; max-height:none; } }
 .dex-cell {
   background: var(--panel); color: var(--ink); border-radius: 10px; padding: 8px 6px;
   text-align: center; position: relative; box-shadow: 0 2px 0 rgba(0,0,0,.12);
+  cursor: pointer; border: 2px solid transparent;
 }
-.dex-cell.caught { border: 2px solid var(--good); }
-.dex-cell.seen { border: 2px solid var(--warn); }
-.num { font-size: 10px; color: var(--muted); }
-.name { font-weight: 700; font-size: 13px; margin: 2px 0; }
-.silhouette { font-size: 40px; opacity: .4; }
+.dex-cell.caught { border-color: var(--good); }
+.dex-cell.seen { border-color: var(--warn); }
+.dex-cell.selected { outline: 2px solid var(--accent); }
+.dex-cell .num { font-size: 10px; color: var(--muted); }
+.dex-cell .name { font-weight: 700; font-size: 13px; margin: 2px 0; }
+.dex-cell .silhouette { font-size: 36px; opacity: .4; }
+.detail { display:flex; flex-direction:column; gap:8px; }
+.detail .sub { margin-top:6px; }
+.skill-row { display:flex; align-items:center; gap:6px; padding:3px 0; border-bottom:1px dashed #eee; }
+.lv-chip { display:inline-block; background:var(--accent-2); color:#fff; border-radius:6px; padding:0 6px; font-size:10px; font-weight:700; min-width:36px; text-align:center; }
+.empty { display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:240px; }
+.silhouette.big { font-size: 56px; opacity:.4; }
 </style>

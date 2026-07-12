@@ -6,6 +6,7 @@ import { getSpecies, getMap, ITEM_MAP, MAP_MAP, expForLevel } from '@pokemon-onl
 import {
   createStarter, applyExp, evolve, heal, revive, cureStatus, maxHp,
   markSeen, markCaught, addInstanceToSave, releaseInstance, breed as doBreed,
+  defaultFormation,
 } from '@pokemon-online/engine';
 import { api } from '../api/client.ts';
 import { useAuthStore } from './auth.ts';
@@ -21,7 +22,7 @@ function freshSave(playerId: string, username: string, starterId: number): Playe
     updatedAt: now,
     playtime: 0,
     currentMapId: 'pallet',
-    position: { x: 8, y: 6 },
+    position: { x: 8, y: 6, facing: 'down' },
     roster: [starter.uid],
     instances: { [starter.uid]: starter },
     pokedex: {
@@ -31,11 +32,13 @@ function freshSave(playerId: string, username: string, starterId: number): Playe
     money: 1500,
     pveTeam: [starter.uid],
     pvpTeam: [starter.uid],
+    formation: defaultFormation(),
     friends: [],
     badges: [],
     settings: { music: true, sfx: true, battleSpeed: 1 },
     lastBattleResult: undefined,
     stats: { battles: 0, wins: 0, caught: 0, bred: 0 },
+    visitedMaps: ['pallet'],
   };
 }
 
@@ -54,9 +57,19 @@ function migrateSave(s: PlayerSave): PlayerSave {
   if (!Array.isArray(s.roster)) s.roster = [];
   if (!Array.isArray(s.pveTeam)) s.pveTeam = [];
   if (!Array.isArray(s.pvpTeam)) s.pvpTeam = [];
+  // v4: free-placement formation (阵型). Missing/short -> default.
+  if (!Array.isArray(s.formation) || s.formation.length < 3) s.formation = defaultFormation();
   // prune loadout uids no longer in roster
   s.pveTeam = s.pveTeam.filter((u) => s.instances[u]);
   s.pvpTeam = s.pvpTeam.filter((u) => s.instances[u]);
+  // v3: player facing on the world map + visited-maps discovery
+  if (!s.position) s.position = { x: 8, y: 6, facing: 'down' };
+  if (!s.position.facing) s.position.facing = 'down';
+  if (!Array.isArray(s.visitedMaps) || s.visitedMaps.length === 0) {
+    s.visitedMaps = [s.currentMapId];
+  } else if (!s.visitedMaps.includes(s.currentMapId)) {
+    s.visitedMaps.push(s.currentMapId);
+  }
   s.version = SAVE_VERSION;
   return s;
 }
@@ -180,6 +193,12 @@ export const useGameStore = defineStore('game', () => {
     save.value.pvpTeam = uids.slice(0, PVP_TEAM_SIZE);
     void persist();
   }
+  /** Set the 3-slot starting formation (阵型) for the player's team. */
+  function setFormation(cells: { x: number; y: number }[]): void {
+    if (!save.value) return;
+    save.value.formation = cells.slice(0, PVE_TEAM_SIZE);
+    void persist();
+  }
 
   // ── healing ──
   /** Heal the entire carried roster to full + clear status (auto after battle). */
@@ -299,7 +318,9 @@ export const useGameStore = defineStore('game', () => {
   function travelTo(mapId: string, x: number, y: number): void {
     if (!save.value) return;
     save.value.currentMapId = mapId;
-    save.value.position = { x, y };
+    // keep current facing; crossing maps must never reset orientation abruptly
+    save.value.position = { x, y, facing: save.value.position.facing };
+    if (!save.value.visitedMaps.includes(mapId)) save.value.visitedMaps.push(mapId);
     void persist();
   }
 
@@ -318,7 +339,7 @@ export const useGameStore = defineStore('game', () => {
     hasSave, rosterInstances, pveTeamInstances, pvpTeamInstances, dexCount, dexSeen, rosterFull,
     ROSTER_MAX, PVE_TEAM_SIZE, PVP_TEAM_SIZE,
     getInstance, load, startWithStarter, persist,
-    see, caught, addCaughtInstance, release, setPveTeam, setPvpTeam,
+    see, caught, addCaughtInstance, release, setPveTeam, setPvpTeam, setFormation,
     healAll, useItem, buyItem, grantExp, doEvolve, breed, recordBattle, addFriend,
     travelTo, updateSettings, reset,
   };

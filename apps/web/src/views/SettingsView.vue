@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useGameStore } from '../stores/game.ts';
 import { useAuthStore } from '../stores/auth.ts';
+import { useMessage } from '../stores/message.ts';
 import { useRouter } from 'vue-router';
 
 const game = useGameStore();
 const auth = useAuthStore();
+const msg = useMessage();
 const router = useRouter();
 
 function setSpeed(s: number): void { game.updateSettings({ battleSpeed: s }); }
@@ -12,7 +14,7 @@ function toggleMusic(): void { game.updateSettings({ music: !game.save!.settings
 function toggleSfx(): void { game.updateSettings({ sfx: !game.save!.settings.sfx }); }
 
 async function logout(): Promise<void> {
-  if (!confirm('确定退出登录？本地未保存的进度将丢失。')) return;
+  if (!await msg.confirm('确定退出登录？本地未保存的进度将丢失。', { title: '退出登录', danger: true })) return;
   await game.persist(true);
   auth.logout();
   game.reset();
@@ -21,7 +23,7 @@ async function logout(): Promise<void> {
 
 async function manualSave(): Promise<void> {
   await game.persist(true);
-  alert('已手动保存到云端');
+  msg.success('已手动保存到云端');
 }
 </script>
 

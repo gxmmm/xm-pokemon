@@ -64,7 +64,9 @@ export interface Species {
   abilities: string[]; // ability ids, [0] = default
   hiddenAbility?: string;
   learnset: LearnsetEntry[]; // active skills learned by level
+  intrinsic: string[]; // 天生必带 active skills (always known, role-based signature, 1~2)
   passivePool: string[]; // passives this species may roll (梦幻式 pool)
+  intrinsicPassives: string[]; // 天生必带 passives (always held by wild / 100% retained when bred, 1~2)
   evolution?: Evolution[];
   rarity: Rarity;
   dex: string;
@@ -197,6 +199,33 @@ export interface EncounterEntry {
   rarity?: Rarity;
 }
 
+/** Player facing direction on the world map. */
+export type Facing = 'up' | 'down' | 'left' | 'right';
+
+/** Cinematic transition played when crossing between maps. */
+export type TransitionType = 'fade' | 'boat' | 'cave' | 'door';
+
+/**
+ * MapExit - a tile (edge or door) that, when stepped on, transitions the
+ * player to another map. Replaces the old instant warp: crossings now play a
+ * transition (fade/boat/cave/door) and never teleport instantly. `toll` is
+ * reserved for a future road-toll/boat-fare mechanic (not charged yet).
+ */
+export interface MapExit {
+  x: number;
+  y: number;
+  toMapId: string;
+  toX: number;
+  toY: number;
+  /** transition animation; defaults to 'fade' when omitted */
+  transition?: TransitionType;
+  label?: string;
+  /** direction the exit faces (world-map nav + signposting) */
+  direction?: Facing;
+  /** reserved: toll to pass (not enforced yet) */
+  toll?: number;
+}
+
 /**
  * GameMap - the world Pokemon and NPC "live in" (Principle 5: world first).
  * Encounters are ecological (weighted tables, optionally time-gated) rather
@@ -212,13 +241,17 @@ export interface GameMap {
   /** tile codes: 0 grass/walkable, 1 tree/blocked, 2 water, 3 tall-grass(encounter), 4 path, 5 sand, 6 rock, 7 door/warp */
   tiles: number[][];
   encounters: EncounterEntry[];
-  connected: { to: string; x: number; y: number; label?: string }[];
-  /** explicit warp tiles (door/warp code 7) -> destination map + position */
-  warps: { x: number; y: number; toMapId: string; toX: number; toY: number }[];
+  connected: { to: string; x: number; y: number; label?: string; direction?: Facing }[];
+  /** exit tiles (edge or door) -> destination; plays a transition, never instant. */
+  warps: MapExit[];
   hidden?: boolean;
   ambient?: string;
   unlockHint?: string;
   music?: string;
+  /** Maps where every natural-floor step can trigger an encounter (caves,
+   *  water routes) rather than only tall-grass tiles. Towns/routes leave this
+   *  off so encounters happen only on tall-grass (tile 3). */
+  encounterFloor?: boolean;
 }
 
 export type ItemKind = 'consumable' | 'material' | 'key' | 'evolution' | 'ball';
@@ -308,19 +341,24 @@ export interface PlayerSave {
   updatedAt: number;
   playtime: number;
   currentMapId: string;
-  position: { x: number; y: number };
+  position: { x: number; y: number; facing: Facing };
   roster: string[]; // carried instance uids, up to ROSTER_MAX
   instances: Record<string, PokemonInstance>;
   pokedex: Record<number, PokedexEntry>;
   items: Record<string, number>;
   money: number;
-  pveTeam: string[]; // ordered 3 for PVE (sequential)
+  pveTeam: string[]; // ordered 3 for PVE (simultaneous)
   pvpTeam: string[]; // ordered 3 for PVP (simultaneous 3v3)
+  /** Starting grid positions (3 slots) for the player's team in battle. Slot i
+   *  maps to pveTeam[i]/pvpTeam[i]. Free-placement formation (阵型). */
+  formation: { x: number; y: number }[];
   friends: string[]; // usernames
   badges: string[];
   settings: PlayerSettings;
   lastBattleResult?: BattleResult;
   stats: { battles: number; wins: number; caught: number; bred: number };
+  /** map ids the player has visited (drives world-map navigation discovery). */
+  visitedMaps: string[];
 }
 
 export interface BattleResult {
@@ -360,7 +398,11 @@ export interface BattleCombatant {
   stats: Stats;
   maxHp: number;
   currentHp: number;
+  /** Logical grid cell (integer coords). This is the authoritative position used
+   *  for distance/range checks. `pixel` is the smoothed float the renderer reads. */
   position: { x: number; y: number };
+  /** Smoothed render position (cell units); lerps toward `position` each tick. */
+  pixel: { x: number; y: number };
   facing: 1 | -1;
   // runtime
   cooldowns: Record<string, number>; // skillId -> seconds remaining
@@ -378,8 +420,27 @@ export interface BattleCombatant {
   displayLabel?: string;
 }
 
+/** Visual-effect hint attached to a BattleEvent so the frontend renderer can
+ *  spawn the right animation (projectile / burst / aura / floating number ...)
+ *  without re-parsing the text log. `from`/`to` are grid-cell coordinates. */
+export interface BattleVfx {
+  kind:
+    | 'projectile' | 'melee' | 'burst' | 'beam'
+    | 'heal' | 'shield' | 'buff' | 'debuff'
+    | 'status' | 'faint' | 'impact' | 'cast' | 'miss';
+  type?: TypeName; // skill/element type, for color theming
+  from?: { x: number; y: number };
+  to?: { x: number; y: number };
+  amount?: number;
+  status?: StatusKind;
+  missed?: boolean;
+}
+
 export interface BattleEvent {
   t: number;
+  /** Monotonic sequence number so the renderer can track which events it already
+   *  consumed (splice-safe: events are trimmed from the front when >400). */
+  seq?: number;
   type:
     | 'move' | 'attack' | 'skill' | 'damage' | 'heal' | 'status'
     | 'faint' | 'buff' | 'debuff' | 'info' | 'capture' | 'enter' | 'end';
@@ -388,11 +449,13 @@ export interface BattleEvent {
   skillId?: string;
   amount?: number;
   message?: string;
+  vfx?: BattleVfx;
 }
 
 export interface BattleState {
   mode: 'pve' | 'pvp';
-  arena: { width: number; height: number };
+  /** Grid dimensions (cells). Combatants move cell-by-cell on this grid. */
+  arena: { cols: number; rows: number };
   combatants: BattleCombatant[];
   events: BattleEvent[];
   time: number;

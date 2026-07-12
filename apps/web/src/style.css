@@ -145,6 +145,25 @@ input:focus, select:focus { outline: none; border-color: var(--accent-2); }
   font-size: 12px;
   font-weight: 600;
 }
+.chip.sm-chip { font-size: 10px; padding: 1px 6px; }
+
+/* skill icon grid (active/passive pools - 梦幻式) */
+.skill-icon-grid { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.skill-ic {
+  width:30px; height:30px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:13px; font-weight:800; text-shadow:0 1px 1px rgba(0,0,0,.45);
+  cursor:help; box-shadow:0 2px 0 rgba(0,0,0,.18);
+}
+/* 未拥有/未学：浅灰空心 + 灰虚线边框，与"已拥有彩色实底"明确区分。
+   !important 用于覆盖组件内联绑定的 background 色相，统一成"未点亮"外观。 */
+.skill-ic.dim {
+  background:#d3d8e0 !important;
+  color:#9098a6;
+  text-shadow:none;
+  border:2px dashed #aab2c0;
+  box-shadow:none;
+  opacity:1; filter:none;
+}
 
 .fade-enter-active, .fade-leave-active { transition: opacity .2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }

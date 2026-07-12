@@ -31,5 +31,22 @@ export function rollEncounter(map: GameMap, opts: { force?: number; mapId?: stri
   return { speciesId: chosen.speciesId, level, rarity: chosen.rarity, instance };
 }
 
+/**
+ * Roll a wild group of 1~3 pokemon (PVE is now simultaneous 3vN). Count is
+ * weighted 1:50% / 2:30% / 3:20%; each member is rolled independently from the
+ * map's encounter table. Returns 1~3 fresh instances ready for battle.
+ */
+export function rollWildGroup(map: GameMap, opts: { mapId?: string } = {}): EncounterRoll[] {
+  if (!map.encounters.length) return [];
+  const r = Math.random();
+  const count = r < 0.5 ? 1 : r < 0.8 ? 2 : 3;
+  const out: EncounterRoll[] = [];
+  for (let i = 0; i < count; i++) {
+    const roll = rollEncounter(map, opts);
+    if (roll) out.push(roll);
+  }
+  return out;
+}
+
 /** Encounter chance per step on tall grass. */
 export const ENCOUNTER_CHANCE = 0.12;

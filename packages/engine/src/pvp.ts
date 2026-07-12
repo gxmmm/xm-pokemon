@@ -7,10 +7,15 @@ import { BattleSim } from './simulator.ts';
  * only chooses their team. The challenger's client simulates the whole battle
  * against the opponent's saved battle team (fetched from the Worker).
  */
-export function createPvpBattle(playerTeam: PokemonInstance[], opponentTeam: PokemonInstance[], speed = 1): BattleSim {
+export function createPvpBattle(
+  playerTeam: PokemonInstance[],
+  opponentTeam: PokemonInstance[],
+  speed = 1,
+  formation?: { x: number; y: number }[],
+): BattleSim {
   const p = playerTeam.slice(0, PVP_TEAM_SIZE);
   const e = opponentTeam.slice(0, PVP_TEAM_SIZE);
-  return BattleSim.fromInstances({ mode: 'pvp', player: p, enemy: e, isWild: false, speed });
+  return BattleSim.fromInstances({ mode: 'pvp', player: p, enemy: e, isWild: false, speed, formation });
 }
 
 /** EXP reward for a friendly PVP spar (small, since PVP isn't a grind target). */

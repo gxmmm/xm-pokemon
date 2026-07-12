@@ -2,14 +2,18 @@
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, levelProgress, expToNext } from '@pokemon-online/config';
-import { getAvailableEvolutions, computeStats, maxHp } from '@pokemon-online/engine';
+import { useMessage } from '../stores/message.ts';
+import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, expToNext } from '@pokemon-online/config';
+import { getAvailableEvolutions, computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
+import Tip from '../components/Tip.vue';
+import type { Personality, Ability, Skill, IV, StatKey } from '@pokemon-online/shared';
 
 const route = useRoute();
 const router = useRouter();
 const game = useGameStore();
+const msg = useMessage();
 const uid = computed(() => route.params.uid as string);
 const inst = computed(() => game.getInstance(uid.value));
 const species = computed(() => (inst.value ? getSpecies(inst.value.speciesId) : null));
@@ -23,9 +27,107 @@ const renameVal = ref('');
 
 const expPct = computed(() => species.value && inst.value ? Math.round(levelProgress(species.value.growthRate, inst.value.level, inst.value.exp) * 100) : 0);
 
-function doEvolve(toId: number): void {
+// aptitude (IV) ceiling for this species + whether any stat exceeds it
+const ivCeil = computed(() => (species.value ? ivCeiling(species.value.rarity) : 31));
+const growthCeil = computed(() => (species.value ? growthCeiling(species.value.rarity) : 1.3));
+const hasOverCeiling = computed(() => {
+  if (!inst.value) return false;
+  const iv = inst.value.iv;
+  return (['hp','atk','def','spd'] as (keyof IV)[]).some((k) => iv[k] > ivCeil.value);
+});
+const isBred = computed(() => inst.value?.origin === 'bred');
+
+const TIER_COLOR: Record<number, string> = { 1: '#6b7280', 2: '#3b4cca', 3: '#b8860b' };
+// active skill pool: intrinsic (天生必带) first, then full learnset; known first, unlearned dim
+const activeDisplay = computed(() => {
+  if (!inst.value || !species.value) return [];
+  const known = new Set(inst.value.activeSkills);
+  const items: { id: string; owned: boolean; char: string; color: string; level: number; tip: string }[] = [];
+  const seen = new Set<string>();
+  const push = (sid: string, level: number) => {
+    if (seen.has(sid)) return;
+    seen.add(sid);
+    const sk = SKILL_MAP[sid];
+    items.push({
+      id: sid, owned: known.has(sid),
+      char: sk?.name?.[0] ?? '?',
+      color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A',
+      level,
+      tip: skillTip(sk) + (level === 0 ? '\n(天生必带)' : ''),
+    });
+  };
+  for (const id of species.value.intrinsic ?? []) push(id, 0);
+  for (const e of species.value.learnset) push(e.skill, e.level);
+  items.sort((a, b) => (a.owned === b.owned ? a.level - b.level : a.owned ? -1 : 1));
+  return items;
+});
+// passive pool: bred -> only owned; else full pool (+extra) owned first, unowned dim
+const passiveDisplay = computed(() => {
+  if (!inst.value || !species.value) return [];
+  const ownedSet = new Set(inst.value.passiveSkills);
+  const intrinsicSet = new Set(species.value.intrinsicPassives ?? []);
+  const pool = isBred.value
+    ? [...inst.value.passiveSkills]
+    : [...new Set([...species.value!.passivePool, ...inst.value.passiveSkills])];
+  const items = pool.map((id) => {
+    const p = PASSIVE_MAP[id];
+    return {
+      id, owned: ownedSet.has(id),
+      char: p?.name?.[0] ?? '?',
+      color: TIER_COLOR[p?.tier ?? 1],
+      tip: p ? `${p.name}（${PASSIVE_TIER_LABEL[p.tier] ?? '?'}${intrinsicSet.has(id) ? '·必带' : ''}）\n${p.description}` : id,
+    };
+  });
+  items.sort((a, b) => (a.owned === b.owned ? 0 : a.owned ? -1 : 1));
+  return items;
+});
+
+// ── hover tooltip text builders (so players can gauge strength at a glance) ──
+const RANGE_LABEL: Record<string, string> = { melee: '近战', ranged: '远程', adaptive: '自适应' };
+const TARGET_LABEL: Record<string, string> = { nearest: '最近', weakest: '最弱', threat: '威胁', random: '随机' };
+const BIAS_LABEL: Record<string, string> = { power: '重威力', speed: '重速攻', utility: '重辅助', balanced: '均衡' };
+const TRIGGER_LABEL: Record<string, string> = {
+  onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时',
+  onTurnStart: '回合开始时', onFaint: '击倒对手时', onSwitch: '撤退时',
+};
+
+function personalityTip(p: Personality): string {
+  const lines = [
+    p.description,
+    `攻击倾向 ${Math.round(p.aggression * 100)}% · 偏好 ${RANGE_LABEL[p.rangePreference] ?? p.rangePreference}`,
+    `风险偏好 ${Math.round(p.riskTolerance * 100)}% · 目标 ${TARGET_LABEL[p.targetPriority] ?? p.targetPriority}`,
+    `技能偏好 ${BIAS_LABEL[p.skillBias] ?? p.skillBias} · 防守阈值 ${Math.round(p.defensiveThreshold * 100)}%`,
+  ];
+  if (p.fleeChance) lines.push(`逃跑倾向 ${Math.round(p.fleeChance * 100)}%`);
+  return lines.join('\n');
+}
+
+function abilityTip(a: Ability): string {
+  return `${a.description}\n触发：${TRIGGER_LABEL[a.trigger] ?? a.trigger}`;
+}
+
+function skillTip(s: Skill | undefined): string {
+  if (!s) return '';
+  const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
+  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}`;
+}
+
+const STAT_FULL: Record<StatKey, string> = { hp: '生命', atk: '攻击', def: '防御', spd: '速度' };
+function statTip(key: StatKey): string {
+  if (!inst.value) return '';
+  const b = statBreakdown(inst.value, key);
+  const inner = b.key === 'hp'
+    ? `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + ${b.level} + 10)`
+    : `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + 5)`;
+  const mults = [`×成长${b.growth}`];
+  if (b.passiveMult !== 1) mults.push(`×被动${b.passiveMult}`);
+  if (b.abilityMult !== 1) mults.push(`×特性${b.abilityMult}`);
+  return `${STAT_FULL[b.key]} ${b.final}\n${inner}\n${mults.join(' ')}`;
+}
+
+async function doEvolve(toId: number): Promise<void> {
   if (!inst.value) return;
-  if (!confirm(`确定让 ${inst.value.nickname || species.value?.name} 进化吗？`)) return;
+  if (!await msg.confirm(`确定让 ${inst.value.nickname || species.value?.name} 进化吗？`, { title: '进化' })) return;
   game.doEvolve(uid.value, toId);
   evolveChoice.value = false;
 }
@@ -38,9 +140,9 @@ function saveRename(): void {
   renameMode.value = false;
   void game.persist();
 }
-function release(): void {
+async function release(): Promise<void> {
   if (!inst.value || !species.value) return;
-  if (!confirm(`放生 ${inst.value.nickname || species.value.name}？放生后无法找回，但会保留图鉴记录。`)) return;
+  if (!await msg.confirm(`放生 ${inst.value.nickname || species.value.name}？放生后无法找回，但会保留图鉴记录。`, { title: '放生', danger: true, okText: '放生' })) return;
   game.release(uid.value);
   router.replace({ name: 'team' });
 }
@@ -68,7 +170,7 @@ function release(): void {
           <div class="row" style="gap:6px;margin:4px 0">
             <TypeBadge v-for="t in species.types" :key="t" :type="t" />
             <span class="chip">Lv.{{ inst.level }}</span>
-            <span class="chip">{{ personality?.name }}型</span>
+            <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip">{{ personality?.name }}型</span></Tip>
             <span class="chip" :class="{faded: inst.currentHp<=0}">{{ inst.origin==='bred'?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
           </div>
           <div class="tiny muted">{{ species.dex }}</div>
@@ -79,36 +181,45 @@ function release(): void {
     </div>
 
     <div class="panel" style="margin-top:12px">
-      <div class="bold" style="margin-bottom:8px">属性</div>
+      <div class="bold" style="margin-bottom:8px">属性 <span class="tiny muted" style="font-weight:400">hover看计算</span></div>
       <div class="grid grid-2 tiny">
-        <div>生命：{{ stats.hp }} <span class="muted">(基础 {{ species.base.hp }})</span></div>
-        <div>攻击：{{ stats.atk }} <span class="muted">(基础 {{ species.base.atk }})</span></div>
-        <div>防御：{{ stats.def }} <span class="muted">(基础 {{ species.base.def }})</span></div>
-        <div>速度：{{ stats.spd }} <span class="muted">(基础 {{ species.base.spd }})</span></div>
-        <div>资质IV：{{ inst.iv.hp }}/{{ inst.iv.atk }}/{{ inst.iv.def }}/{{ inst.iv.spd }}</div>
-        <div>成长：×{{ inst.growth }} <span class="muted">亲密度 {{ inst.friendship }}</span></div>
+        <div>生命：<Tip :text="statTip('hp')"><b>{{ stats.hp }}</b></Tip></div>
+        <div>攻击：<Tip :text="statTip('atk')"><b>{{ stats.atk }}</b></Tip></div>
+        <div>防御：<Tip :text="statTip('def')"><b>{{ stats.def }}</b></Tip></div>
+        <div>速度：<Tip :text="statTip('spd')"><b>{{ stats.spd }}</b></Tip></div>
+        <div>资质上限：{{ ivCeil }} <span class="muted">炼妖不封顶</span></div>
+        <div>成长上限：×{{ growthCeil }} <span class="muted">亲密度 {{ inst.friendship }}</span></div>
       </div>
-      <div class="tiny muted" style="margin-top:6px">当前HP：{{ inst.currentHp }}/{{ maxHp(inst) }}</div>
+      <div class="tiny" style="margin-top:6px">
+        资质：生命 {{ inst.iv.hp }} · 攻击 {{ inst.iv.atk }} · 防御 {{ inst.iv.def }} · 速度 {{ inst.iv.spd }}
+        <span v-if="hasOverCeiling" class="bt-tag">超限</span>
+        <span class="muted">　成长 ×{{ inst.growth }}</span>
+      </div>
+      <div class="tiny muted" style="margin-top:4px">当前HP：{{ inst.currentHp }}/{{ maxHp(inst) }}</div>
     </div>
 
     <div class="panel" style="margin-top:12px">
       <div class="bold" style="margin-bottom:8px">特性</div>
-      <div v-if="ability" class="tiny"><span class="chip">{{ ability.name }}</span> {{ ability.description }}</div>
+      <div v-if="ability" class="tiny"><Tip :text="abilityTip(ability)"><span class="chip">{{ ability.name }}</span></Tip> {{ ability.description }}</div>
     </div>
 
     <div class="panel" style="margin-top:12px">
-      <div class="bold" style="margin-bottom:8px">主动技能（独立冷却）</div>
-      <div v-for="s in inst.activeSkills" :key="s" class="tiny skill-row">
-        <span class="bold">{{ SKILL_MAP[s]?.name }}</span>
-        <TypeBadge :type="SKILL_MAP[s]?.type ?? 'normal'" size="sm" />
-        <span class="muted">威力{{ SKILL_MAP[s]?.power || 0 }} · CD{{ SKILL_MAP[s]?.cooldown }}s · {{ SKILL_MAP[s]?.range==='melee'?'近战':'远程' }}</span>
+      <div class="bold" style="margin-bottom:8px">主动技能池 <span class="tiny muted" style="font-weight:400">（已学优先·未学置灰·hover看效果）</span></div>
+      <div class="skill-icon-grid">
+        <Tip v-for="s in activeDisplay" :key="s.id" :text="s.tip">
+          <div class="skill-ic" :class="{ dim: !s.owned }" :style="{ background: s.color }"><span>{{ s.char }}</span></div>
+        </Tip>
       </div>
     </div>
 
     <div class="panel" style="margin-top:12px">
-      <div class="bold" style="margin-bottom:8px">被动技能（梦幻式继承）</div>
-      <div v-if="inst.passiveSkills.length===0" class="tiny muted">无</div>
-      <div v-for="p in inst.passiveSkills" :key="p" class="tiny"><span class="chip">{{ PASSIVE_MAP[p]?.name }}</span> {{ PASSIVE_MAP[p]?.description }}</div>
+      <div class="bold" style="margin-bottom:8px">梦幻被动池 <span class="tiny muted" style="font-weight:400">{{ isBred ? '（继承）' : '（已拥有优先·未拥有置灰）' }}</span></div>
+      <div class="skill-icon-grid">
+        <Tip v-for="p in passiveDisplay" :key="p.id" :text="p.tip">
+          <div class="skill-ic" :class="{ dim: !p.owned }" :style="{ background: p.color }"><span>{{ p.char }}</span></div>
+        </Tip>
+        <span v-if="passiveDisplay.length===0" class="tiny muted">无</span>
+      </div>
     </div>
 
     <div class="panel" style="margin-top:12px" v-if="inst.lineage">
@@ -140,6 +251,6 @@ function release(): void {
 </template>
 
 <style scoped>
-.skill-row { display:flex; align-items:center; gap:6px; padding:3px 0; border-bottom:1px dashed #eee; }
 .chip.faded { opacity:.5; }
+.bt-tag { display:inline-block; margin-left:4px; padding:0 6px; border-radius:6px; background:var(--gold); color:#333; font-weight:800; font-size:11px; }
 </style>

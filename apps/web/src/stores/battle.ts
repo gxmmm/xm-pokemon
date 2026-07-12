@@ -9,22 +9,23 @@ export type BattlePhase = 'fighting' | 'result';
 export const useBattleStore = defineStore('battle', () => {
   const sim = shallowRef<BattleSim | null>(null);
   const mode = ref<'pve' | 'pvp'>('pve');
-  const wild = ref<PokemonInstance | null>(null);
+  /** Wild group (1~3) for PVE; empty for PVP. */
+  const wild = ref<PokemonInstance[]>([]);
   const mapId = ref<string | undefined>(undefined);
   const opponentName = ref<string | undefined>(undefined);
   const phase = ref<BattlePhase>('fighting');
 
   /**
-   * PVE: ordered pveTeam (up to 3) deploys sequentially - 1v1 on field, next
-   * comes in when the active faints. The wild is a single opponent.
+   * PVE: pveTeam (up to 3) deploys all at once (simultaneous) vs a wild group of
+   * 1~3. No sequential rotation anymore (design change).
    */
-  function startWild(inst: PokemonInstance, mId?: string): boolean {
+  function startWild(insts: PokemonInstance[], mId?: string): boolean {
     const game = useGameStore();
     const team = game.pveTeamInstances.filter((p) => p.currentHp > 0);
     const playerTeam = team.length ? team : game.rosterInstances.filter((p) => p.currentHp > 0).slice(0, 3);
     if (playerTeam.length === 0) return false;
-    game.see(inst.speciesId);
-    wild.value = inst;
+    for (const inst of insts) game.see(inst.speciesId);
+    wild.value = insts;
     mapId.value = mId;
     mode.value = 'pve';
     opponentName.value = undefined;
@@ -32,10 +33,11 @@ export const useBattleStore = defineStore('battle', () => {
     sim.value = BattleSim.fromInstances({
       mode: 'pve',
       player: playerTeam,
-      enemy: [inst],
-      deployment: 'sequential',
+      enemy: insts,
+      deployment: 'simultaneous',
       isWild: true,
       speed: game.save?.settings.battleSpeed ?? 1,
+      formation: game.save?.formation,
     });
     return true;
   }
@@ -45,18 +47,18 @@ export const useBattleStore = defineStore('battle', () => {
     const game = useGameStore();
     const team = game.pvpTeamInstances.filter((p) => p.currentHp > 0);
     if (team.length === 0) return false;
-    wild.value = null;
+    wild.value = [];
     mapId.value = undefined;
     mode.value = 'pvp';
     opponentName.value = name;
     phase.value = 'fighting';
-    sim.value = createPvpBattle(team, opponentTeam, game.save?.settings.battleSpeed ?? 1);
+    sim.value = createPvpBattle(team, opponentTeam, game.save?.settings.battleSpeed ?? 1, game.save?.formation);
     return true;
   }
 
   function clear(): void {
     sim.value = null;
-    wild.value = null;
+    wild.value = [];
     phase.value = 'fighting';
   }
 
