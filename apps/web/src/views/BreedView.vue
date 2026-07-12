@@ -114,8 +114,8 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
       <div class="panel" style="margin-bottom:10px;padding:10px">
         <h2 class="h-title" style="margin:0 0 4px;font-size:17px">炼妖（梦幻式）</h2>
         <p class="tiny muted" style="margin:0">
-          两只炼妖产生一只新个体，种族<b>主宠65%/副宠35%</b>概率继承（不融合）。资质=父母均值×(0.8~1.2)、最低1、
-          <span class="gold-txt">不封顶</span>；成长按父母均值波动（封顶1.3）；被动=<b>必带100%保留</b>+父母并集主宠65%/副宠35%。两只父母将被消耗。
+          两只炼妖产生一只新个体，种族<b>主宠65%/副宠35%</b>概率继承（不融合）。资质=父母均值×<b>{0.8/0.9/1.0/1.1/1.2}</b>、最低1、
+          <span class="gold-txt">不封顶</span>；成长=父母均值×<b>{0.9/1.0/1.1}</b>（封顶1.3）；被动=<b>必带100%保留</b>+父母并集主宠65%/副宠35%。两只父母将被消耗。
         </p>
       </div>
 

@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
 import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL } from '@pokemon-online/config';
-import { ivCeiling, growthCeiling } from '@pokemon-online/engine';
+import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import Tip from '../components/Tip.vue';
@@ -18,7 +18,9 @@ const entry = computed(() => (selectedId.value ? game.save?.pokedex[selectedId.v
 const isSeen = computed(() => !!entry.value?.seen);
 
 const ivCeil = computed(() => (species.value ? ivCeiling(species.value.rarity) : 31));
+const ivFloorVal = computed(() => (species.value ? ivFloor(species.value.rarity) : 1));
 const growthCeil = computed(() => (species.value ? growthCeiling(species.value.rarity) : 1.3));
+const growthFloorVal = computed(() => (species.value ? growthFloor(species.value.rarity) : 0.8));
 
 const RARITY_LABEL: Record<Rarity, string> = {
   common: '常见', uncommon: '少见', rare: '稀有', legendary: '传说', mythical: '幻兽',
@@ -94,10 +96,10 @@ function skillTip(s: Skill | undefined): string {
           <div>速度：{{ species.base.spd }}</div>
         </div>
 
-        <div class="sub bold">资质 / 成长上限 <span class="tiny muted" style="font-weight:400">（野外个体在此内随机 · 炼妖不封顶）</span></div>
+        <div class="sub bold">资质 / 成长 <span class="tiny muted" style="font-weight:400">（野生在此内随机 · 炼妖不封顶）</span></div>
         <div class="tiny">
-          资质上限：{{ ivCeil }}（最低1）<br />
-          成长上限：×{{ growthCeil }}
+          资质：{{ ivFloorVal }}~{{ ivCeil }}（野生随机）<br />
+          成长：×{{ growthFloorVal }}~×{{ growthCeil }}（野生随机·炼妖按公式）
         </div>
 
         <div class="sub bold">全部可能技能 <span class="tiny muted" style="font-weight:400">（天生必带·升级习得）</span></div>

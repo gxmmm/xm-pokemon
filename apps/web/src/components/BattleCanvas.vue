@@ -14,7 +14,6 @@ const hit = new Map<string, number>();      // uid -> hit feedback 0..1 (brightn
 const prevHp = new Map<string, number>();
 const prevCell = new Map<string, { x: number; y: number }>();
 let bobPhase = 0;
-let shake = 0;                              // canvas screen-shake 0..1
 const SPRITE = (ARENA_W / BATTLE_GRID.cols) * 1.7; // uniform top-down sprite size
 
 onMounted(() => {
@@ -34,12 +33,6 @@ function render(dt: number): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
-  // screen shake on recent hits (decays each frame)
-  shake = Math.max(0, shake - dt * 4);
-  if (shake > 0.01) {
-    ctx.translate((Math.random() - 0.5) * shake * 8, (Math.random() - 0.5) * shake * 8);
-  }
-
   // oval arena floor (no grid lines)
   drawField(ctx, props.biome ?? 'grass', ARENA_W, ARENA_H);
 
@@ -53,9 +46,9 @@ function render(dt: number): void {
   for (const c of cs) {
     preloadPokemon(c.speciesId, c.side === 'player'); // idempotent; loads newly deployed sprites
     const sp = project(c.pixel.x, c.pixel.y);
-    // hit feedback when HP dropped this frame: brightness flash + recoil + shake
+    // hit feedback when HP dropped this frame: brightness flash + recoil (no screen shake)
     const prev = prevHp.get(c.uid);
-    if (prev !== undefined && c.currentHp < prev - 0.5) { hit.set(c.uid, 1); shake = Math.min(1, shake + 0.5); }
+    if (prev !== undefined && c.currentHp < prev - 0.5) hit.set(c.uid, 1);
     prevHp.set(c.uid, c.currentHp);
     const h = hit.get(c.uid) ?? 0;
     if (h > 0) hit.set(c.uid, Math.max(0, h - dt * 5));

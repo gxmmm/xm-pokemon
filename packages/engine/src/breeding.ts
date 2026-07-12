@@ -13,8 +13,10 @@ import { activeSkillsForLevel, genUid, maxHp, createWildInstance, growthCeiling 
  *    bred offspring is uncapped - breeding is how stats climb past the ceiling.
  *  - Growth (成长) fluctuates around the parents' average (±small random),
  *    capped by the offspring species' rarity ceiling and the 1.3 hard cap.
- *  - Passive skills (梦幻式): union of both parents' passives (dedup); each has
- *    a 50% chance to be retained, up to PASSIVE_SKILL_MAX slots.
+ *  - Passive skills (梦幻式): offspring's intrinsic passives are retained 100%;
+ *    the rest of the parents' union rolls at 主宠 65% / 副宠 35%, up to
+ *    PASSIVE_SKILL_MAX (24) slots - breeding is how a pokemon accumulates a wide
+ *    passive kit across generations (wild is pool-limited to ~5).
  *  - Active skills come from the offspring species' learnset.
  *  - Ability is inherited from a parent, with a very low chance to mutate into
  *    another of the offspring species' abilities.
@@ -32,26 +34,27 @@ export interface BreedResult {
 }
 
 /** Roll a bred offspring's IV: each stat = average of the parents' IVs for that
- *  stat, multiplied by a random 0.8..1.2 factor, rounded, min 1, NOT capped by
- *  the species ceiling (or 31) - breeding is how a stat exceeds the ceiling.
+ *  stat, multiplied by a discrete multiplier picked from {0.8,0.9,1.0,1.1,1.2}
+ *  (expected 80/90/100/110/120%), rounded, min 1, NOT capped by the species
+ *  ceiling (or 31) - breeding is how a stat exceeds the ceiling.
  *  (No rarity floor here - per design the floor is wild-only; breeding uses the
  *  pure formula so stat quality depends on the parents you raise.) */
 function rollBreedIv(a: IV, b: IV): IV {
   const out = { hp: 0, atk: 0, def: 0, spd: 0 } as IV;
   (Object.keys(out) as (keyof IV)[]).forEach((k) => {
     const avg = (a[k] + b[k]) / 2;
-    out[k] = Math.max(1, Math.round(avg * rand.float(0.8, 1.2)));
+    out[k] = Math.max(1, Math.round(avg * rand.pick([0.8, 0.9, 1.0, 1.1, 1.2])));
   });
   return out;
 }
 
-/** Bred growth fluctuates around the parents' average, clamped to the offspring
- *  species' rarity ceiling and the 1.3 hard cap. Can approach but never exceed. */
+/** Bred growth = parents' average × a discrete multiplier picked from
+ *  {0.9,1.0,1.1} (expected 90/100/110%), clamped to the offspring species' rarity
+ *  ceiling and the 1.3 hard cap. Can approach but never exceed. */
 function rollBreedGrowth(parentA: PokemonInstance, parentB: PokemonInstance, ceiling: number): number {
   const base = (parentA.growth + parentB.growth) / 2;
-  const fluct = rand.float(-0.06, 0.06);
-  const g = Math.round((base + fluct) * 100) / 100;
-  return Math.max(GROWTH_MIN, Math.min(ceiling, g));
+  const g = base * rand.pick([0.9, 1.0, 1.1]);
+  return Math.max(GROWTH_MIN, Math.min(ceiling, Math.round(g * 100) / 100));
 }
 
 export function breed(parentA: PokemonInstance, parentB: PokemonInstance): BreedResult {

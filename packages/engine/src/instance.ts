@@ -58,9 +58,23 @@ export function growthCeiling(rarity: string): number {
   }
 }
 
+/** Growth FLOOR by rarity for WILD/caught - rarer species roll a higher minimum
+ *  growth so a rare/legendary wild isn't stuck at 0.8. Breeding ignores this
+ *  (uses its own formula, clamped by GROWTH_MIN..ceiling). */
+export function growthFloor(rarity: string): number {
+  switch (rarity) {
+    case 'legendary':
+    case 'mythical': return 1.2;
+    case 'rare': return 1.1;
+    case 'uncommon': return 1.0;
+    default: return 0.9;
+  }
+}
+
 export function rollGrowth(rarity: string, rng: RNG = Math.random): number {
   const ceil = growthCeiling(rarity);
-  return Math.round(rand.float(GROWTH_MIN, ceil) * 100) / 100;
+  const floor = growthFloor(rarity);
+  return Math.round(rand.float(Math.min(floor, ceil), ceil) * 100) / 100;
 }
 
 /** Active skills a species has learned at or below `level` (up to ACTIVE_SKILL_MAX).

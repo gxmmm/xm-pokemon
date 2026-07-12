@@ -7,8 +7,9 @@ export const ROSTER_MAX = 20;
 export const PVE_TEAM_SIZE = 3;
 export const PVP_TEAM_SIZE = 3;
 export const ACTIVE_SKILL_MAX = 4;
-/** 梦幻式 multi-passive cap: a bred/caught Pokemon can hold at most this many passives. */
-export const PASSIVE_SKILL_MAX = 5;
+/** 梦幻式 multi-passive cap. Wild/caught are pool-limited (~5); breeding can
+ *  accumulate up to this many across generations (24 slots). */
+export const PASSIVE_SKILL_MAX = 24;
 export const IV_MAX = 31;
 export const GROWTH_MIN = 0.8;
 /** Growth (成长) hard cap. Rarest wild species reach this; breeding fluctuates
