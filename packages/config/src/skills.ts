@@ -14,7 +14,7 @@ export const SKILLS: Skill[] = [
   { id: 'body-slam', name: '泰山压顶', type: 'normal', category: 'physical', power: 65, accuracy: 100, cooldown: 3, range: 'melee', rangeTiles: 60, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 0.3 }, description: '可能使对手麻痹。' },
   { id: 'take-down', name: '舍身冲撞', type: 'normal', category: 'physical', power: 90, accuracy: 95, cooldown: 5, range: 'melee', rangeTiles: 70, description: '强力冲撞，有反作用力。' },
   { id: 'double-edge', name: '舍身一击', type: 'normal', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 70, castTime: 0.4, description: '全力一击，反伤较多。' },
-  { id: 'swift', name: '高速星星', type: 'normal', category: 'special', power: 60, accuracy: 0, cooldown: 2.5, range: 'ranged', rangeTiles: 400, priority: 1, description: '必定命中。' },
+  { id: 'swift', name: '高速星星', type: 'normal', category: 'special', power: 60, accuracy: 0, cooldown: 2.5, range: 'ranged', rangeTiles: 400, priority: 1, targetMode: 'all-enemies', areaMultiplier: 0.70, description: '必中星光散射敌方全体；每个目标承受70%伤害。' },
   { id: 'hyper-beam', name: '破坏光线', type: 'normal', category: 'special', power: 150, accuracy: 90, cooldown: 10, range: 'ranged', rangeTiles: 450, castTime: 0.6, description: '强力光束，冷却很长。' },
 
   // ── Fire ──
@@ -28,14 +28,14 @@ export const SKILLS: Skill[] = [
   { id: 'water-gun', name: '水枪', type: 'water', category: 'special', power: 40, accuracy: 100, cooldown: 1.2, range: 'ranged', rangeTiles: 300, description: '射出水柱。' },
   { id: 'bubble', name: '泡泡', type: 'water', category: 'special', power: 40, accuracy: 100, cooldown: 2, range: 'ranged', rangeTiles: 320, effect: { kind: 'debuff', target: 'enemy', stat: 'spd', stages: -1, chance: 0.3 }, description: '可能降低对手速度。' },
   { id: 'aqua-tail', name: '水之尾', type: 'water', category: 'physical', power: 80, accuracy: 90, cooldown: 4, range: 'melee', rangeTiles: 70, description: '用水之尾抽打。' },
-  { id: 'surf', name: '冲浪', type: 'water', category: 'special', power: 90, accuracy: 100, cooldown: 5, range: 'ranged', rangeTiles: 350, description: '掀起巨浪。' },
+  { id: 'surf', name: '冲浪', type: 'water', category: 'special', power: 90, accuracy: 100, cooldown: 5, range: 'ranged', rangeTiles: 350, targetMode: 'all-enemies', areaMultiplier: 0.70, description: '掀起巨浪冲击敌方全体；每个目标承受70%伤害。' },
   { id: 'hydro-pump', name: '水炮', type: 'water', category: 'special', power: 110, accuracy: 80, cooldown: 8, range: 'ranged', rangeTiles: 420, castTime: 0.5, description: '强力水炮。' },
 
   // ── Grass ──
   { id: 'vine-whip', name: '藤鞭', type: 'grass', category: 'physical', power: 45, accuracy: 100, cooldown: 1.3, range: 'melee', rangeTiles: 90, description: '用藤蔓抽打。' },
   { id: 'razor-leaf', name: '飞叶快刀', type: 'grass', category: 'physical', power: 55, accuracy: 95, cooldown: 2.5, range: 'ranged', rangeTiles: 300, priority: 1, effect: { kind: 'status', chance: 0.1 }, description: '锋利叶片，易击中要害。' },
   { id: 'mega-drain', name: '超级吸取', type: 'grass', category: 'special', power: 50, accuracy: 100, cooldown: 3, range: 'ranged', rangeTiles: 320, effect: { kind: 'lifesteal', magnitude: 0.5 }, description: '吸取对手生命回复自身。' },
-  { id: 'petal-dance', name: '花瓣舞', type: 'grass', category: 'special', power: 100, accuracy: 100, cooldown: 7, range: 'ranged', rangeTiles: 340, castTime: 0.4, description: '花瓣旋风攻击。' },
+  { id: 'petal-dance', name: '花瓣舞', type: 'grass', category: 'special', power: 100, accuracy: 100, cooldown: 7, range: 'ranged', rangeTiles: 340, castTime: 0.4, targetMode: 'all-enemies', areaMultiplier: 0.65, description: '花瓣旋风席卷敌方全体；每个目标承受65%伤害。' },
   { id: 'solar-beam', name: '日光束', type: 'grass', category: 'special', power: 120, accuracy: 100, cooldown: 9, range: 'ranged', rangeTiles: 450, castTime: 0.8, description: '蓄力后发出光束。' },
 
   // ── Electric ──
@@ -48,7 +48,7 @@ export const SKILLS: Skill[] = [
   { id: 'powder-snow', name: '细雪', type: 'ice', category: 'special', power: 40, accuracy: 100, cooldown: 1.5, range: 'ranged', rangeTiles: 300, effect: { kind: 'status', target: 'enemy', status: 'freeze', chance: 0.1 }, description: '可能冻结对手。' },
   { id: 'ice-fang', name: '冰牙', type: 'ice', category: 'physical', power: 65, accuracy: 95, cooldown: 3.5, range: 'melee', rangeTiles: 60, effect: { kind: 'status', target: 'enemy', status: 'freeze', chance: 0.1 }, description: '冰冻撕咬。' },
   { id: 'ice-beam', name: '冰冻光束', type: 'ice', category: 'special', power: 90, accuracy: 100, cooldown: 5, range: 'ranged', rangeTiles: 380, effect: { kind: 'status', target: 'enemy', status: 'freeze', chance: 0.1 }, description: '可能冻结对手。' },
-  { id: 'blizzard', name: '暴风雪', type: 'ice', category: 'special', power: 110, accuracy: 70, cooldown: 8, range: 'ranged', rangeTiles: 420, castTime: 0.5, effect: { kind: 'status', target: 'enemy', status: 'freeze', chance: 0.3 }, description: '猛烈暴风雪。' },
+  { id: 'blizzard', name: '暴风雪', type: 'ice', category: 'special', power: 110, accuracy: 70, cooldown: 8, range: 'ranged', rangeTiles: 420, castTime: 0.5, targetMode: 'all-enemies', areaMultiplier: 0.65, effect: { kind: 'status', target: 'enemy', status: 'freeze', chance: 0.3 }, description: '猛烈暴风雪覆盖敌方全体；每个目标承受65%伤害，并可能冰冻。' },
 
   // ── Fighting ──
   { id: 'karate-chop', name: '空手劈', type: 'fighting', category: 'physical', power: 50, accuracy: 100, cooldown: 1.5, range: 'melee', rangeTiles: 60, priority: 1, description: '手刀劈砍。' },
@@ -63,13 +63,13 @@ export const SKILLS: Skill[] = [
   // ── Ground ──
   { id: 'mud-slap', name: '泥巴攻击', type: 'ground', category: 'special', power: 40, accuracy: 100, cooldown: 2, range: 'ranged', rangeTiles: 300, description: '泼泥巴。' },
   { id: 'bone-club', name: '骨棒乱打', type: 'ground', category: 'physical', power: 65, accuracy: 85, cooldown: 3, range: 'melee', rangeTiles: 80, effect: { kind: 'stun', target: 'enemy', chance: 0.1, duration: 1 }, description: '可能使对手畏缩。' },
-  { id: 'earthquake', name: '地震', type: 'ground', category: 'physical', power: 100, accuracy: 100, cooldown: 7, range: 'ranged', rangeTiles: 360, castTime: 0.4, description: '大范围地震。' },
+  { id: 'earthquake', name: '地震', type: 'ground', category: 'physical', power: 100, accuracy: 100, cooldown: 7, range: 'ranged', rangeTiles: 360, castTime: 0.4, targetMode: 'all-enemies', areaMultiplier: 0.70, description: '震动地面波及敌方全体；每个目标承受70%伤害。' },
   { id: 'dig', name: '挖洞', type: 'ground', category: 'physical', power: 80, accuracy: 100, cooldown: 5, range: 'melee', rangeTiles: 80, castTime: 0.5, description: '钻入地下再突袭。' },
 
   // ── Flying ──
   { id: 'wing-attack', name: '翅膀攻击', type: 'flying', category: 'physical', power: 60, accuracy: 100, cooldown: 2.5, range: 'melee', rangeTiles: 90, description: '用翅膀拍击。' },
   { id: 'drill-peck', name: '啄钻', type: 'flying', category: 'physical', power: 80, accuracy: 100, cooldown: 4, range: 'melee', rangeTiles: 80, description: '旋转喙啄击。' },
-  { id: 'air-cutter', name: '空气利刃', type: 'flying', category: 'special', power: 75, accuracy: 95, cooldown: 4, range: 'ranged', rangeTiles: 340, effect: { kind: 'status', chance: 0.1 }, description: '锋利风刃，易击中要害。' },
+  { id: 'air-cutter', name: '空气利刃', type: 'flying', category: 'special', power: 75, accuracy: 95, cooldown: 4, range: 'ranged', rangeTiles: 340, targetMode: 'all-enemies', areaMultiplier: 0.70, effect: { kind: 'status', chance: 0.1 }, description: '风刃横扫敌方全体；每个目标承受70%伤害，且易击中要害。' },
   { id: 'brave-bird', name: '勇鸟猛击', type: 'flying', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 100, castTime: 0.4, description: '猛烈俯冲，有反伤。' },
 
   // ── Psychic ──
@@ -87,7 +87,7 @@ export const SKILLS: Skill[] = [
   // ── Rock ──
   { id: 'rock-throw', name: '落石', type: 'rock', category: 'physical', power: 50, accuracy: 90, cooldown: 2, range: 'ranged', rangeTiles: 300, description: '投掷岩石。' },
   { id: 'rock-tomb', name: '岩石封锁', type: 'rock', category: 'physical', power: 60, accuracy: 95, cooldown: 3.5, range: 'ranged', rangeTiles: 320, effect: { kind: 'debuff', target: 'enemy', stat: 'spd', stages: -1, chance: 1 }, description: '降低对手速度。' },
-  { id: 'rock-slide', name: '岩崩', type: 'rock', category: 'physical', power: 75, accuracy: 90, cooldown: 4, range: 'ranged', rangeTiles: 340, effect: { kind: 'stun', target: 'enemy', chance: 0.3, duration: 1 }, description: '可能使对手畏缩。' },
+  { id: 'rock-slide', name: '岩崩', type: 'rock', category: 'physical', power: 75, accuracy: 90, cooldown: 4, range: 'ranged', rangeTiles: 340, targetMode: 'all-enemies', areaMultiplier: 0.70, effect: { kind: 'stun', target: 'enemy', chance: 0.3, duration: 1 }, description: '落石轰击敌方全体；每个目标承受70%伤害，并可能畏缩。' },
   { id: 'stone-edge', name: '尖石攻击', type: 'rock', category: 'physical', power: 100, accuracy: 80, cooldown: 6, range: 'melee', rangeTiles: 80, castTime: 0.3, effect: { kind: 'status', chance: 0.15 }, description: '高要害率。' },
 
   // ── Ghost ──

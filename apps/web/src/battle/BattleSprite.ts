@@ -107,9 +107,10 @@ export function drawPokemon(ctx: CanvasRenderingContext2D, o: DrawPokemonOpts): 
     ctx.translate(-o.cx, 0);
   }
   // squash & stretch on hit: horizontal compress, vertical stretch, eases back
-  // as `h` decays. Combined with faint shrink.
-  const sx = (1 - h * 0.14) * faintScale;
-  const sy = (1 + h * 0.16) * faintScale;
+  // as `h` decays. Combined with faint shrink. (Toned down from 0.14/0.16 so
+  // rapid hits don't read as twitching.)
+  const sx = (1 - h * 0.12) * faintScale;
+  const sy = (1 + h * 0.14) * faintScale;
   const cy2 = o.cy + s * 0.05; // sprite vertical pivot
   ctx.translate(o.cx, cy2);
   ctx.scale(sx, sy);
@@ -117,10 +118,10 @@ export function drawPokemon(ctx: CanvasRenderingContext2D, o: DrawPokemonOpts): 
 
   // filter: grayscale (fainted) + brightness flash (hit). Brightness flash
   // replaces the old solid-white rect overlay so a hit reads as the sprite
-  // flashing bright, not a white box.
+  // flashing bright, not a white box. (Capped at +1.0 so it isn't blinding.)
   let filter = '';
   if (o.gray) filter += `grayscale(${o.gray}) brightness(0.8) `;
-  if (h > 0) filter += `brightness(${1 + h * 1.6}) saturate(0.5) `;
+  if (h > 0) filter += `brightness(${1 + h * 1.0}) saturate(0.5) `;
   ctx.filter = filter || 'none';
 
   if (img) {

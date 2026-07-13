@@ -230,7 +230,10 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       else if (p.skillBias === 'power') score *= 0.5;
     } else {
       const ed = expectedDamage(c, target, skill);
-      score = ed;
+      const spreadDamage = skill.targetMode === 'all-enemies'
+        ? enemies.reduce((sum, enemy) => sum + expectedDamage(c, enemy, skill), 0) * (skill.areaMultiplier ?? 0.7)
+        : ed;
+      score = spreadDamage;
       // B: execute - finish near-dead targets
       if (targetExec) score *= 1.5;
       // D: focus fire nudge toward the team focus target

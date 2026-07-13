@@ -462,12 +462,25 @@ export class BattleSim {
     }
   }
 
-  private dealDamage(attacker: BattleCombatant, defender: BattleCombatant, skillId: string): { dealt: number; immune: boolean } {
+  private dealDamage(
+    attacker: BattleCombatant,
+    defender: BattleCombatant,
+    skillId: string,
+    areaMultiplier = 1,
+    spread?: { targetUids: string[]; hitIndex: number },
+  ): { dealt: number; immune: boolean } {
     const skill = SKILL_MAP[skillId] ?? NORMAL_ATTACK;
     const res = computeDamage(attacker, defender, skill, this.rng);
     for (const m of res.log) this.emit('info', attacker.uid, defender.uid, skillId, undefined, m);
     if (res.missed) {
-      this.emit('damage', attacker.uid, defender.uid, skillId, 0, undefined, { kind: 'miss', type: skill.type, missed: true });
+      this.emit('damage', attacker.uid, defender.uid, skillId, 0, undefined, {
+        kind: 'miss', type: skill.type, missed: true,
+        targetUids: spread?.targetUids,
+        hitIndex: spread?.hitIndex,
+        hitCount: spread?.targetUids.length,
+        secondary: spread ? spread.hitIndex > 0 : undefined,
+        impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
+      });
       return { dealt: 0, immune: false };
     }
     if (res.immune) {
@@ -479,6 +492,10 @@ export class BattleSim {
       return { dealt: 0, immune: true };
     }
     let dmg = res.damage;
+    // Spread moves trade per-target damage for pressure across the opposing
+    // formation. The multiplier is applied before shields, so protection still
+    // absorbs the actual incoming hit correctly.
+    if (areaMultiplier !== 1) dmg = Math.max(1, Math.floor(dmg * areaMultiplier));
     // Ranged normal attacks fire from a safe distance, so they hit softer than
     // melee normal attacks -- a balance lever so kiting isn't free DPS. Skills
     // (the ranged type's real weapons, with CDs) are unaffected.
@@ -492,8 +509,17 @@ export class BattleSim {
       dmg -= absorbed;
     }
     defender.currentHp -= dmg;
-    this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined, { kind: 'impact', type: skill.type, amount: dmg });
-    if (defender.currentHp <= 0) {
+    const ko = defender.currentHp <= 0;
+    this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined, {
+      kind: 'impact', type: skill.type, amount: dmg,
+      crit: res.crit, effectiveness: res.effectiveness, ko,
+      targetUids: spread?.targetUids,
+      hitIndex: spread?.hitIndex,
+      hitCount: spread?.targetUids.length,
+      secondary: spread ? spread.hitIndex > 0 : undefined,
+      impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
+    });
+    if (ko) {
       this.faint(defender);
       // moxie
       if (attacker.ability === 'moxie' && attacker.alive) this.addStatStage(attacker, 'atk', 1);
@@ -519,31 +545,39 @@ export class BattleSim {
     if (!skill) return;
     c.cooldowns[skillId] = skill.cooldown;
     const target = this.find(c.currentTargetUid);
-    // D: mark hard-CC incoming on the target so allies don't double-CC it this
-    // window (team CC coordination). Covers both damage+CC (ice-beam) and pure
-    // status (sleep-powder) hard-CC aimed at an enemy.
-    if (target && skill.effect?.target === 'enemy' && isHardCc(skill)) {
-      target.ccIncomingUntil = this.state.time + 0.6;
+    const targets = skill.targetMode === 'all-enemies'
+      ? this.state.combatants.filter((x) => x.side !== c.side && x.alive)
+      : target && target.alive ? [target] : [];
+    const primary = targets.includes(target as BattleCombatant) ? target : targets[0];
+    const targetUids = targets.map((x) => x.uid);
+
+    // Mark every potential victim of a spread hard-CC so allied AI does not
+    // pile redundant crowd-control onto the same incoming area cast.
+    if (skill.effect?.target === 'enemy' && isHardCc(skill)) {
+      for (const victim of targets) victim.ccIncomingUntil = this.state.time + 0.6;
     }
     if (skill.power > 0) {
-      if (!target || !target.alive) return;
-      const vfxKind = skill.range === 'ranged' ? 'projectile' : 'melee';
-      this.emit('skill', c.uid, target.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: vfxKind, type: skill.type });
-      const { dealt } = this.dealDamage(c, target, skillId);
-      // secondary effect on damage skills
-      if (skill.effect && target.alive) {
-        const e = skill.effect;
-        const applyChance = e.chance ?? 1;
-        if (this.rng() < applyChance) {
-          this.applyEffect(c, e.target === 'self' ? c : target, skillId, dealt);
+      if (targets.length === 0 || !primary) return;
+      const vfxKind = skill.targetMode === 'all-enemies' ? 'burst' : skill.range === 'ranged' ? 'projectile' : 'melee';
+      this.emit('skill', c.uid, primary.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, {
+        kind: vfxKind, type: skill.type, targetUids: skill.targetMode === 'all-enemies' ? targetUids : undefined,
+      });
+      const areaMultiplier = skill.targetMode === 'all-enemies' ? skill.areaMultiplier ?? 0.7 : 1;
+      for (let hitIndex = 0; hitIndex < targets.length; hitIndex++) {
+        const victim = targets[hitIndex]!;
+        const { dealt } = this.dealDamage(c, victim, skillId, areaMultiplier,
+          skill.targetMode === 'all-enemies' ? { targetUids, hitIndex } : undefined);
+        // Secondary effects roll once per hit target, matching the damage event.
+        if (skill.effect && victim.alive) {
+          const e = skill.effect;
+          if (this.rng() < (e.chance ?? 1)) this.applyEffect(c, e.target === 'self' ? c : victim, skillId, dealt);
         }
       }
     } else {
-      // status / utility
+      // Status / utility skills remain single-target or self-target.
       this.emit('skill', c.uid, target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       const e = skill.effect;
       const tgt = e?.target === 'enemy' ? target : c;
-      // accuracy for enemy-target status
       if (e?.target === 'enemy' && tgt) {
         const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
         if (this.rng() > acc) {

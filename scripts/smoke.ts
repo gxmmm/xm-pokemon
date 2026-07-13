@@ -1,5 +1,7 @@
 import { BattleSim, createWildInstance, breed, createStarter, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP } from '@pokemon-online/config';
+import type { BattleCombatant } from '@pokemon-online/shared';
+import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -49,6 +51,38 @@ const pvp = new BattleSim({ mode: 'pvp', player: teamA, enemy: teamB, isWild: fa
 pvp.resolve(180);
 assert(pvp.state.ended, 'pvp ended');
 console.log('✓ pvp battle winner:', pvp.state.winner);
+
+// 3a. Structured presentation outcomes: a real damaging hit carries the
+// director-facing result fields, and a lethal hit is explicitly tagged as KO.
+const outcomeEvents = pvp.state.events.filter((e) => e.type === 'damage' && !!e.actor && (e.amount ?? 0) > 0);
+assert(outcomeEvents.length > 0, 'pvp emitted damaging events with actors');
+assert(outcomeEvents.some((e) => typeof e.vfx?.crit === 'boolean' && typeof e.vfx?.effectiveness === 'number' && typeof e.vfx?.ko === 'boolean'), 'damage events carry structured director outcomes');
+assert(outcomeEvents.some((e) => e.vfx?.ko), 'a defeated combatant has a KO-tagged damage event');
+console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e.vfx?.ko).length);
+
+// 3aa. Spread skills: use a controlled simultaneous 3v3 state so Surf must hit
+// every opposing active target and expose ordered spread metadata to the client.
+{
+  const surfUser = createWildInstance(131, 50);
+  surfUser.activeSkills = ['surf'];
+  const victims = [createWildInstance(6, 25), createWildInstance(9, 25), createWildInstance(3, 25)];
+  const area = new BattleSim({ mode: 'pvp', player: [surfUser], enemy: victims, isWild: false, seed: 7 });
+  const caster = area.state.combatants.find((c) => c.uid === surfUser.uid)!;
+  const enemies = area.state.combatants.filter((c) => c.side === 'enemy');
+  caster.currentTargetUid = enemies[0]!.uid;
+  (area as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(caster, 'surf');
+  const hits = area.state.events.filter((e) => e.type === 'damage' && e.skillId === 'surf' && e.actor === caster.uid);
+  assert(hits.length === enemies.length, `surf spread hits every enemy (${hits.length}/${enemies.length})`);
+  assert(hits.every((e, i) => e.vfx?.targetUids?.length === enemies.length && e.vfx.hitIndex === i && e.vfx.hitCount === enemies.length), 'spread damage events carry ordered target metadata');
+  assert(hits.slice(1).every((e) => e.vfx?.secondary && (e.vfx.impactDelay ?? 0) > 0), 'secondary spread hits are marked and staggered');
+  console.log('✓ spread skill Surf:', hits.length, 'targets');
+}
+
+// 3ab. Every configured move has a visual direction. This prevents future skill
+// additions from silently falling back to a generic anonymous projectile.
+const FX_FAMILIES = new Set(['orb', 'bolt', 'beam', 'wave', 'storm', 'meteor', 'blade', 'dash', 'fang', 'drain', 'curse', 'guard', 'heal', 'powder', 'rune']);
+for (const skill of Object.values(SKILL_MAP)) assert(FX_FAMILIES.has(skillFxProfile(skill.id, skill.type).family), `skill visual profile: ${skill.id}`);
+console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
 
 // 3b. AI behavior: reactive interrupts (A) + team CC coordination (D). Run
 //     several high-level 3v3 matchups (so big windup nukes + hard-CC moves are

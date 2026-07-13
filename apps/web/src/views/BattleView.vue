@@ -11,6 +11,7 @@ import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import BattleCanvas from '../components/BattleCanvas.vue';
 import type { Biome } from '../battle/BattleField.ts';
+import { interpolateBattle, snapshotBattle, type BattlePresentation, type BattleSnapshot } from '../battle/PresentationTimeline.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
@@ -27,24 +28,45 @@ const canvasRef = ref<InstanceType<typeof BattleCanvas> | null>(null);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
-const safeSim = computed<BattleSim>(() => sim.value as BattleSim);
 // skill-cast avatar flash: uid -> intensity 0..1, set to 1 on a 'skill' event,
 // decays each frame. Reset when a new battle (sim) starts.
 const skillFlash = ref<Record<string, number>>({});
 const interruptFlash = ref<Record<string, number>>({});
-let lastSeq = 0;
-let hitStop = 0; // hit-stop freeze seconds; sim.tick passes ~0.08x dt while > 0
-watch(sim, () => { lastSeq = 0; hitStop = 0; skillFlash.value = {}; interruptFlash.value = {}; });
+const PRESENTATION_DELAY = 0.16; // seconds: enough director lead-in without feeling laggy
+const SNAPSHOT_HISTORY = 2.5;
+const presentation = ref<BattlePresentation | null>(null);
+const directorForecast = ref<import('@pokemon-online/shared').BattleEvent[]>([]);
+let snapshots: BattleSnapshot[] = [];
+let presentationTime = 0;
+let presentationHold = 0; // presentation-only hit-stop; the simulator never slows
+let lastPresentationSeq = 0;
+
+watch(sim, (next) => {
+  presentation.value = null;
+  snapshots = [];
+  presentationTime = 0;
+  presentationHold = 0;
+  directorForecast.value = [];
+  lastPresentationSeq = 0;
+  skillFlash.value = {};
+  interruptFlash.value = {};
+  if (next) captureSnapshot(next);
+}, { immediate: true });
 function avatarStyle(uid: string): Record<string, string> {
   const f = skillFlash.value[uid] ?? 0;
   if (f <= 0) return {};
   return {
-    filter: `brightness(${1 + f * 2.5}) drop-shadow(0 0 ${f * 8}px rgba(255,255,255,${f * 0.9}))`,
-    transform: `scale(${1 + f * 0.25})`,
+    filter: `brightness(${1 + f * 1.3}) drop-shadow(0 0 ${f * 8}px rgba(255,255,255,${f * 0.8}))`,
+    transform: `scale(${1 + f * 0.14})`,
   };
 }
 function interruptVal(uid: string): number { return interruptFlash.value[uid] ?? 0; }
-const combatants = computed<BattleCombatant[]>(() => { void tick.value; return sim.value?.state.combatants ?? []; });
+// The canvas and side cards read the same delayed state, so HP/status changes
+// arrive together with their impact effects rather than jumping ahead of them.
+const combatants = computed<BattleCombatant[]>(() => {
+  void tick.value;
+  return presentation.value?.combatants ?? sim.value?.state.combatants ?? [];
+});
 const playerComs = computed(() => combatants.value.filter((c) => c.side === 'player'));
 const enemyComs = computed(() => combatants.value.filter((c) => c.side === 'enemy'));
 const log = computed<string[]>(() => {
@@ -69,6 +91,10 @@ const biome = computed<Biome>(() => {
   if (id.includes('sea') || id.includes('water')) return 'water';
   return 'grass';
 });
+function skillTargetLabel(id: string): string {
+  const sk = SKILL_MAP[id];
+  return sk?.targetMode === 'all-enemies' ? `敌方全体（单目标伤害 ${Math.round((sk.areaMultiplier ?? 0.7) * 100)}%）` : '敌方单体';
+}
 function skillName(id: string | undefined): string {
   if (!id) return '';
   return SKILL_MAP[id]?.name ?? (id === '__normal__' ? '普通攻击' : id);
@@ -80,59 +106,105 @@ function instanceName(uid: string): string {
 
 // per-skill cooldown chips for a combatant: each active skill + the normal attack.
 // ready (cd<=0) -> bright skill initial; on cooldown -> dim countdown number.
-function skillCds(c: BattleCombatant): { id: string; name: string; char: string; color: string; cd: number }[] {
+function skillCds(c: BattleCombatant): { id: string; name: string; char: string; color: string; cd: number; target: string }[] {
   const list = c.activeSkills.map((id) => {
     const sk = SKILL_MAP[id];
-    return { id, name: sk?.name ?? id, char: sk?.name?.[0] ?? '?', color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A', cd: c.cooldowns[id] ?? 0 };
+    return { id, name: sk?.name ?? id, char: sk?.name?.[0] ?? '?', color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A', cd: c.cooldowns[id] ?? 0, target: skillTargetLabel(id) };
   });
-  list.push({ id: '__normal__', name: '普通攻击', char: '普', color: '#6b7280', cd: c.normalAttackCd });
+  list.push({ id: '__normal__', name: '普通攻击', char: '普', color: '#6b7280', cd: c.normalAttackCd, target: '敌方单体' });
   return list;
 }
 const STATUS_TAG: Record<string, string> = { burn: '灼', poison: '毒', paralyze: '痹', freeze: '冰', sleep: '眠', confuse: '乱' };
+
+function captureSnapshot(s: BattleSim): void {
+  const time = s.state.time;
+  const last = snapshots[snapshots.length - 1];
+  if (!last || time > last.time) snapshots.push(snapshotBattle(time, s.state.combatants));
+  else if (last.time === time) snapshots[snapshots.length - 1] = snapshotBattle(time, s.state.combatants);
+  const keepFrom = time - SNAPSHOT_HISTORY;
+  while (snapshots.length > 2 && snapshots[1].time < keepFrom) snapshots.shift();
+}
+
+function presentationCombatants(at: number): BattleCombatant[] {
+  if (snapshots.length === 0) return [];
+  let before = snapshots[0];
+  let after = snapshots[snapshots.length - 1];
+  for (let i = 1; i < snapshots.length; i++) {
+    if (snapshots[i].time >= at) { after = snapshots[i]; before = snapshots[i - 1]; break; }
+  }
+  return interpolateBattle(before, after, at);
+}
+
+function updatePresentation(s: BattleSim, dtScaled: number): void {
+  captureSnapshot(s);
+  // A manual resolve / a long suspended browser frame can jump simulation time
+  // far ahead without intermediate snapshots. Do not turn that into a minute of
+  // catch-up playback; snap cleanly to the resolved state instead.
+  if (s.state.time - presentationTime > 0.75) {
+    presentationTime = s.state.time;
+    presentationHold = 0;
+    snapshots = [snapshotBattle(s.state.time, s.state.combatants)];
+  }
+  // When the battle is over, drain the remaining delayed timeline all the way
+  // to its final frame before showing the result panel.
+  const target = s.isOver ? s.state.time : Math.max(0, s.state.time - PRESENTATION_DELAY);
+  if (presentationHold > 0) presentationHold = Math.max(0, presentationHold - dtScaled);
+  else {
+    // Catch up faster after an impact pause, but never overtake the planned
+    // presentation delay. Normal playback remains exactly at battle speed.
+    const gap = Math.max(0, target - presentationTime);
+    presentationTime = Math.min(target, presentationTime + dtScaled * (gap > 0.035 ? 2.4 : 1));
+  }
+  const events = s.state.events.filter((e) => e.t <= presentationTime + 0.001);
+  presentation.value = { time: presentationTime, combatants: presentationCombatants(presentationTime), events };
+  // A small look-ahead is director-only: the canvas may pre-aim its camera but
+  // will not instantiate VFX until those events enter `presentation.events`.
+  directorForecast.value = s.state.events.filter((e) => e.t > presentationTime + 0.001 && e.t <= s.state.time + 0.001);
+}
+
+function processPresentationEvents(events: readonly import('@pokemon-online/shared').BattleEvent[]): void {
+  for (const e of events) {
+    if ((e.seq ?? 0) <= lastPresentationSeq) continue;
+    if (e.type === 'skill' && e.actor) skillFlash.value[e.actor] = 1;
+    if (e.type === 'info' && e.actor && /被打断/.test(e.message ?? '')) interruptFlash.value[e.actor] = 1;
+  }
+  if (events.length) lastPresentationSeq = Math.max(lastPresentationSeq, events[events.length - 1].seq ?? 0);
+}
+
+function onCanvasImpact(intensity: number): void {
+  // A high-impact moment holds only the presentation cursor. The simulator,
+  // cooldowns, AI, and authoritative results keep progressing normally.
+  presentationHold = Math.max(presentationHold, Math.min(0.20, 0.075 + intensity * 0.10));
+}
 
 function frame(now: number): void {
   const realDt = Math.min(0.05, (now - (frame as unknown as { last?: number }).last!) / 1000);
   (frame as unknown as { last?: number }).last = now;
   const s = sim.value;
   if (s) {
-    // scan new events first: side-panel avatar flashes + hit-stop trigger.
-    // hit-stop fires on real hits only (actor present, not DOT), scaled by the
-    // share of target maxHp dealt (3..9s cap -> feels like a 60-90ms freeze).
-    const evs = s.state.events;
-    for (const e of evs) {
-      if ((e.seq ?? 0) <= lastSeq) continue;
-      if (e.type === 'skill' && e.actor) skillFlash.value[e.actor] = 1;
-      if (e.type === 'info' && e.actor && /被打断/.test(e.message ?? '')) interruptFlash.value[e.actor] = 1;
-      if (e.type === 'damage' && e.actor && (e.amount ?? 0) > 0) {
-        const tgt = s.state.combatants.find((c) => c.uid === e.target);
-        if (tgt) hitStop = Math.max(hitStop, Math.min(0.09, Math.max(0.03, (e.amount ?? 0) / tgt.maxHp * 1.4)));
-      }
+    const dtScaled = running.value ? realDt * speed.value : 0;
+    // Authoritative simulation is intentionally never slowed for spectacle.
+    if (!s.isOver && running.value) {
+      s.tick(dtScaled);
+      tick.value++;
     }
-    if (evs.length) lastSeq = Math.max(lastSeq, evs[evs.length - 1].seq ?? 0);
+    updatePresentation(s, dtScaled);
+    processPresentationEvents(presentation.value?.events ?? []);
     for (const k of Object.keys(skillFlash.value)) {
-      const v = skillFlash.value[k] - realDt * 4;
+      const v = skillFlash.value[k] - realDt * 5;
       if (v <= 0) delete skillFlash.value[k]; else skillFlash.value[k] = v;
     }
     for (const k of Object.keys(interruptFlash.value)) {
       const v = interruptFlash.value[k] - realDt * 3;
       if (v <= 0) delete interruptFlash.value[k]; else interruptFlash.value[k] = v;
     }
-
-    // advance the sim; during hit-stop nearly freeze it (0.08x) so the impact
-    // frame lands with weight. Render below still gets full dt so VFX (burst,
-    // flash, particles) keep animating through the freeze.
-    if (!s.isOver && running.value) {
-      const dtScaled = realDt * speed.value;
-      s.tick(hitStop > 0 ? dtScaled * 0.08 : dtScaled);
-      tick.value++;
-      hitStop = Math.max(0, hitStop - dtScaled);
-    }
+    // Effects/camera continue through presentation hit-stop, while the delayed
+    // combat state remains held on the impact frame.
     canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   }
-  if (s && s.isOver && !ended.value) onEnd();
+  if (s && s.isOver && !ended.value && presentationTime >= s.state.time - 0.001) onEnd();
   raf = requestAnimationFrame(frame);
 }
-
 function onEnd(): void {
   ended.value = true;
   running.value = false;
@@ -254,7 +326,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           </div>
           <div class="mc-skills">
             <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
-            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
+            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + ' · ' + s.target + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
               <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
               <span v-else>{{ s.char }}</span>
             </div>
@@ -267,7 +339,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <BattleCanvas ref="canvasRef" :sim="safeSim" :biome="biome" />
+        <BattleCanvas ref="canvasRef" :presentation="presentation ?? undefined" :forecast="directorForecast" :biome="biome" @impact="onCanvasImpact" />
         <!-- log + controls overlaid on the arena's black margins (immersive) -->
         <div class="arena-controls">
           <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
@@ -290,7 +362,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           </div>
           <div class="mc-skills">
             <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
-            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
+            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + ' · ' + s.target + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
               <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
               <span v-else>{{ s.char }}</span>
             </div>

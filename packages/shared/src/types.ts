@@ -93,6 +93,11 @@ export interface SkillEffect {
  * A normal attack (id 'struggle'/'tackle-ish') is always available so output
  * never stops when every skill is on cooldown.
  */
+/** Target pattern for an active move. `all-enemies` is a 3v3 spread attack:
+ * every opposing active combatant is hit, with the move's `areaMultiplier`
+ * applied to each target's final damage. */
+export type SkillTargetMode = 'single' | 'all-enemies';
+
 export interface Skill {
   id: string;
   name: string;
@@ -104,6 +109,9 @@ export interface Skill {
   range: 'melee' | 'ranged';
   rangeTiles: number; // effective distance in arena units
   castTime?: number; // windup seconds (default 0)
+  targetMode?: SkillTargetMode; // default single-target
+  /** Per-target final-damage multiplier for an all-enemies move (usually < 1). */
+  areaMultiplier?: number;
   effect?: SkillEffect;
   priority?: number; // AI tie-breaker, higher = preferred
   description: string;
@@ -434,6 +442,18 @@ export interface BattleVfx {
   amount?: number;
   status?: StatusKind;
   missed?: boolean;
+  /** Structured combat outcomes used by the presentation director. These are
+   * deliberately data, not log-text parsing, so localization cannot alter VFX. */
+  crit?: boolean;
+  effectiveness?: number;
+  ko?: boolean;
+  /** Spread-attack metadata used to keep the first target as the camera's main
+   * impact while later targets land as short, readable secondary beats. */
+  targetUids?: string[];
+  hitIndex?: number;
+  hitCount?: number;
+  secondary?: boolean;
+  impactDelay?: number;
 }
 
 export interface BattleEvent {
