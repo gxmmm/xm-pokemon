@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useGameStore } from '../stores/game.ts';
 import { SHOP_ITEMS, ITEM_MAP } from '@pokemon-online/config';
+import BackHub from '../components/BackHub.vue';
 
 const game = useGameStore();
 const qty = ref<Record<string, number>>({});
@@ -22,7 +23,10 @@ function buy(id: string): void {
     <div class="panel" style="margin-bottom:12px">
       <div class="between">
         <h2 class="h-title" style="margin:0">商店</h2>
-        <span class="chip">💰 {{ game.save.money }}</span>
+        <div class="row" style="gap:8px;align-items:center">
+          <span class="chip">💰 {{ game.save.money }}</span>
+          <BackHub />
+        </div>
       </div>
     </div>
     <div class="grid grid-2">

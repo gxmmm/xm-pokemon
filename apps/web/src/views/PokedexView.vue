@@ -6,6 +6,7 @@ import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import Tip from '../components/Tip.vue';
+import BackHub from '../components/BackHub.vue';
 import type { PassiveSkill, Rarity, Ability, Skill } from '@pokemon-online/shared';
 import { DEX_REVEAL_ALL } from '@pokemon-online/shared';
 
@@ -65,7 +66,10 @@ function skillTip(s: Skill | undefined): string {
       <div class="panel" style="margin-bottom:12px">
         <div class="between">
           <h2 class="h-title" style="margin:0;font-size:18px">宝可梦图鉴</h2>
-          <span class="chip">收集 {{ caught }}/151 · 见过 {{ seen }}</span>
+          <div class="row" style="gap:8px;align-items:center">
+            <span class="chip">收集 {{ caught }}/151 · 见过 {{ seen }}</span>
+            <BackHub />
+          </div>
         </div>
       </div>
       <div class="grid grid-4">
@@ -175,8 +179,7 @@ function skillTip(s: Skill | undefined): string {
 <style scoped>
 .dex-layout { display:flex; gap:12px; align-items:flex-start; }
 .dex-left { flex:1; min-width:0; }
-.dex-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
-@media (max-width: 900px) { .dex-layout { flex-direction:column; } .dex-right { width:100%; position:static; max-height:none; } }
+.dex-right { width: 460px; flex-shrink:0; overscroll-behavior:contain; }
 .dex-cell {
   background: var(--panel); color: var(--ink); border-radius: 10px; padding: 8px 6px;
   text-align: center; position: relative; box-shadow: 0 2px 0 rgba(0,0,0,.12);

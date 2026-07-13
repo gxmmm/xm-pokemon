@@ -268,6 +268,15 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
         <BattleCanvas ref="canvasRef" :sim="safeSim" :biome="biome" />
+        <!-- log + controls overlaid on the arena's black margins (immersive) -->
+        <div class="arena-controls">
+          <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
+          <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
+          <button class="sm ghost" @click="skip">⏭</button>
+        </div>
+        <div class="arena-log">
+          <div v-for="(l, i) in log" :key="i" class="tiny">{{ l }}</div>
+        </div>
       </div>
 
       <!-- RIGHT: enemy team (outside arena) -->
@@ -291,16 +300,6 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="log panel">
-      <div v-for="(l, i) in log" :key="i" class="tiny">{{ l }}</div>
-    </div>
-
-    <div class="controls">
-      <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
-      <button class="sm ghost" @click="running = !running">{{ running ? '⏸ 暂停' : '▶ 继续' }}</button>
-      <button class="sm ghost" @click="skip">⏭ 跳过演算</button>
     </div>
 
     <div class="modal-backdrop" v-if="ended">
@@ -351,12 +350,12 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 </template>
 
 <style scoped>
-.battle { display:flex; flex-direction:column; gap:8px; }
+.battle { display:flex; flex-direction:column; gap:8px; height:100%; }
 .wild-list { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
 .wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 
-.battle-row { display:flex; gap:8px; align-items:center; justify-content:center; }
-.side-panel { width: 196px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; }
+.battle-row { display:flex; gap:8px; align-items:center; justify-content:center; flex:1; min-height:0; }
+.side-panel { width: 176px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
 .side-label { font-size:11px; font-weight:800; text-align:center; padding:2px; letter-spacing:1px; }
 .player-side .side-label { color:#8acfff; }
 .enemy-side .side-label { color:#ff9b9b; }
@@ -390,19 +389,22 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .status-tag.confuse { background:#e84393; color:#fff; }
 
 .arena {
-  position: relative; flex: 1 1 0; min-width: 0; aspect-ratio: 20 / 14; max-height: 80vh;
+  position: relative; flex: 1 1 0; min-width: 0; aspect-ratio: 20 / 14; max-height: 100%;
   background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
 }
 .arena.over { filter: brightness(.85); }
-.log { min-height: 70px; max-height: 92px; overflow-y: auto; }
-.log .tiny { line-height: 1.5; }
-.controls { display:flex; gap:6px; justify-content:center; }
-.exp-list { background: var(--panel-2); border-radius: 8px; padding: 8px; }
 
-@media (max-width: 860px) {
-  .battle-row { flex-direction:column; }
-  .side-panel { width:100%; flex-direction:row; flex-wrap:wrap; }
-  .side-panel .mon-card { flex:1 1 140px; min-width:120px; }
-  .arena { width:100%; flex:none; max-height:60vh; }
+/* log + controls overlaid on the arena's black margins (stands) */
+.arena-log {
+  position: absolute; left: 10px; right: 10px; bottom: 8px;
+  max-height: 64px; overflow-y: auto; pointer-events: none;
+  background: rgba(8,12,24,.55); border-radius: 8px; padding: 4px 10px;
+  display: flex; flex-direction: column-reverse; gap: 1px;
 }
+.arena-log .tiny { line-height: 1.45; color: #eaf0ff; text-shadow: 0 1px 2px #000; }
+.arena-controls {
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 5;
+}
+.arena-controls button { background: rgba(28,39,64,.8); }
+.exp-list { background: var(--panel-2); border-radius: 8px; padding: 8px; }
 </style>

@@ -4,6 +4,7 @@ import { useGameStore } from '../stores/game.ts';
 import PokemonCard from '../components/PokemonCard.vue';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import PokemonDetailPanel from '../components/PokemonDetailPanel.vue';
+import BackHub from '../components/BackHub.vue';
 import { getSpecies } from '@pokemon-online/config';
 import { isCellInArena, defaultFormation, FORMATION_START_COLS } from '@pokemon-online/engine';
 import { BATTLE_GRID } from '@pokemon-online/shared';
@@ -61,7 +62,10 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
       <div class="panel" style="margin-bottom:10px;padding:10px">
         <div class="between">
           <h2 class="h-title" style="margin:0;font-size:17px">队伍 / 阵容</h2>
-          <span class="chip sm-chip">{{ game.rosterInstances.length }}/{{ game.ROSTER_MAX }}</span>
+          <div class="row" style="gap:8px;align-items:center">
+            <span class="chip sm-chip">{{ game.rosterInstances.length }}/{{ game.ROSTER_MAX }}</span>
+            <BackHub />
+          </div>
         </div>
         <div class="tabs" style="margin:8px 0">
           <button :class="{ active: tab==='roster' }" @click="tab='roster'">出战阵容</button>
@@ -142,8 +146,7 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
 <style scoped>
 .team-layout { display:flex; gap:12px; align-items:flex-start; }
 .team-left { flex:1; min-width:0; }
-.team-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; }
-@media (max-width: 900px) { .team-layout { flex-direction:column; } .team-right { width:100%; position:static; max-height:none; } }
+.team-right { width: 460px; flex-shrink:0; }
 .tabs { display:flex; gap:6px; }
 .tabs button { flex:1; background:var(--panel-2); color:var(--ink); }
 .tabs button.active { background:var(--accent-2); color:#fff; }

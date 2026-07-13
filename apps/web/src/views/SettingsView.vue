@@ -3,6 +3,7 @@ import { useGameStore } from '../stores/game.ts';
 import { useAuthStore } from '../stores/auth.ts';
 import { useMessage } from '../stores/message.ts';
 import { useRouter } from 'vue-router';
+import BackHub from '../components/BackHub.vue';
 
 const game = useGameStore();
 const auth = useAuthStore();
@@ -30,7 +31,10 @@ async function manualSave(): Promise<void> {
 <template>
   <div v-if="game.save">
     <div class="panel" style="margin-bottom:12px">
-      <h2 class="h-title" style="margin:0 0 8px">设置</h2>
+      <div class="between" style="margin-bottom:8px">
+        <h2 class="h-title" style="margin:0">设置</h2>
+        <BackHub />
+      </div>
       <div class="tiny muted">账号：{{ auth.username }} · 玩家ID：{{ auth.playerId }}</div>
     </div>
 

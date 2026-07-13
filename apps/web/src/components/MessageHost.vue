@@ -42,7 +42,7 @@ const ICON: Record<ToastType, string> = { success: '✓', error: '✕', info: '�
 
 <style scoped>
 .toast-host {
-  position: fixed;
+  position: absolute;
   top: 12px;
   right: 12px;
   z-index: 200;

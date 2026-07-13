@@ -1,17 +1,31 @@
 <script setup lang="ts">
-import { onMounted, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, onUnmounted, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from './stores/auth.ts';
 import { useGameStore } from './stores/game.ts';
 import MessageHost from './components/MessageHost.vue';
+import GameMenu from './components/GameMenu.vue';
 
 const auth = useAuthStore();
 const game = useGameStore();
 const router = useRouter();
+const route = useRoute();
 
 const showNav = computed(() => auth.isAuthenticated && game.hasSave);
+// battle manages its own controls + result modal; hide the global menu/back there
+const showChrome = computed(() => showNav.value && route.path !== '/battle');
+
+/** Scale the fixed 1280x800 design stage to fit the viewport (proportional,
+ *  letterboxed). Bigger screen -> bigger game. Pure visual; battle/world logic
+ *  is grid-based and untouched. */
+function updateScale(): void {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 800);
+  document.documentElement.style.setProperty('--scale', String(Math.max(0.3, Math.min(2.5, s))));
+}
 
 onMounted(async () => {
+  updateScale();
+  window.addEventListener('resize', updateScale);
   await auth.restore();
   if (auth.isAuthenticated) {
     await game.load();
@@ -20,37 +34,16 @@ onMounted(async () => {
     router.replace({ name: 'login' });
   }
 });
+onUnmounted(() => window.removeEventListener('resize', updateScale));
 
 // if save disappears (logout), go to login
 watch(() => auth.isAuthenticated, (v) => {
   if (!v) router.replace({ name: 'login' });
 });
-
-const navItems = [
-  { to: '/world', label: '探索' },
-  { to: '/team', label: '队伍' },
-  { to: '/breed', label: '炼妖' },
-  { to: '/pokedex', label: '图鉴' },
-  { to: '/pvp', label: '切磋' },
-  { to: '/shop', label: '商店' },
-  { to: '/settings', label: '设置' },
-];
 </script>
 
 <template>
-  <div class="app-shell">
-    <header class="app-header" v-if="showNav">
-      <div class="brand">
-        <img src="/sprites/icons/pokeball.png" class="poke-sprite" width="22" height="22" alt="" />
-        <span class="brand-name">Pokémon Online</span>
-        <span class="chip" v-if="auth.username">{{ auth.username }}</span>
-        <span class="chip" v-if="game.save">💰{{ game.save.money }}</span>
-      </div>
-      <span class="saving tiny" v-if="game.saving">保存中…</span>
-    </header>
-    <nav class="app-nav" v-if="showNav">
-      <router-link v-for="n in navItems" :key="n.to" :to="n.to">{{ n.label }}</router-link>
-    </nav>
+  <div class="app-stage">
     <main class="view">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
@@ -58,18 +51,11 @@ const navItems = [
         </transition>
       </router-view>
     </main>
-    <!-- global in-game messages (toasts + confirm modal) -->
+    <GameMenu v-if="showChrome" />
     <MessageHost />
   </div>
 </template>
 
 <style scoped>
-.app-shell { display: flex; flex-direction: column; min-height: 100%; }
-.app-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 12px; background: var(--bg-dark);
-}
-.brand { display: flex; align-items: center; gap: 8px; }
-.brand-name { font-weight: 800; color: var(--gold); letter-spacing: .5px; }
-.saving { color: var(--gold); }
+.app-stage { /* base styles in style.css (.app-stage) */ }
 </style>

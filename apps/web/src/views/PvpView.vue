@@ -8,6 +8,7 @@ import { api } from '../api/client.ts';
 import { getSpecies } from '@pokemon-online/config';
 import type { PokemonInstance } from '@pokemon-online/shared';
 import PokemonCard from '../components/PokemonCard.vue';
+import BackHub from '../components/BackHub.vue';
 
 const game = useGameStore();
 const battle = useBattleStore();
@@ -60,7 +61,10 @@ function startBattle(): void {
 <template>
   <div v-if="game.save">
     <div class="panel" style="margin-bottom:12px">
-      <h2 class="h-title" style="margin:0 0 4px">3v3 友谊切磋</h2>
+      <div class="between" style="margin-bottom:4px">
+        <h2 class="h-title" style="margin:0">3v3 友谊切磋</h2>
+        <BackHub />
+      </div>
       <p class="tiny muted">双方各出3只宝可梦，全部由AI自动对战。你只需设置好队伍，挑战朋友的存档队伍即可。</p>
     </div>
 

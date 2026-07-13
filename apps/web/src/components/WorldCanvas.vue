@@ -12,12 +12,8 @@ const props = withDefaults(defineProps<{
   py: number;
   facing: Facing;
   moving?: boolean;
-  tilesW?: number;
-  tilesH?: number;
 }>(), {
   moving: false,
-  tilesW: 15,
-  tilesH: 11,
 });
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -25,12 +21,38 @@ let raf = 0;
 let last = 0;
 let phase = 0; // walk stride phase 0..1
 
+// Visible tile grid, derived from the container's layout size so the map FILLS
+// the available area (no letterbox margins). tilesW targets ~TARGET_TILE_PX of
+// container width; tilesH follows the container aspect so tiles stay square
+// (no stretch). Layout size (clientWidth/Height) is pre-transform, so the tile
+// COUNT is stable while the stage transform scales the pixels (bigger screen ->
+// bigger tiles, same view). Re-measured on resize.
+const TARGET_TILE_PX = 64;
+const tilesW = ref(19);
+const tilesH = ref(11);
+let ro: ResizeObserver | null = null;
+
+function measure(): void {
+  const parent = canvasEl.value?.parentElement;
+  if (!parent) return;
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  if (w === 0 || h === 0) return;
+  const tw = Math.max(8, Math.round(w / TARGET_TILE_PX));
+  const th = Math.max(6, Math.round((tw * h) / w));
+  tilesW.value = tw;
+  tilesH.value = th;
+}
+
 onMounted(async () => {
   await Promise.all([loadTileset(), loadCharacter()]);
+  measure();
+  ro = new ResizeObserver(measure);
+  if (canvasEl.value?.parentElement) ro.observe(canvasEl.value.parentElement);
   last = performance.now();
   raf = requestAnimationFrame(loop);
 });
-onUnmounted(() => cancelAnimationFrame(raf));
+onUnmounted(() => { cancelAnimationFrame(raf); ro?.disconnect(); });
 
 function loop(t: number): void {
   const dt = Math.min((t - last) / 1000, 0.05);
@@ -57,8 +79,8 @@ function render(frame: number): void {
   if (!ctx) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const T = TILE_SIZE;
-  const cssW = props.tilesW * T;
-  const cssH = props.tilesH * T;
+  const tw = tilesW.value, th = tilesH.value;
+  const cssW = tw * T, cssH = th * T;
   if (cv.width !== cssW * dpr) {
     cv.width = cssW * dpr;
     cv.height = cssH * dpr;
@@ -70,11 +92,11 @@ function render(frame: number): void {
   ctx.fillRect(0, 0, cssW, cssH);
 
   const { ox, oy } = cameraOrigin(props.px, props.py, props.map.width, props.map.height, {
-    tilesW: props.tilesW,
-    tilesH: props.tilesH,
+    tilesW: tw,
+    tilesH: th,
   });
-  for (let vy = 0; vy < props.tilesH; vy++) {
-    for (let vx = 0; vx < props.tilesW; vx++) {
+  for (let vy = 0; vy < th; vy++) {
+    for (let vx = 0; vx < tw; vx++) {
       const code = props.map.tiles[oy + vy]?.[ox + vx];
       if (code === undefined) continue; // outside map -> leave background
       drawTile(ctx, code, vx * T, vy * T, T);
@@ -88,13 +110,14 @@ function render(frame: number): void {
 </script>
 
 <template>
-  <canvas ref="canvasEl" class="world-canvas" :style="{ aspectRatio: `${tilesW} / ${tilesH}` }"></canvas>
+  <canvas ref="canvasEl" class="world-canvas"></canvas>
 </template>
 
 <style scoped>
 .world-canvas {
   display: block;
   width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   border-radius: 8px;

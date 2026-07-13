@@ -47,7 +47,9 @@ const PALETTES: Record<Biome, Palette> = {
 
 interface Geom { x0: number; y0: number; x1: number; y1: number; cx: number; cy: number; a: number; b: number; }
 function geom(W: number, H: number): Geom {
-  const x0 = W * 0.06, y0 = H * 0.06, x1 = W * 0.94, y1 = H * 0.94;
+  // Oval floor inset: leave wider top/bottom margins (12%) so the battle log
+  // and controls can overlay the stands without covering the floor.
+  const x0 = W * 0.06, y0 = H * 0.08, x1 = W * 0.94, y1 = H * 0.88;
   return { x0, y0, x1, y1, cx: W / 2, cy: H / 2, a: (x1 - x0) / 2, b: (y1 - y0) / 2 };
 }
 

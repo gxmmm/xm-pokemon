@@ -620,27 +620,30 @@ export class BattleSim {
         }
         continue;
       }
-      // status that blocks action
+      // status that fully blocks action (no roll, just skip every frame)
       if (c.status === 'sleep' || c.status === 'freeze') continue;
-      if (c.status === 'paralyze' && this.rng() < 0.25) {
-        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 因麻痹无法行动`);
-        c.nextDecisionAt = this.state.time + 0.3;
-        continue;
-      }
-      if (c.status === 'confuse' && this.rng() < 0.33) {
-        // self hit
-        const dmg = Math.max(1, Math.floor(c.maxHp * 0.08));
-        c.currentHp -= dmg;
-        this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });
-        if (c.currentHp <= 0) this.faint(c);
-        c.nextDecisionAt = this.state.time + 0.3;
-        continue;
-      }
-      // decision refresh
+      // decision refresh - paralyze/confuse only roll on a decision tick.
+      // (Gating here is critical: rolling every frame at 60fps made confuse
+      // self-hit ~20x/sec ~= 160% maxHp/sec -> instant suicide. Now ~once per
+      // 0.3s, so ~2-3 self-hits over the confuse duration, non-lethal alone.)
       if (this.state.time >= (c.nextDecisionAt ?? 0)) {
+        c.nextDecisionAt = this.state.time + 0.3;
+        if (c.status === 'paralyze' && this.rng() < 0.25) {
+          this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 因麻痹无法行动`);
+          c.plan = null;
+          continue;
+        }
+        if (c.status === 'confuse' && this.rng() < 0.33) {
+          // self hit
+          const dmg = Math.max(1, Math.floor(c.maxHp * 0.08));
+          c.currentHp -= dmg;
+          this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });
+          if (c.currentHp <= 0) this.faint(c);
+          c.plan = null;
+          continue;
+        }
         c.plan = decide(c, this.state, this.rng);
         c.currentTargetUid = c.plan?.targetUid;
-        c.nextDecisionAt = this.state.time + 0.3;
       }
       if (!c.plan) continue;
       const target = this.find(c.plan.targetUid);

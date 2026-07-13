@@ -7,6 +7,7 @@ import { ivCeiling } from '@pokemon-online/engine';
 import PokemonCard from '../components/PokemonCard.vue';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import PokemonDetailPanel from '../components/PokemonDetailPanel.vue';
+import BackHub from '../components/BackHub.vue';
 import type { PokemonInstance, IV } from '@pokemon-online/shared';
 
 const game = useGameStore();
@@ -15,7 +16,6 @@ const aUid = ref<string | null>(null); // 主宠
 const bUid = ref<string | null>(null); // 副宠
 const result = ref<{ offspring: PokemonInstance; msg: string } | null>(null);
 const selectedUid = ref<string | null>(game.rosterInstances[0]?.uid ?? null);
-const menuUid = ref<string | null>(null); // which roster card's 3-option menu is open
 
 const all = computed(() => game.rosterInstances);
 const parentA = computed(() => (aUid.value ? game.getInstance(aUid.value) : null));
@@ -46,33 +46,30 @@ function teamTags(uid: string): string[] {
   return tags;
 }
 
-// click a roster card: select (right detail) + toggle its 3-option menu
+// click a roster card: select it (right detail). The 3 action buttons live
+// below each card (click-triggered, like the team roster's 加入/移出 button).
 function onCardClick(uid: string): void {
   selectedUid.value = uid;
-  menuUid.value = menuUid.value === uid ? null : uid;
 }
 function setMain(uid: string): void {
   if (bUid.value === uid) bUid.value = null; // a mon can't be both parents
   aUid.value = uid;
   selectedUid.value = uid;
-  menuUid.value = null;
 }
 function setSub(uid: string): void {
   if (aUid.value === uid) aUid.value = null;
   bUid.value = uid;
   selectedUid.value = uid;
-  menuUid.value = null;
 }
 async function releaseMon(uid: string): Promise<void> {
   const inst = game.getInstance(uid);
-  if (!inst) { menuUid.value = null; return; }
+  if (!inst) return;
   const name = inst.nickname || getSpecies(inst.speciesId).name;
   const ok = await msg.confirm(`放生 ${name}？放生后无法找回，但会保留图鉴记录。`, { title: '放生', danger: true, okText: '放生' });
-  if (!ok) { menuUid.value = null; return; }
+  if (!ok) return;
   if (aUid.value === uid) aUid.value = null;
   if (bUid.value === uid) bUid.value = null;
   if (selectedUid.value === uid) selectedUid.value = null;
-  menuUid.value = null;
   game.release(uid);
   msg.success(`已放生 ${name}`);
 }
@@ -112,7 +109,10 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
     <!-- LEFT: 上区(炼妖) + 下区(当前宠摘要) -->
     <div class="breed-left">
       <div class="panel" style="margin-bottom:10px;padding:10px">
-        <h2 class="h-title" style="margin:0 0 4px;font-size:17px">炼妖（梦幻式）</h2>
+        <div class="between" style="margin:0 0 4px">
+          <h2 class="h-title" style="margin:0;font-size:17px">炼妖（梦幻式）</h2>
+          <BackHub />
+        </div>
         <p class="tiny muted" style="margin:0">
           两只炼妖产生一只新个体，种族<b>主宠65%/副宠35%</b>概率继承（不融合）。资质=父母均值×<b>{0.8/0.9/1.0/1.1/1.2}</b>、最低1、
           <span class="gold-txt">不封顶</span>；成长=父母均值×<b>{0.9/1.0/1.1}</b>（封顶1.3）；被动=<b>必带100%保留</b>+父母并集主宠65%/副宠35%。两只父母将被消耗。
@@ -147,10 +147,10 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
             <span class="badge" v-if="aUid===p.uid">主</span>
             <span class="badge b" v-else-if="bUid===p.uid">副</span>
             <span class="team-tag" v-if="teamTags(p.uid).length">{{ teamTags(p.uid).join('·') }}</span>
-            <PokemonCard :instance="p" :selectable="true" :selected="aUid===p.uid || bUid===p.uid || menuUid===p.uid" :fainted="false" compact />
-            <div v-if="menuUid===p.uid" class="card-menu" @click.stop>
-              <button class="sm" @click="setMain(p.uid)">设为主宠</button>
-              <button class="sm" @click="setSub(p.uid)">设为副宠</button>
+            <PokemonCard :instance="p" :selectable="true" :selected="aUid===p.uid || bUid===p.uid || selectedUid===p.uid" :fainted="false" compact />
+            <div class="card-actions" @click.stop>
+              <button class="sm" @click="setMain(p.uid)">主宠</button>
+              <button class="sm" @click="setSub(p.uid)">副宠</button>
               <button class="sm danger" @click="releaseMon(p.uid)">放生</button>
             </div>
           </div>
@@ -176,17 +176,13 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
     <div class="breed-right panel">
       <PokemonDetailPanel :uid="selectedUid" />
     </div>
-
-    <!-- click-outside backdrop for the card menu -->
-    <div v-if="menuUid" class="menu-backdrop" @click="menuUid=null"></div>
   </div>
 </template>
 
 <style scoped>
 .breed-layout { display:flex; gap:12px; align-items:flex-start; position:relative; }
 .breed-left { flex:1; min-width:0; }
-.breed-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; }
-@media (max-width: 900px) { .breed-layout { flex-direction:column; } .breed-right { width:100%; position:static; max-height:none; } }
+.breed-right { width: 460px; flex-shrink:0; }
 
 .slot-box {
   background:var(--panel-2); border-radius:10px; padding:8px 12px; gap:3px; min-width:88px;
@@ -203,14 +199,8 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
 .roster-cell .badge.b { background:var(--accent-2); }
 .roster-cell .team-tag { position:absolute; top:4px; left:4px; background:var(--warn); color:#333; border-radius:6px; padding:0 5px; font-size:10px; font-weight:800; z-index:3; }
 
-.card-menu {
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  z-index:30; display:flex; flex-direction:column; gap:4px;
-  background:#1c2740; padding:6px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.5);
-  min-width:108px;
-}
-.card-menu button { width:100%; font-size:12px; padding:5px 8px; }
-.menu-backdrop { position:fixed; inset:0; z-index:20; }
+.card-actions { display:flex; gap:3px; margin-top:4px; }
+.card-actions button { flex:1; font-size:11px; padding:4px 4px; }
 
 .gold-txt { color:var(--gold); font-weight:800; }
 </style>

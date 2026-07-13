@@ -8,6 +8,7 @@ import { getAvailableEvolutions, computeStats, maxHp, ivCeiling, growthCeiling, 
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import Tip from '../components/Tip.vue';
+import BackHub from '../components/BackHub.vue';
 import type { Personality, Ability, Skill, IV, StatKey } from '@pokemon-online/shared';
 import { HP_MULTIPLIER } from '@pokemon-online/shared';
 
@@ -152,7 +153,10 @@ async function release(): Promise<void> {
 
 <template>
   <div v-if="inst && species && stats">
-    <button class="ghost sm" @click="router.back()" style="margin-bottom:8px">← 返回</button>
+    <div class="row" style="gap:6px;margin-bottom:8px">
+      <button class="ghost sm" @click="router.back()">← 返回</button>
+      <BackHub />
+    </div>
     <div class="panel">
       <div class="row" style="align-items:center;gap:14px">
         <PokemonSprite :species-id="species.id" :size="110" :faded="inst.currentHp<=0" />
