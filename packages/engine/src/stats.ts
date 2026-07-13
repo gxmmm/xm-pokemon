@@ -5,24 +5,38 @@ import { getSpecies, PASSIVE_MAP, ABILITY_MAP } from '@pokemon-online/config';
 /**
  * Stat calculation. Unified 4-stat system (HP/Atk/Def/Spd).
  *
- * Final stat = ((2*base + iv) * level / 100 + 5) * growth * passiveMult * abilityMult
- * HP          = ((2*base + iv) * level / 100 + level + 10) * growth * mults
+ * Base stats establish the level-1 panel only; they are intentionally NOT
+ * multiplied by level. Level growth is driven primarily by IV (资质), making
+ * breeding quality matter more as a Pokemon is trained.
+ *
+ * Other      = (base * 0.10 + iv * level * 0.055 + 5) * growth * multipliers
+ * HP         = (base * 0.15 + iv * level * 0.070 + level + 10) * growth * HP_MULTIPLIER * multipliers
  *
  * `growth` (0.8..1.2) is the per-instance 成长 multiplier, capped by species
  * rarity during breeding/catching. Passives and abilities apply multiplicative
  * bonuses; battle stat stages apply separately at combat time.
  */
 
+const BASE_INITIAL_SHARE = 0.10;
+const HP_BASE_INITIAL_SHARE = 0.15;
+const IV_LEVEL_SCALE = 0.055;
+const HP_IV_LEVEL_SCALE = 0.070;
+
+/**
+ * Persistent stat before passive/ability multipliers. Species base establishes
+ * only the initial panel; increasing level adds IV-led growth instead of
+ * re-scaling the base stat every level.
+ */
 export function baseStat(speciesId: number, iv: IV, growth: number, level: number, key: StatKey): number {
   const species = getSpecies(speciesId);
   const base = species.base[key];
   if (key === 'hp') {
-    const v = Math.floor(((2 * base + iv.hp) * level) / 100) + level + 10;
+    const v = base * HP_BASE_INITIAL_SHARE + iv.hp * level * HP_IV_LEVEL_SCALE + level + 10;
     // HP ×HP_MULTIPLIER (redesign): inflate HP so fights last longer. Passives/
     // abilities apply on top, so tank passives scale with the bigger pool too.
     return Math.max(1, Math.floor(v * growth * HP_MULTIPLIER));
   }
-  const v = Math.floor(((2 * base + iv[key]) * level) / 100) + 5;
+  const v = base * BASE_INITIAL_SHARE + iv[key] * level * IV_LEVEL_SCALE + 5;
   return Math.max(1, Math.floor(v * growth));
 }
 

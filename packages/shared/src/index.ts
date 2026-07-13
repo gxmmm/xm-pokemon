@@ -1,7 +1,7 @@
 export * from './types.ts';
 
 /** App-wide constants shared across frontend and backend. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 /** Carried Pokemon (no warehouse yet; future `warehouse` field reserved). */
 export const ROSTER_MAX = 20;
 export const PVE_TEAM_SIZE = 3;

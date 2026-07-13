@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP, TYPE_COLORS } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
 import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
@@ -17,7 +17,6 @@ const battle = useBattleStore();
 const game = useGameStore();
 const router = useRouter();
 
-const tick = ref(0);
 const speed = ref(1);
 const running = ref(true);
 const ended = ref(false);
@@ -35,7 +34,13 @@ const interruptFlash = ref<Record<string, number>>({});
 const PRESENTATION_DELAY = 0.16; // seconds: enough director lead-in without feeling laggy
 const SNAPSHOT_HISTORY = 2.5;
 const presentation = ref<BattlePresentation | null>(null);
-const directorForecast = ref<import('@pokemon-online/shared').BattleEvent[]>([]);
+// The canvas needs the full presentation cadence; side cards and the combat log
+// do not. Keep DOM/reactivity updates at 12fps to avoid six cards re-rendering
+// for every animation frame.
+const hudCombatants = ref<BattleCombatant[]>([]);
+const battleLog = ref<string[]>([]);
+const hudOver = ref(false);
+let nextHudSyncAt = 0;
 let snapshots: BattleSnapshot[] = [];
 let presentationTime = 0;
 let presentationHold = 0; // presentation-only hit-stop; the simulator never slows
@@ -46,11 +51,11 @@ watch(sim, (next) => {
   snapshots = [];
   presentationTime = 0;
   presentationHold = 0;
-  directorForecast.value = [];
   lastPresentationSeq = 0;
   skillFlash.value = {};
   interruptFlash.value = {};
-  if (next) captureSnapshot(next);
+  nextHudSyncAt = 0;
+  if (next) { captureSnapshot(next); syncHud(next); }
 }, { immediate: true });
 function avatarStyle(uid: string): Record<string, string> {
   const f = skillFlash.value[uid] ?? 0;
@@ -61,20 +66,47 @@ function avatarStyle(uid: string): Record<string, string> {
   };
 }
 function interruptVal(uid: string): number { return interruptFlash.value[uid] ?? 0; }
-// The canvas and side cards read the same delayed state, so HP/status changes
-// arrive together with their impact effects rather than jumping ahead of them.
-const combatants = computed<BattleCombatant[]>(() => {
-  void tick.value;
-  return presentation.value?.combatants ?? sim.value?.state.combatants ?? [];
+// The canvas receives every presentation frame. HUD data is sampled separately
+// so text, cooldown chips and battle-log DOM do not chase the 60fps canvas loop.
+const playerComs = computed(() => hudCombatants.value.filter((c) => c.side === 'player'));
+const enemyComs = computed(() => hudCombatants.value.filter((c) => c.side === 'enemy'));
+const log = computed<string[]>(() => battleLog.value);
+const isOver = computed(() => hudOver.value);
+
+interface SideDamageSummary {
+  side: 'player' | 'enemy';
+  total: number;
+  dps: number;
+  // Every Pokemon is calculated independently, then each side is sorted from
+  // highest to lowest actual HP damage dealt.
+  members: { uid: string; name: string; damage: number; dps: number; share: number }[];
+}
+
+const damageSummary = computed<SideDamageSummary[]>(() => {
+  const s = sim.value;
+  if (!s) return [];
+  const duration = Math.max(0.1, s.state.time);
+  return (['player', 'enemy'] as const).map((side) => {
+    const members = s.state.combatants.filter((c) => c.side === side).map((c) => ({
+      uid: c.uid,
+      name: c.name,
+      damage: c.damageDealt,
+      dps: c.damageDealt / duration,
+      share: 0,
+    }));
+    const total = members.reduce((sum, member) => sum + member.damage, 0);
+    for (const member of members) member.share = total > 0 ? member.damage / total : 0;
+    members.sort((a, b) => b.damage - a.damage || a.name.localeCompare(b.name, 'zh-CN'));
+    return { side, total, dps: total / duration, members };
+  });
 });
-const playerComs = computed(() => combatants.value.filter((c) => c.side === 'player'));
-const enemyComs = computed(() => combatants.value.filter((c) => c.side === 'enemy'));
-const log = computed<string[]>(() => {
-  void tick.value;
-  const evs = sim.value?.state.events ?? [];
-  return evs.slice(-7).map((e) => e.message).filter((m): m is string => !!m);
-});
-const isOver = computed(() => { void tick.value; return sim.value?.isOver ?? false; });
+const battleDuration = computed(() => sim.value?.state.time ?? 0);
+
+function syncHud(s: BattleSim): void {
+  hudCombatants.value = presentation.value?.combatants ?? s.state.combatants;
+  battleLog.value = s.state.events.map((event) => event.message).filter((message): message is string => !!message);
+  hudOver.value = s.isOver;
+}
 
 function hpRatio(c: BattleCombatant): number {
   return Math.max(0, c.currentHp / c.maxHp);
@@ -86,7 +118,7 @@ function hpColor(c: BattleCombatant): string {
 const biome = computed<Biome>(() => {
   if (battle.mode === 'pvp') return 'arena';
   const id = battle.mapId ?? '';
-  if (id.includes('dragon')) return 'dragon';
+if (id.includes('dragon') || id === 'deep-space') return 'dragon';
   if (id.includes('moon') || id.includes('tunnel') || id.includes('cave')) return 'cave';
   if (id.includes('sea') || id.includes('water')) return 'water';
   return 'grass';
@@ -157,9 +189,6 @@ function updatePresentation(s: BattleSim, dtScaled: number): void {
   }
   const events = s.state.events.filter((e) => e.t <= presentationTime + 0.001);
   presentation.value = { time: presentationTime, combatants: presentationCombatants(presentationTime), events };
-  // A small look-ahead is director-only: the canvas may pre-aim its camera but
-  // will not instantiate VFX until those events enter `presentation.events`.
-  directorForecast.value = s.state.events.filter((e) => e.t > presentationTime + 0.001 && e.t <= s.state.time + 0.001);
 }
 
 function processPresentationEvents(events: readonly import('@pokemon-online/shared').BattleEvent[]): void {
@@ -186,9 +215,12 @@ function frame(now: number): void {
     // Authoritative simulation is intentionally never slowed for spectacle.
     if (!s.isOver && running.value) {
       s.tick(dtScaled);
-      tick.value++;
     }
     updatePresentation(s, dtScaled);
+    if (now >= nextHudSyncAt) {
+      syncHud(s);
+      nextHudSyncAt = now + 1000 / 12;
+    }
     processPresentationEvents(presentation.value?.events ?? []);
     for (const k of Object.keys(skillFlash.value)) {
       const v = skillFlash.value[k] - realDt * 5;
@@ -202,13 +234,17 @@ function frame(now: number): void {
     // combat state remains held on the impact frame.
     canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   }
-  if (s && s.isOver && !ended.value && presentationTime >= s.state.time - 0.001) onEnd();
+  // Do not cover the canvas the instant the simulator decides a winner. The
+  // final delayed event (especially a KO burst/faint) must finish its local VFX
+  // before the result modal becomes visible.
+  if (s && s.isOver && !ended.value && presentationTime >= s.state.time - 0.001 && canvasRef.value?.isPresentationSettled()) onEnd();
   raf = requestAnimationFrame(frame);
 }
 function onEnd(): void {
+  const s = sim.value;
+  if (s) syncHud(s);
   ended.value = true;
   running.value = false;
-  const s = sim.value;
   if (!s) return;
   if (battle.mode === 'pve') handlePveEnd(s.state.winner);
   else handlePvpEnd(s.state.winner);
@@ -232,6 +268,19 @@ function handlePveEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
 }
 
 function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
+  const scripted = battle.storyBattleId ? STORY_TRAINERS[battle.storyBattleId] : undefined;
+  if (scripted) {
+    if (winner === 'player') {
+      const total = Math.max(20, scripted.team.reduce((sum, entry) => sum + entry.level * 6, 0));
+      totalExp.value = total;
+      for (const p of game.pveTeamInstances) expResults.value.push(game.grantExp(p.uid, Math.floor(total / Math.max(1, game.pveTeamInstances.length))));
+      game.advanceStory(scripted.winFlags, scripted.questAfter);
+      resultMsg.value = scripted.winText ?? `${scripted.name} 露出不甘心的笑容："这次算你赢。潮汐的谜团，我们各凭本事。"`;
+    } else {
+      resultMsg.value = `${scripted.name}："别灰心。回去调整队伍，再来一次。"`;
+    }
+    return;
+  }
   if (winner === 'player') {
     const oppLevel = sim.value?.state.combatants.filter((c) => c.side === 'enemy').reduce((s, c) => s + c.level, 0) ?? 0;
     const total = Math.max(20, Math.floor(oppLevel * 5));
@@ -298,7 +347,7 @@ function leave(): void {
 
 function skip(): void {
   const s = sim.value;
-  if (s && !s.isOver) { s.resolve(180); tick.value++; }
+  if (s && !s.isOver) { s.resolve(180); syncHud(s); }
 }
 
 onMounted(() => {
@@ -331,7 +380,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
               <span v-else>{{ s.char }}</span>
             </div>
             <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
-            <span v-if="c.castProgress" class="cast-tag">蓄力</span>
+            <span v-if="c.castProgress" class="cast-tag">{{ skillName(c.castProgress.skillId) }} {{ Math.round((1 - c.castProgress.remaining / (SKILL_MAP[c.castProgress.skillId]?.castTime || 1)) * 100) }}%</span>
             <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
           </div>
         </div>
@@ -339,15 +388,11 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <BattleCanvas ref="canvasRef" :presentation="presentation ?? undefined" :forecast="directorForecast" :biome="biome" @impact="onCanvasImpact" />
-        <!-- log + controls overlaid on the arena's black margins (immersive) -->
+        <BattleCanvas ref="canvasRef" :presentation="presentation ?? undefined" :biome="biome" @impact="onCanvasImpact" />
         <div class="arena-controls">
           <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
           <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
           <button class="sm ghost" @click="skip">⏭</button>
-        </div>
-        <div class="arena-log">
-          <div v-for="(l, i) in log" :key="i" class="tiny">{{ l }}</div>
         </div>
       </div>
 
@@ -367,7 +412,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
               <span v-else>{{ s.char }}</span>
             </div>
             <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
-            <span v-if="c.castProgress" class="cast-tag">蓄力</span>
+            <span v-if="c.castProgress" class="cast-tag">{{ skillName(c.castProgress.skillId) }} {{ Math.round((1 - c.castProgress.remaining / (SKILL_MAP[c.castProgress.skillId]?.castTime || 1)) * 100) }}%</span>
             <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
           </div>
         </div>
@@ -377,6 +422,29 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
     <div class="modal-backdrop" v-if="ended">
       <div class="modal">
         <h2 class="h-title center">{{ resultMsg }}</h2>
+        <details v-if="damageSummary.length" class="damage-report" open>
+          <summary>伤害统计 · 战斗 {{ battleDuration.toFixed(1) }} 秒</summary>
+          <div class="damage-sides">
+            <section v-for="summary in damageSummary" :key="summary.side" class="damage-side" :class="summary.side">
+              <div class="damage-side-head">
+                <span>{{ summary.side === 'player' ? '我方' : '敌方' }}</span>
+                <strong>{{ summary.total }} 伤害</strong>
+                <span>{{ summary.dps.toFixed(1) }} DPS</span>
+              </div>
+              <div v-for="(member, rank) in summary.members" :key="member.uid" class="damage-member">
+                <span class="damage-rank">{{ rank + 1 }}</span>
+                <span class="ell">{{ member.name }}</span>
+                <div class="damage-bar"><span :style="{ width: `${Math.round(member.share * 100)}%` }"></span></div>
+                <b>{{ member.damage }}</b>
+                <small>{{ member.dps.toFixed(1) }}/s</small>
+              </div>
+            </section>
+          </div>
+        </details>
+        <details v-if="log.length" class="result-log">
+          <summary>查看战斗日志（{{ log.length }} 条）</summary>
+          <div class="result-log-list"><div v-for="(entry, i) in log" :key="i">{{ entry }}</div></div>
+        </details>
         <template v-if="showCapture">
           <p class="tiny center muted">击败了 {{ wildGroup.length }} 只宝可梦！可选择捕捉其中一只，或全部放生（放生保留图鉴记录）。战斗结束自动回满状态。</p>
           <div class="wild-list">
@@ -426,8 +494,8 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .wild-list { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
 .wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 
-.battle-row { display:flex; gap:8px; align-items:center; justify-content:center; flex:1; min-height:0; }
-.side-panel { width: 176px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
+.battle-row { display:flex; gap:10px; align-items:stretch; justify-content:center; flex:1; min-height:0; }
+.side-panel { width: 140px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
 .side-label { font-size:11px; font-weight:800; text-align:center; padding:2px; letter-spacing:1px; }
 .player-side .side-label { color:#8acfff; }
 .enemy-side .side-label { color:#ff9b9b; }
@@ -451,7 +519,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .cd-chip.ready { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
 .cd-chip:not(.ready) { opacity:.5; filter: grayscale(.4); }
 .status-tag { font-size:10px; font-weight:800; padding:0 4px; border-radius:4px; margin-left:auto; }
-.cast-tag { font-size:10px; font-weight:800; padding:0 5px; border-radius:4px; background:var(--gold); color:#333; box-shadow:0 0 6px rgba(255,203,5,.7); }
+.cast-tag { font-size:9px; font-weight:800; padding:1px 5px; border-radius:4px; background:var(--gold); color:#333; box-shadow:0 0 6px rgba(255,203,5,.55); white-space:nowrap; max-width:122px; overflow:hidden; text-overflow:ellipsis; }
 .cast-tag.bad { background:var(--bad); color:#fff; box-shadow:0 0 6px rgba(210,59,59,.7); }
 .status-tag.burn { background:#e25822; color:#fff; }
 .status-tag.poison { background:#9b59b6; color:#fff; }
@@ -461,22 +529,37 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .status-tag.confuse { background:#e84393; color:#fff; }
 
 .arena {
-  position: relative; flex: 1 1 0; min-width: 0; aspect-ratio: 20 / 14; max-height: 100%;
+  position: relative; flex: 1 1 auto; min-width: 0; aspect-ratio: 20 / 14; max-height: none;
   background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
 }
 .arena.over { filter: brightness(.85); }
 
-/* log + controls overlaid on the arena's black margins (stands) */
-.arena-log {
-  position: absolute; left: 10px; right: 10px; bottom: 8px;
-  max-height: 64px; overflow-y: auto; pointer-events: none;
-  background: rgba(8,12,24,.55); border-radius: 8px; padding: 4px 10px;
-  display: flex; flex-direction: column-reverse; gap: 1px;
-}
-.arena-log .tiny { line-height: 1.45; color: #eaf0ff; text-shadow: 0 1px 2px #000; }
 .arena-controls {
   position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 5;
 }
 .arena-controls button { background: rgba(28,39,64,.8); }
+.damage-report { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.damage-report summary { cursor: pointer; padding: 7px 9px; font-size: 12px; font-weight: 800; color: var(--ink); }
+.damage-sides { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; border-top:1px solid var(--line); padding:8px; }
+.damage-side { min-width:0; border-radius:6px; padding:6px; background:rgba(255,255,255,.42); }
+.damage-side.player { border-left:3px solid #4a90e2; }
+.damage-side.enemy { border-left:3px solid #e25555; }
+.damage-side-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px; margin-bottom:5px; font-size:10px; color:var(--muted); }
+.damage-side-head > span:first-child { font-weight:800; color:var(--ink); }
+.damage-side-head strong { margin-left:auto; color:var(--ink); font-size:11px; }
+.damage-member { display:grid; grid-template-columns:14px minmax(0, 1fr) minmax(22px, .9fr) auto auto; align-items:center; gap:4px; font-size:10px; }
+.damage-member + .damage-member { margin-top:4px; }
+.damage-rank { color:var(--muted); font-weight:800; text-align:center; }
+.damage-member .ell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.damage-member b { font-size:10px; color:var(--ink); }
+.damage-member small { color:var(--muted); white-space:nowrap; font-size:9px; }
+.damage-bar { height:5px; overflow:hidden; border-radius:999px; background:rgba(0,0,0,.12); }
+.damage-bar span { display:block; height:100%; min-width:0; border-radius:inherit; background:#4a90e2; }
+.damage-side.enemy .damage-bar span { background:#e25555; }
+@media (max-width: 700px) { .damage-sides { grid-template-columns:1fr; } }
+.result-log { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.result-log summary { cursor: pointer; padding: 7px 9px; font-size: 12px; font-weight: 800; color: var(--ink); }
+.result-log-list { max-height: 180px; overflow-y: auto; border-top: 1px solid var(--line); padding: 7px 9px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.result-log-list > div + div { margin-top: 2px; }
 .exp-list { background: var(--panel-2); border-radius: 8px; padding: 8px; }
 </style>

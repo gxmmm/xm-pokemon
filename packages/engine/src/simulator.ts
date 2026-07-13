@@ -28,6 +28,14 @@ function dist(a: BattleCombatant, b: BattleCombatant): number {
   return distCells(a.position, b.position);
 }
 
+// Presentation-paced combat: skills are deliberate beats rather than a constant
+// stream. Taking a hit advances only the next skill in line, so reactive casts
+// are distributed over time instead of every cooldown becoming ready together.
+const SKILL_COOLDOWN_SCALE = 1.35;
+const OPENING_SKILL_COOLDOWN_FRACTION = 0.55;
+const HIT_CD_RELIEF_MIN = 0.10;
+const HIT_CD_RELIEF_MAX = 0.38;
+
 function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', index: number, total: number, formPos?: { x: number; y: number }): BattleCombatant {
   const species = getSpecies(inst.speciesId);
   const stats = computeStats(inst);
@@ -44,16 +52,14 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     gx = side === 'player' ? Math.floor(cols * 0.2) : Math.floor(cols * 0.8);
     gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * 2), 1, rows - 2);
   }
-  // Active skills start at a PARTIAL cooldown (40%) rather than ready, so the
-  // opening is normal-attack-only and abilities ramp up as their CDs elapse --
-  // but they come online fast enough to interleave with normal attacks during
-  // the fight (a full starting CD meant short fights never saw skills at all).
+  // Active skills start partway through a longer presentation-paced cooldown.
+  // The opening still uses normal attacks, then skills arrive as readable beats.
   // Normal attack stays ready. "处于CD中" (countdown shows) is preserved.
   const cooldowns: Record<string, number> = {};
   const activeSkills = [...inst.activeSkills];
   for (const sid of activeSkills) {
     const sk = SKILL_MAP[sid];
-    if (sk) cooldowns[sid] = sk.cooldown * 0.4;
+    if (sk) cooldowns[sid] = sk.cooldown * SKILL_COOLDOWN_SCALE * OPENING_SKILL_COOLDOWN_FRACTION;
   }
   // A ranged-type pokemon (owns any ranged skill) also fires its normal attack
   // from range, so it keeps dealing damage while kiting at range -- otherwise a
@@ -90,6 +96,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     statusTimer: 0,
     statStages: { atk: 0, def: 0, spd: 0 },
     shields: 0,
+    damageDealt: 0,
     buffs: [],
     castProgress: null,
     alive: true,
@@ -287,66 +294,64 @@ export class BattleSim {
     return !this.state.combatants.some((o) => o.alive && o.uid !== exceptUid && o.position.x === cell.x && o.position.y === cell.y);
   }
 
-  /** Smooth the render position toward the logical cell center (visual only). */
+  /** Smooth the render position toward the logical cell center (visual only).
+   * A slightly longer easing window avoids units looking as if they blink between
+   * adjacent cells when several fighters reposition at once. */
   private updatePixel(c: BattleCombatant, dt: number): void {
-    const k = 1 - Math.exp(-dt * 14);
+    const k = 1 - Math.exp(-dt * 9);
     c.pixel.x += (c.position.x - c.pixel.x) * k;
     c.pixel.y += (c.position.y - c.pixel.y) * k;
   }
 
-  /** Step one grid cell. Outside the desired band it closes in / kites away;
-   *  inside the band it strafes perpendicular to the target (circling), which
-   *  produces vertical (up/down) movement instead of a flat left-right march.
-   *  No-op while the step cooldown is running. */
+  /** Step one grid cell only when a fighter must close distance or a ranged
+   * fighter must retreat. Holding an effective range is intentionally stable:
+   * constant strafing in a 3v3 made the field read as jittery rather than tactical. */
   private stepMove(c: BattleCombatant, target: BattleCombatant, desiredRangeCells: number): void {
     c.facing = target.position.x >= c.position.x ? 1 : -1;
     if ((c.moveCd ?? 0) > 0) return;
     const dx = target.position.x - c.position.x;
     const dy = target.position.y - c.position.y;
     const d = Math.hypot(dx, dy);
-    const wantKite = desiredRangeCells >= 3; // ranged keep-distance band
+    const wantKite = desiredRangeCells >= 3;
     const tooFar = d > desiredRangeCells + MOVE_BUFFER;
     const tooClose = wantKite && d < desiredRangeCells - 1;
-    const inBand = !tooFar && !tooClose;
+    // In a valid attack band, stand your ground. Skill casts and local VFX are
+    // easier to read when the whole squad does not orbit every decision cycle.
+    if (!tooFar && !tooClose) return;
 
-    let bx = 0; let by = 0;
-    if (tooFar) { bx = Math.sign(dx); by = Math.sign(dy); }          // close in
-    else if (tooClose) { bx = -Math.sign(dx); by = -Math.sign(dy); } // back off
-    else {
-      // in band: strafe perpendicular to the target line (circle it)
-      c.strafeDir = (c.strafeDir ?? 1);
-      bx = Math.sign(-dy) * c.strafeDir;
-      by = Math.sign(dx) * c.strafeDir;
-      c.strafeCount = (c.strafeCount ?? 0) + 1;
-      if (c.strafeCount >= 3) { c.strafeCount = 0; c.strafeDir *= -1; } // oscillate -> up/down pacing
-    }
-
-    // candidate neighbor cells, king-move preferred (diagonal closes fastest)
+    const bx = tooFar ? Math.sign(dx) : -Math.sign(dx);
+    const by = tooFar ? Math.sign(dy) : -Math.sign(dy);
+    // Deterministic per-unit lane preference: direct approach first, then step
+    // around a teammate instead of waiting behind it and forming a static pile.
+    const lane = (c.uid.charCodeAt(c.uid.length - 1) & 1) === 0 ? 1 : -1;
     const candidates: { x: number; y: number }[] = [];
+    const add = (x: number, y: number) => {
+      if (!candidates.some((cell) => cell.x === x && cell.y === y)) candidates.push({ x, y });
+    };
     if (bx !== 0 && by !== 0) {
-      candidates.push({ x: c.position.x + bx, y: c.position.y + by });
-      candidates.push({ x: c.position.x + bx, y: c.position.y });
-      candidates.push({ x: c.position.x, y: c.position.y + by });
+      add(c.position.x + bx, c.position.y + by);
+      add(c.position.x + bx, c.position.y);
+      add(c.position.x, c.position.y + by);
     } else if (bx !== 0) {
-      candidates.push({ x: c.position.x + bx, y: c.position.y });
+      add(c.position.x + bx, c.position.y);
+      add(c.position.x + bx, c.position.y + lane);
+      add(c.position.x + bx, c.position.y - lane);
+      add(c.position.x, c.position.y + lane);
+      add(c.position.x, c.position.y - lane);
     } else if (by !== 0) {
-      candidates.push({ x: c.position.x, y: c.position.y + by });
+      add(c.position.x, c.position.y + by);
+      add(c.position.x + lane, c.position.y + by);
+      add(c.position.x - lane, c.position.y + by);
+      add(c.position.x + lane, c.position.y);
+      add(c.position.x - lane, c.position.y);
     }
+
     for (const cell of candidates) {
       if (this.isCellFree(cell, c.uid)) {
         c.position.x = cell.x;
         c.position.y = cell.y;
         c.moveCd = this.stepDelay(c);
         return;
-      }
-    }
-    // strafe blocked -> flip and retry once, else drift toward target so we
-    // never get stuck motionless (preserves the no-stall invariant).
-    if (inBand) {
-      c.strafeDir = -((c.strafeDir ?? 1));
-      const fx = Math.sign(dx), fy = Math.sign(dy);
-      for (const cell of [{ x: c.position.x + fx, y: c.position.y + fy }, { x: c.position.x + fx, y: c.position.y }, { x: c.position.x, y: c.position.y + fy }]) {
-        if (this.isCellFree(cell, c.uid)) { c.position.x = cell.x; c.position.y = cell.y; c.moveCd = this.stepDelay(c); return; }
       }
     }
   }
@@ -356,6 +361,11 @@ export class BattleSim {
     if (!skill) return;
     const cast = skill.castTime ?? 0;
     if (cast > 0) {
+      // A windup commits the combatant to its current cell. Snapping the visual
+      // position here also prevents it from gliding after the cast bar appears.
+      c.pixel.x = c.position.x;
+      c.pixel.y = c.position.y;
+      c.plan = null;
       c.castProgress = { skillId, remaining: cast };
       this.emit('skill', c.uid, undefined, skillId, undefined, `${c.name} 开始蓄力 ${skill.name}...`, { kind: 'cast', type: skill.type });
     } else {
@@ -462,6 +472,18 @@ export class BattleSim {
     }
   }
 
+  /** Damage advances only the currently nearest-ready active skill. This gives a
+   * defender a reactive answer without synchronizing every skill cooldown into
+   * one noisy burst. */
+  private recoverCooldownFromHit(c: BattleCombatant, damage: number): void {
+    const next = Object.entries(c.cooldowns)
+      .filter(([, cd]) => cd > 0.04)
+      .sort((a, b) => a[1] - b[1])[0];
+    if (!next) return;
+    const relief = clamp(HIT_CD_RELIEF_MIN + (damage / Math.max(1, c.maxHp)) * 0.9, HIT_CD_RELIEF_MIN, HIT_CD_RELIEF_MAX);
+    c.cooldowns[next[0]] = Math.max(0, next[1] - relief);
+  }
+
   private dealDamage(
     attacker: BattleCombatant,
     defender: BattleCombatant,
@@ -509,7 +531,11 @@ export class BattleSim {
       dmg -= absorbed;
     }
     defender.currentHp -= dmg;
+    // Track real HP damage on the combatant itself so the post-battle report
+    // remains complete even when the presentation event log is trimmed.
+    attacker.damageDealt += dmg;
     const ko = defender.currentHp <= 0;
+    if (!ko && dmg > 0) this.recoverCooldownFromHit(defender, dmg);
     this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined, {
       kind: 'impact', type: skill.type, amount: dmg,
       crit: res.crit, effectiveness: res.effectiveness, ko,
@@ -543,7 +569,7 @@ export class BattleSim {
   private resolveSkill(c: BattleCombatant, skillId: string): void {
     const skill = SKILL_MAP[skillId];
     if (!skill) return;
-    c.cooldowns[skillId] = skill.cooldown;
+    c.cooldowns[skillId] = skill.cooldown * SKILL_COOLDOWN_SCALE;
     const target = this.find(c.currentTargetUid);
     const targets = skill.targetMode === 'all-enemies'
       ? this.state.combatants.filter((x) => x.side !== c.side && x.alive)

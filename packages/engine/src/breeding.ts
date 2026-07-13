@@ -14,7 +14,7 @@ import { activeSkillsForLevel, genUid, maxHp, createWildInstance, growthCeiling 
  *  - Growth (成长) fluctuates around the parents' average (±small random),
  *    capped by the offspring species' rarity ceiling and the 1.3 hard cap.
  *  - Passive skills (梦幻式): offspring's intrinsic passives are retained 100%;
- *    the rest of the parents' union rolls at 主宠 65% / 副宠 35%, up to
+ *    every other distinct skill in the parents' union rolls at 55%, up to
  *    PASSIVE_SKILL_MAX (24) slots - breeding is how a pokemon accumulates a wide
  *    passive kit across generations (wild is pool-limited to ~5).
  *  - Active skills come from the offspring species' learnset.
@@ -96,16 +96,17 @@ export function breed(parentA: PokemonInstance, parentB: PokemonInstance): Breed
   // 7. active skills from offspring species learnset
   const activeSkills = activeSkillsForLevel(speciesId, level);
 
-  // 8. passive skills: offspring's intrinsic passives are retained 100% (天生必带);
-  //    the rest of the parents' union rolls at 主宠 65% / 副宠 35%.
+  // 8. passive skills: the 65% / 35% roll above selects only the offspring
+  // species. Its intrinsic passives are retained 100%; every other distinct
+  // passive in the parents' union gets one independent 55% inheritance roll.
+  // Skills remain unique and stop at 24 slots.
   const intrinsicSet = new Set(species.intrinsicPassives ?? []);
-  const aSet = new Set(parentA.passiveSkills);
   const parentPassives = [...new Set([...parentA.passiveSkills, ...parentB.passiveSkills])];
-  const passiveSkills: string[] = [...species.intrinsicPassives];
+  const passiveSkills: string[] = [...intrinsicSet];
   for (const p of rand.shuffle(parentPassives)) {
     if (passiveSkills.length >= PASSIVE_SKILL_MAX) break;
-    if (intrinsicSet.has(p)) continue; // already added as intrinsic (100%)
-    if (rand.chance(aSet.has(p) ? 0.65 : 0.35)) passiveSkills.push(p);
+    if (intrinsicSet.has(p)) continue;
+    if (rand.chance(0.55)) passiveSkills.push(p);
   }
   // ensure at least one passive if any source exists
   if (passiveSkills.length === 0 && parentPassives.length) passiveSkills.push(rand.pick(parentPassives));

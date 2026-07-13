@@ -36,27 +36,33 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
   if (dab?.effect.kind === 'typeImmunity' && dab.effect.type === t) return 0;
   if (eff === 0) return 0;
 
-  // base damage (mirrors computeDamage; deterministic - no random/crit-roll)
-  const levelFactor = Math.floor((2 * attacker.level) / 5) + 2;
+  // Base damage (mirrors computeDamage; deterministic - no random/crit-roll).
+  // Normal attacks have their own stable formula and intentionally skip all
+  // type/STAB-related bonus layers.
   const atk = effectiveStat(attacker, 'atk');
   const def = Math.max(1, effectiveStat(defender, 'def'));
-  let dmg = (levelFactor * skill.power * atk) / def / 50 + 2;
-  // STAB (+ adaptability stronger STAB)
-  const stab = attacker.types?.includes(t) ?? false;
-  if (stab) dmg *= 1.5;
-  if (attacker.ability === 'adaptability' && stab) dmg *= 1.33;
-  // attacker typeBoost passives
-  for (const pid of attacker.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'typeBoost' && (!p.effect.type || p.effect.type === t) && p.effect.mult) dmg *= p.effect.mult;
+  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
+  let dmg = isNormalAttack
+    ? Math.max(1, atk * 0.38 - def * 0.22 + 4 + attacker.level * 0.16)
+    : Math.max(1, atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + attacker.level * 0.16);
+  if (!isNormalAttack) {
+    // STAB (+ adaptability stronger STAB)
+    const stab = attacker.types?.includes(t) ?? false;
+    if (stab) dmg *= 1.5;
+    if (attacker.ability === 'adaptability' && stab) dmg *= 1.33;
+    // attacker typeBoost passives
+    for (const pid of attacker.passiveSkills) {
+      const p = PASSIVE_MAP[pid];
+      if (p?.effect.kind === 'typeBoost' && (!p.effect.type || p.effect.type === t) && p.effect.mult) dmg *= p.effect.mult;
+    }
+    // attacker ability typeBoost at low HP (blaze/overgrow/torrent/swarm)
+    const aab = ABILITY_MAP[attacker.ability];
+    if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult && attacker.currentHp / attacker.maxHp <= 1 / 3) dmg *= aab.effect.mult;
+    // flash-fire boost (immune to fire earlier -> own fire moves stronger)
+    if (attacker.flashFireBoost && t === 'fire') dmg *= 1.5;
+    // F: dream-eater combo - bonus on a sleeping target (mirrors computeDamage)
+    if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg *= 1.5;
   }
-  // attacker ability typeBoost at low HP (blaze/overgrow/torrent/swarm)
-  const aab = ABILITY_MAP[attacker.ability];
-  if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult && attacker.currentHp / attacker.maxHp <= 1 / 3) dmg *= aab.effect.mult;
-  // flash-fire boost (immune to fire earlier -> own fire moves stronger)
-  if (attacker.flashFireBoost && t === 'fire') dmg *= 1.5;
-  // F: dream-eater combo - bonus on a sleeping target (mirrors computeDamage)
-  if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg *= 1.5;
   // expected crit: E[multiplier] = 1 + critChance * 0.5 (a crit deals x1.5)
   let critChance = 0.0625;
   for (const pid of attacker.passiveSkills) {
@@ -66,8 +72,8 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
   dmg *= 1 + critChance * 0.5;
   // multiscale (defender at full HP halves damage)
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg *= 0.5;
-  // effectiveness (now applied in computeDamage too, damped via dmgTypeMult)
-  dmg *= dmgTypeMult(eff);
+  // Type effectiveness is an active-skill-only modifier.
+  if (!isNormalAttack) dmg *= dmgTypeMult(eff);
   // accuracy / evasion: expected hit chance (noGuard bypasses evasion)
   const noGuard = ABILITY_MAP[attacker.ability]?.effect.kind === 'custom' && attacker.ability === 'no-guard';
   const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
@@ -152,10 +158,23 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     if (!switchToExecute) target = cur;
   }
 
-  // ── D: team focus (stateless) ── every ally computes the same lowest-HP
-  // enemy as the focus, so they naturally gang up without hardcoding or chat.
+  // ── D: team focus with lane allocation ── focus fire is useful, but three
+  // allies selecting the same healthy target creates a traffic jam at its melee
+  // ring. Cap ordinary assignments at two; an execute or interrupt still wins.
+  const allies = state.combatants.filter((ally) => ally.side === c.side && ally.alive && ally.uid !== c.uid);
+  const assignments = (enemy: BattleCombatant) => allies.filter((ally) => ally.currentTargetUid === enemy.uid).length;
+  const crowded = assignments(target) >= 2;
+  if (!interruptTarget && target.currentHp / target.maxHp >= EXEC_THRESHOLD && crowded && enemies.length > 1) {
+    const alternatives = enemies.filter((enemy) => enemy.uid !== target.uid);
+    target = alternatives.reduce((best, enemy) => {
+      const enemyLoad = assignments(enemy);
+      const bestLoad = assignments(best);
+      if (enemyLoad !== bestLoad) return enemyLoad < bestLoad ? enemy : best;
+      return dist(c, enemy) < dist(c, best) ? enemy : best;
+    });
+  }
   const focus = enemies.reduce((a, b) => (b.currentHp / b.maxHp < a.currentHp / a.maxHp ? b : a));
-  const focusBoost = target.uid === focus.uid ? 1.12 : 1;
+  const focusBoost = target.uid === focus.uid ? 1.08 : 1;
 
   const lowHp = c.currentHp / c.maxHp < p.defensiveThreshold;
   // E: proactive defense - a big enemy windup is aimed at me. Skills are

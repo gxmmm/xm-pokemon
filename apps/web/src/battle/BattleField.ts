@@ -17,6 +17,10 @@ export const BATTLE_CELL_PX = ARENA_W / BATTLE_GRID.cols;
 
 let bgImage: HTMLImageElement | null = null;
 let bgLoadPromise: Promise<void> | null = null;
+const fieldCache = new Map<string, HTMLCanvasElement>();
+
+function clearFieldCache(): void { fieldCache.clear(); }
+
 
 export function loadArenaBg(): Promise<void> {
   if (bgLoadPromise) return bgLoadPromise;
@@ -29,8 +33,10 @@ export function loadArenaBg(): Promise<void> {
         img.onerror = () => reject(new Error('arena-bg load failed'));
       });
       bgImage = img;
+      clearFieldCache();
     } catch {
       bgImage = null; // procedural fallback
+      clearFieldCache();
     }
   })();
   return bgLoadPromise;
@@ -68,7 +74,7 @@ function hash2(x: number, y: number): number {
   return (h % 1000) / 1000;
 }
 
-export function drawField(ctx: CanvasRenderingContext2D, biome: Biome, W: number, H: number): void {
+function paintFieldBase(ctx: CanvasRenderingContext2D, biome: Biome, W: number, H: number): void {
   const p = PALETTES[biome] ?? PALETTES.grass;
   const g = geom(W, H);
   ctx.imageSmoothingEnabled = false;
@@ -143,4 +149,21 @@ export function drawField(ctx: CanvasRenderingContext2D, biome: Biome, W: number
   ctx.beginPath();
   ctx.ellipse(g.cx, g.cy, g.a * 1.03, g.b * 1.03, 0, 0, Math.PI * 2);
   ctx.stroke();
+}
+
+/** Draw a cached immutable stadium layer. The floor, seats and texture do not
+ * change during a fight, so reusing one canvas removes hundreds of fill/stroke
+ * calls from every animation frame. */
+export function drawField(ctx: CanvasRenderingContext2D, biome: Biome, W: number, H: number): void {
+  const key = `${biome}:${W}x${H}:${bgImage ? 'image' : 'procedural'}`;
+  let cached = fieldCache.get(key);
+  if (!cached) {
+    cached = document.createElement('canvas');
+    cached.width = W;
+    cached.height = H;
+    const base = cached.getContext('2d');
+    if (base) paintFieldBase(base, biome, W, H);
+    fieldCache.set(key, cached);
+  }
+  ctx.drawImage(cached, 0, 0, W, H);
 }

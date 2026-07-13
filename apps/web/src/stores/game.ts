@@ -39,6 +39,7 @@ function freshSave(playerId: string, username: string, starterId: number): Playe
     lastBattleResult: undefined,
     stats: { battles: 0, wins: 0, caught: 0, bred: 0 },
     visitedMaps: ['pallet'],
+    story: { flags: [], activeQuest: 'meet-professor', completedQuests: [], tide: 'high' },
   };
 }
 
@@ -57,6 +58,13 @@ function migrateSave(s: PlayerSave): PlayerSave {
   if (!Array.isArray(s.roster)) s.roster = [];
   if (!Array.isArray(s.pveTeam)) s.pveTeam = [];
   if (!Array.isArray(s.pvpTeam)) s.pvpTeam = [];
+  // v5: original story state. Old free-exploration saves enter at the opening
+  // objective without losing any captured Pokemon or map progress.
+  if (!s.story) s.story = { flags: [], activeQuest: 'meet-professor', completedQuests: [], tide: 'high' };
+  if (!Array.isArray(s.story.flags)) s.story.flags = [];
+  if (!Array.isArray(s.story.completedQuests)) s.story.completedQuests = [];
+  if (s.story.tide !== 'high' && s.story.tide !== 'low') s.story.tide = 'high';
+  if (!s.story.activeQuest) s.story.activeQuest = 'meet-professor';
   // v4: free-placement formation (阵型). Missing/short -> default.
   if (!Array.isArray(s.formation) || s.formation.length < 3) s.formation = defaultFormation();
   // prune loadout uids no longer in roster
@@ -315,6 +323,23 @@ export const useGameStore = defineStore('game', () => {
     if (!save.value.friends.includes(username)) save.value.friends.push(username);
   }
 
+  function hasStoryFlag(flag: string): boolean {
+    return !!save.value?.story.flags.includes(flag);
+  }
+
+  function advanceStory(flags: string[] = [], activeQuest?: string): void {
+    if (!save.value) return;
+    for (const flag of flags) if (!save.value.story.flags.includes(flag)) save.value.story.flags.push(flag);
+    if (activeQuest) save.value.story.activeQuest = activeQuest;
+    void persist();
+  }
+
+  function setTide(tide: 'high' | 'low'): void {
+    if (!save.value || save.value.story.tide === tide) return;
+    save.value.story.tide = tide;
+    void persist();
+  }
+
   function travelTo(mapId: string, x: number, y: number): void {
     if (!save.value) return;
     save.value.currentMapId = mapId;
@@ -341,7 +366,7 @@ export const useGameStore = defineStore('game', () => {
     getInstance, load, startWithStarter, persist,
     see, caught, addCaughtInstance, release, setPveTeam, setPvpTeam, setFormation,
     healAll, useItem, buyItem, grantExp, doEvolve, breed, recordBattle, addFriend,
-    travelTo, updateSettings, reset,
+    hasStoryFlag, advanceStory, setTide, travelTo, updateSettings, reset,
   };
 });
 

@@ -332,6 +332,18 @@ export interface PlayerSettings {
   battleSpeed: number; // 1, 2, 3
 }
 
+export type TideState = 'high' | 'low';
+
+export interface StoryState {
+  /** Monotonic world-story switches. They are deliberately generic so future
+   * chapters can add content without migrating a rigid quest schema. */
+  flags: string[];
+  activeQuest: string;
+  completedQuests: string[];
+  /** Static tide phase for island puzzles; changed only at tide instruments. */
+  tide: TideState;
+}
+
 /**
  * PlayerSave - the entire player state. The Worker stores this (as a JSON blob)
  * because the backend is a save server, not a compute server. Static config is
@@ -367,6 +379,8 @@ export interface PlayerSave {
   stats: { battles: number; wins: number; caught: number; bred: number };
   /** map ids the player has visited (drives world-map navigation discovery). */
   visitedMaps: string[];
+  /** Original story progress, NPC state, and current objective. */
+  story: StoryState;
 }
 
 export interface BattleResult {
@@ -419,6 +433,9 @@ export interface BattleCombatant {
   statusTimer: number;
   statStages: { atk: number; def: number; spd: number };
   shields: number;
+  /** Actual HP damage dealt to opponents during this battle; used by the
+   * post-battle per-Pokemon damage/DPS report. */
+  damageDealt: number;
   buffs: TimedEffect[];
   castProgress: { skillId: string; remaining: number } | null;
   alive: boolean;

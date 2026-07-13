@@ -76,40 +76,50 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     return result;
   }
 
-  // base damage
+  // Base damage. Normal attacks deliberately use a separate, dependable
+  // attack-vs-defense formula. Active skills add their configured power to the
+  // user's attack instead of multiplying it, which compresses high-power burst.
   const level = attacker.level;
-  const levelFactor = Math.floor((2 * level) / 5) + 2;
   const atk = effectiveStat(attacker, 'atk');
   const def = Math.max(1, effectiveStat(defender, 'def'));
-  let dmg = Math.floor((Math.floor(levelFactor * skill.power) * atk) / def / 50) + 2;
+  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
+  let dmg = isNormalAttack
+    ? Math.floor(atk * 0.38 - def * 0.22 + 4 + level * 0.16)
+    // Active skills build on the same attack-defense core as a normal attack;
+    // configured power is a modest additive premium, not an attack multiplier.
+    : Math.floor(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
+  dmg = Math.max(1, dmg);
 
-  // STAB
-  if (attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.5);
+  // Normal attacks are universal baseline damage: they do not receive STAB,
+  // type advantage, or type-specific passive/ability bonuses.
+  if (!isNormalAttack && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.5);
 
-  // passive typeBoost on attacker
-  let typeBoost = 1;
-  for (const pid of attacker.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (!p) continue;
-    if (p.effect.kind === 'typeBoost') {
-      if (!p.effect.type || p.effect.type === t) typeBoost *= p.effect.mult ?? 1;
+  if (!isNormalAttack) {
+    // passive typeBoost on attacker
+    let typeBoost = 1;
+    for (const pid of attacker.passiveSkills) {
+      const p = PASSIVE_MAP[pid];
+      if (!p) continue;
+      if (p.effect.kind === 'typeBoost') {
+        if (!p.effect.type || p.effect.type === t) typeBoost *= p.effect.mult ?? 1;
+      }
     }
-  }
-  dmg = Math.floor(dmg * typeBoost);
+    dmg = Math.floor(dmg * typeBoost);
 
-  // ability: onLowHp type boost (blaze/overgrow/torrent/swarm)
-  const aab = ABILITY_MAP[attacker.ability];
-  if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult) {
-    if (attacker.currentHp / attacker.maxHp <= 1 / 3) dmg = Math.floor(dmg * aab.effect.mult);
+    // ability: onLowHp type boost (blaze/overgrow/torrent/swarm)
+    const aab = ABILITY_MAP[attacker.ability];
+    if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult) {
+      if (attacker.currentHp / attacker.maxHp <= 1 / 3) dmg = Math.floor(dmg * aab.effect.mult);
+    }
+    // flash-fire boost (immune to fire earlier -> own fire moves stronger)
+    if (attacker.flashFireBoost && t === 'fire') dmg = Math.floor(dmg * 1.5);
+    // adaptability: stronger STAB
+    if (attacker.ability === 'adaptability' && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.33);
+    // F: dream-eater is a setup finisher - bonus damage on a sleeping target
+    // (combo with hypnosis / sleep-powder). No penalty off-sleep so it stays
+    // usable, but sleeping first is the rewarding line.
+    if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg = Math.floor(dmg * 1.5);
   }
-  // flash-fire boost (immune to fire earlier -> own fire moves stronger)
-  if (attacker.flashFireBoost && t === 'fire') dmg = Math.floor(dmg * 1.5);
-  // adaptability: stronger STAB
-  if (attacker.ability === 'adaptability' && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.33);
-  // F: dream-eater is a setup finisher - bonus damage on a sleeping target
-  // (combo with hypnosis / sleep-powder). No penalty off-sleep so it stays
-  // usable, but sleeping first is the rewarding line.
-  if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg = Math.floor(dmg * 1.5);
 
   // crit
   let critChance = 0.0625;
@@ -129,11 +139,9 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   // defender damage reduction: multiscale at full hp
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.floor(dmg * 0.5);
 
-  // type effectiveness. (Bug fix: eff was computed and logged "效果绝佳！" but
-  // never multiplied into damage, so super-effective hits dealt the same as
-  // neutral. AI expectedDamage already applied eff; now reality matches.)
-  // Damped via dmgTypeMult so super-effective isn't swingy (x2->1.5, x4->2.5).
-  dmg = Math.floor(dmg * dmgTypeMult(eff));
+  // Type effectiveness applies only to active skills. It is damped via
+  // dmgTypeMult so super-effective hits do not become overly swingy.
+  if (!isNormalAttack) dmg = Math.floor(dmg * dmgTypeMult(eff));
 
   result.damage = Math.max(1, dmg);
   if (eff > 1) log.push(`效果绝佳！`);

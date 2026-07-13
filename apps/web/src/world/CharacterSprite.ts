@@ -70,6 +70,44 @@ export function drawCharacter(
   }
 }
 
+export type NpcPalette = 'researcher' | 'rival' | 'scout' | 'villager';
+
+/** Draw a compact NPC using the same walk-frame language as the hero. NPC art
+ * stays original/procedural until a project-owned NPC sheet is supplied. */
+export function drawNpc(
+  ctx: CanvasRenderingContext2D,
+  palette: NpcPalette,
+  facing: Facing,
+  frame: number,
+  dx: number,
+  dy: number,
+  size: number = CHAR_SIZE,
+): void {
+  const scale = size / CHAR_SIZE;
+  const colors: Record<NpcPalette, { skin: string; hair: string; shirt: string; dark: string; pants: string }> = {
+    researcher: { skin: '#f0c59b', hair: '#d9e9f7', shirt: '#f4f5ea', dark: '#91b7d1', pants: '#33415c' },
+    rival: { skin: '#e9b98a', hair: '#24304d', shirt: '#d64b5f', dark: '#9c2f45', pants: '#252738' },
+    scout: { skin: '#c98f68', hair: '#4e3324', shirt: '#5a8d62', dark: '#365d43', pants: '#2e3c37' },
+    villager: { skin: '#e7b987', hair: '#6e4a2a', shirt: '#d5a15d', dark: '#9b7041', pants: '#4d4a5b' },
+  };
+  const c = colors[palette];
+  const leg = frame === 1 ? 0 : frame === 0 ? -2 : 2;
+  ctx.save(); ctx.translate(dx, dy); ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(16, 29, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = c.pants; ctx.fillRect(11, 22, 4, 7 + leg); ctx.fillRect(17, 22, 4, 7 - leg);
+  ctx.fillStyle = c.shirt; ctx.fillRect(10, 14, 12, 10); ctx.fillRect(7, 15, 3, 7); ctx.fillRect(22, 15, 3, 7);
+  ctx.fillStyle = c.dark; ctx.fillRect(10, 22, 12, 2);
+  ctx.fillStyle = c.skin; ctx.fillRect(11, 5, 10, 10);
+  ctx.fillStyle = c.hair; ctx.fillRect(10, 4, 12, 4);
+  if (facing === 'up') ctx.fillRect(11, 4, 10, 8);
+  else { ctx.fillRect(10, 4, 3, 8); ctx.fillRect(19, 4, 3, 8); }
+  ctx.fillStyle = '#252535';
+  if (facing === 'down') { ctx.fillRect(13, 10, 2, 2); ctx.fillRect(17, 10, 2, 2); }
+  else if (facing === 'left') ctx.fillRect(13, 10, 2, 2);
+  else if (facing === 'right') ctx.fillRect(17, 10, 2, 2);
+  ctx.restore();
+}
+
 // ── procedural fallback: a simple pixel hero ─────────────────────────────────
 
 function buildFallbackChar(): HTMLCanvasElement {

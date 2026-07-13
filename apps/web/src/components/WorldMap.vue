@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { ILLUSION_TOWER_ENABLED } from '@pokemon-online/config';
 
 /**
  * 漆黑的魅影-style region map: towns + routes + caves + sea laid out as a
@@ -11,11 +12,12 @@ import { computed } from 'vue';
  */
 const props = defineProps<{ currentMapId: string; visited: Set<string> }>();
 
-type Kind = 'town' | 'route' | 'forest' | 'cave' | 'sea' | 'hidden';
+type Kind = 'town' | 'route' | 'forest' | 'cave' | 'sea' | 'hidden' | 'tower';
 interface WNode { id: string; name: string; x: number; y: number; kind: Kind; locked?: boolean; }
 
 const NODES: WNode[] = [
-  { id: 'pallet', name: '真新镇', x: 460, y: 555, kind: 'town' },
+  { id: 'pallet', name: '雾湾镇', x: 460, y: 555, kind: 'town' },
+  ...(ILLUSION_TOWER_ENABLED ? [{ id: 'illusion-tower-1', name: '幻境之塔', x: 330, y: 550, kind: 'tower' as const }] : []),
   { id: 'route1', name: '1号道路', x: 460, y: 465, kind: 'route' },
   { id: 'viridian-forest', name: '常磐森林', x: 460, y: 365, kind: 'forest' },
   { id: 'route3', name: '3号道路', x: 460, y: 265, kind: 'route' },
@@ -30,13 +32,13 @@ const NODES: WNode[] = [
 ];
 
 const EDGES: [string, string][] = [
-  ['pallet', 'route1'], ['route1', 'viridian-forest'], ['viridian-forest', 'route3'],
+  ...(ILLUSION_TOWER_ENABLED ? [['pallet', 'illusion-tower-1'] as [string, string]] : []), ['pallet', 'route1'], ['route1', 'viridian-forest'], ['viridian-forest', 'route3'],
   ['route3', 'mt-moon'], ['mt-moon', 'rock-tunnel'], ['rock-tunnel', 'sea-route'], ['sea-route', 'dragon-den'],
   ['route1', 'viridian-city'], ['route3', 'pewter-city'], ['mt-moon', 'cerulean-city'],
 ];
 
-const ICON: Record<Kind, string> = { town: '🏠', route: '🛣️', forest: '🌲', cave: '⛰️', sea: '🌊', hidden: '⭐' };
-const FILL: Record<Kind, string> = { town: '#e8e8e8', route: '#c9a26a', forest: '#4a7a3a', cave: '#6a6a6a', sea: '#4a90e2', hidden: '#8a4abf' };
+const ICON: Record<Kind, string> = { town: '🏠', route: '🛣️', forest: '🌲', cave: '⛰️', sea: '🌊', hidden: '⭐', tower: '🗼' };
+const FILL: Record<Kind, string> = { town: '#e8e8e8', route: '#c9a26a', forest: '#4a7a3a', cave: '#6a6a6a', sea: '#4a90e2', hidden: '#8a4abf', tower: '#8355b8' };
 
 const nodeOf = (id: string) => NODES.find((n) => n.id === id);
 

@@ -14,13 +14,13 @@
  *  - impulses: a short forward lunge applied to a combatant when it attacks
  *    (gives melee/ranged casts "commitment"). Queried via impulseOf(uid).
  *  - pendingImpact: the heaviest damage event this frame (position + color +
- *    intensity + heavy flag) -> drives the camera shake + localized impact
+ *    intensity + heavy flag) -> drives localized impact feedback
  *    flash. Queried (and cleared) via impact().
  *  - focal: the "featured exchange" the director camera tracks (decays over
  *    ~1.4s, refreshed by hits/skill casts). Queried via focalOf().
  *  - spawnDust(): movement footstep puffs, called by the canvas.
  */
-import type { BattleEvent, StatusKind, TypeName } from '@pokemon-online/shared';
+import type { BattleEvent, BattleVfx, StatusKind, TypeName } from '@pokemon-online/shared';
 import { TYPE_COLORS } from '@pokemon-online/config';
 
 type Pt = { x: number; y: number };
@@ -140,8 +140,9 @@ interface Focal {
   koHold: number;
 }
 
-/** Per-frame heaviest impact signal (read once, then cleared). Drives the
- *  camera shake + localized flash. `heavy` = a real heavy hit (≥8% maxHp). */
+/** Per-frame heaviest impact signal (read once, then cleared). Drives a
+ * localized impact flash only; the arena camera never shakes. `heavy` = a real
+ * heavy hit (≥8% maxHp). */
 interface Impact { x: number; y: number; targetUid: string; color: string; intensity: number; heavy: boolean; ko: boolean; secondary: boolean; delay: number; }
 
 export class EffectManager {
@@ -157,7 +158,12 @@ export class EffectManager {
    *  -> focal/impact intensity). Spawns VFX for events with seq > lastSeq.
    *  Per-frame spawn count is capped so a skip/resolve burst (hundreds of events
    *  at once) doesn't flood the screen with overlapping effects. */
-  consume(events: BattleEvent[], cellOf: (uid?: string) => Pt | null, combatantOf?: (uid?: string) => { maxHp: number } | null): void {
+  consume(
+    events: BattleEvent[],
+    cellOf: (uid?: string) => Pt | null,
+    combatantOf?: (uid?: string) => { maxHp: number } | null,
+    originOf?: (uid: string | undefined, kind: BattleVfx['kind']) => Pt | null,
+  ): void {
     this.cellOfCb = cellOf;
     const fresh: BattleEvent[] = [];
     for (const ev of events) {
@@ -175,7 +181,7 @@ export class EffectManager {
     }
     for (const ev of toSpawn) {
       this.lastSeq = Math.max(this.lastSeq, ev.seq ?? 0);
-      this.spawn(ev, cellOf, combatantOf);
+      this.spawn(ev, cellOf, combatantOf, originOf);
     }
   }
 
@@ -188,21 +194,22 @@ export class EffectManager {
     return alt ?? cellOf(ev.target) ?? cellOf(ev.actor);
   }
 
-  private spawn(ev: BattleEvent, cellOf: (uid?: string) => Pt | null, combatantOf?: (uid?: string) => { maxHp: number } | null): void {
+  private spawn(
+    ev: BattleEvent,
+    cellOf: (uid?: string) => Pt | null,
+    combatantOf?: (uid?: string) => { maxHp: number } | null,
+    originOf?: (uid: string | undefined, kind: BattleVfx['kind']) => Pt | null,
+  ): void {
     const v = ev.vfx;
     switch (ev.type) {
       case 'attack':
       case 'skill': {
         if (!v) break;
-        const from = this.pos(ev, cellOf, 'actor');
+        const from = originOf?.(ev.actor, v.kind) ?? this.pos(ev, cellOf, 'actor');
         const to = this.pos(ev, cellOf, 'target');
-        // attacker forward lunge (toward target). melee commits harder.
-        if (from && to && ev.actor) {
-          const dx = to.x - from.x, dy = to.y - from.y;
-          const len = Math.hypot(dx, dy) || 1;
-          const amp = v.kind === 'melee' ? 12 : (v.kind === 'projectile' || v.kind === 'beam') ? 5 : v.kind === 'cast' ? 4 : 6;
-          this.impulses.set(ev.actor, { t: 0, life: 0.30, ax: (dx / len) * amp, ay: (dy / len) * amp });
-        }
+        const normalAttack = ev.skillId === '__normal__';
+        // Body anticipation/release is handled by BattleActionTimeline. Effects
+        // only own the local projectile, slash, beam and impact layers.
         // skill casts (not routine normal attacks) earn a mild focal so the
         // camera begins tracking the windup before the hit lands. intensity
         // stays below the zoom/dim thresholds -- it only pre-aims the camera.
@@ -223,7 +230,18 @@ export class EffectManager {
           break;
         }
         const typeImg = v.type ? `type/${v.type}` : undefined;
-        if (v.kind === 'projectile') this.push({ kind: 'projectile', x: from.x, y: from.y, tx: to.x, ty: to.y, t: 0, life: 0.26, color, profile, imgName: typeImg });
+        if (normalAttack) {
+          // Baseline attacks remain visible, but stay local and brief: no long
+          // projectile stream across the whole field between named skills.
+          if (v.kind === 'melee') {
+            const ang = Math.atan2(to.y - from.y, to.x - from.x);
+            this.push({ kind: 'slash', x: to.x, y: to.y, ang, t: 0, life: 0.16, color: '#dce6f4', profile: { family: 'blade', scale: 0.52 } });
+          } else {
+            this.push({ kind: 'burst', x: to.x, y: to.y, t: 0, life: 0.18, color: '#dce6f4', r: 8, profile: { family: 'bolt', scale: 0.45 } });
+          }
+          break;
+        }
+        if (v.kind === 'projectile') this.push({ kind: 'projectile', x: from.x, y: from.y, tx: to.x, ty: to.y, t: 0, life: 0.32, color, profile, imgName: typeImg });
         else if (v.kind === 'melee') {
           const ang = Math.atan2(to.y - from.y, to.x - from.x);
           this.push({ kind: 'slash', x: to.x, y: to.y, ang, t: 0, life: 0.22, color, profile });
@@ -239,17 +257,21 @@ export class EffectManager {
         if (v?.missed) { this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.8, text: '闪避', color: '#cfcfcf', size: 13 }); break; }
         // real hits (actor present, not DOT) scale the burst by damage and feed
         // the focal + impact (shake/flash) signals. DOT/miss stay small.
+        const normalAttack = ev.skillId === '__normal__';
         const realHit = !!ev.actor && dmg > 0;
-        const r = realHit ? 14 + Math.min(22, dmg * 0.45) : 18;
+        const r = normalAttack ? 9 : realHit ? 14 + Math.min(22, dmg * 0.45) : 18;
         const ko = !!v?.ko;
         const profile = skillFxProfile(ev.skillId, v?.type);
-        this.push({
+        // The attack event above already supplies a compact normal-attack mark.
+        // Damage still yields a number, but only skills (and a normal-attack KO)
+        // add a second impact burst.
+        if (!normalAttack || ko) this.push({
           kind: 'burst', x: at.x, y: at.y, t: 0, life: ko ? 0.56 : 0.4,
           color: typeColor(v?.type), r: (ko ? r + 14 : r) * (profile.scale ?? 1), profile,
           delay: v?.impactDelay,
           imgName: v?.type ? `type/${v.type}` : undefined,
         });
-        if (dmg > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.85, delay: v?.impactDelay, text: String(dmg), color: typeColor(v?.type), size: 13 });
+        if (dmg > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: normalAttack ? 0.5 : 0.85, delay: v?.impactDelay, text: String(dmg), color: normalAttack ? '#f3f6fb' : typeColor(v?.type), size: normalAttack ? 11 : 13 });
         if (realHit) {
           const tMax = combatantOf?.(ev.target)?.maxHp ?? 0;
           const frac = tMax > 0 ? dmg / tMax : 0;
@@ -318,7 +340,16 @@ export class EffectManager {
     }
   }
 
-  private push(e: Effect): void { this.effects.push(e); }
+  private push(e: Effect): void {
+    const MAX_ACTIVE_EFFECTS = 72;
+    if (this.effects.length >= MAX_ACTIVE_EFFECTS) {
+      const dust = this.effects.findIndex((effect) => effect.kind === 'dust');
+      if (dust >= 0) this.effects.splice(dust, 1);
+      else if (e.kind === 'dust' || e.kind === 'number') return;
+      else this.effects.shift();
+    }
+    this.effects.push(e);
+  }
 
   /** Spawn a footstep dust puff (called by the canvas while a combatant moves). */
   spawnDust(x: number, y: number, color = '#cfcfcf'): void {
@@ -346,7 +377,7 @@ export class EffectManager {
 
   /** Heaviest damage-impact signal this frame (color + 0..1 intensity + heavy
    *  flag + position). Resets after read so the canvas can drive a decaying
-   *  localized flash + camera shake. */
+   *  localized flash. */
   impact(): Impact | null {
     const r = this.pendingImpact;
     this.pendingImpact = null;
@@ -446,6 +477,14 @@ export class EffectManager {
       }
       if (this.focal.intensity <= 0) this.focal = null;
     }
+  }
+
+  /** True only after presentation-blocking local effects and attacker impulses
+   * finish. Footstep dust is ambient/travel feedback and can continue to spawn
+   * while a final movement interpolation settles, so it must never hold the
+   * victory/defeat result screen hostage. */
+  hasBlockingVisuals(): boolean {
+    return this.effects.some((effect) => effect.kind !== 'dust') || this.impulses.size > 0;
   }
 
   clear(): void { this.effects = []; this.lastSeq = 0; this.impulses.clear(); this.pendingImpact = null; this.focal = null; this.cellOfCb = null; }

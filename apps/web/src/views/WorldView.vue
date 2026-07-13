@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useBattleStore } from '../stores/battle.ts';
-import { getMap, isWalkable, isEncounterTile, MAP_MAP } from '@pokemon-online/config';
+import { getMap, isWalkable, isEncounterTile, MAP_MAP, STORY_TRAINERS, STORY_WARP_REQUIREMENTS, isLowTideReefCell, isTideBlockedCell, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, type StoryNpc, type StoryObject, type StoryScene } from '@pokemon-online/config';
 import { rollWildGroup, ENCOUNTER_CHANCE, dayNight } from '@pokemon-online/engine';
 import type { Facing } from '@pokemon-online/shared';
 import WorldCanvas from '../components/WorldCanvas.vue';
@@ -18,6 +18,23 @@ const map = computed(() => getMap(game.save!.currentMapId));
 const dn = computed(() => dayNight());
 const showMap = ref(false);
 const visitedSet = computed(() => new Set(game.save?.visitedMaps ?? []));
+const npcs = computed<StoryNpc[]>(() => visibleStoryNpcs(map.value.id, game.save?.story));
+const objects = computed<StoryObject[]>(() => visibleStoryObjects(map.value.id, game.save?.story));
+const nearbyObject = computed<StoryObject | null>(() => {
+  const px = Math.round(view.px), py = Math.round(view.py);
+  return objects.value.find((object) => Math.abs(object.x - px) + Math.abs(object.y - py) === 1) ?? null;
+});
+const nearbyNpc = computed<StoryNpc | null>(() => {
+  const px = Math.round(view.px), py = Math.round(view.py);
+  return npcs.value.find((npc) => Math.abs(npc.x - px) + Math.abs(npc.y - py) === 1) ?? null;
+});
+const dialog = ref<StoryScene | null>(null);
+const dialogNpc = ref<StoryNpc | null>(null);
+const dialogIndex = ref(0);
+const dialogDone = ref(false);
+const objective = computed(() => storyQuestLabel(game.save?.story.activeQuest ?? 'meet-professor'));
+const tide = computed(() => game.save?.story.tide ?? 'high');
+const canInteract = computed(() => (!!nearbyNpc.value || !!nearbyObject.value) && !dialog.value && !transition.active && !leaving);
 
 // render-time float position, interpolated between tiles for smooth walking.
 // save.position stays integer (the logical cell); `view` is what the canvas draws.
@@ -52,11 +69,11 @@ function tileAt(x: number, y: number): number {
 
 function canEnter(x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.value.width || y >= map.value.height) return false;
-  return isWalkable(tileAt(x, y));
+return (isWalkable(tileAt(x, y)) || (tide.value === 'low' && isLowTideReefCell(map.value.id, x, y))) && !isTideBlockedCell(map.value.id, x, y, tide.value) && !npcs.value.some((npc) => npc.x === x && npc.y === y);
 }
 
 function tryStartMove(dx: number, dy: number): void {
-  if (!game.save || moveAnim || transition.active || leaving) return;
+  if (!game.save || moveAnim || transition.active || leaving || dialog.value) return;
   const facing: Facing = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down';
   view.facing = facing;
   game.save.position.facing = facing;
@@ -95,6 +112,8 @@ async function onArrive(x: number, y: number): Promise<void> {
   // with a cinematic transition; never an instant teleport.
   const exit = map.value.warps.find((w) => w.x === x && w.y === y);
   if (exit) {
+    const requirement = STORY_WARP_REQUIREMENTS[`${map.value.id}:${exit.toMapId}`];
+if (requirement && !game.hasStoryFlag(requirement.flag)) { openGateHint(requirement.hint, exit.x, exit.y); return; }
     const kind = exit.transition ?? 'fade';
     const label = exit.label ?? MAP_MAP[exit.toMapId]?.name ?? '';
     await runTransition(transition, kind, label, () => {
@@ -129,12 +148,90 @@ async function onArrive(x: number, y: number): Promise<void> {
   }
 }
 
+function openNpc(npc: StoryNpc): void {
+  if (!game.save) return;
+  dialogNpc.value = npc;
+  dialog.value = sceneForNpc(npc.id, game.save.story);
+  dialogIndex.value = 0;
+  dialogDone.value = false;
+}
+function openObject(object: StoryObject): void {
+  if (!game.save) return;
+  const roleByKind: Partial<Record<StoryObject['kind'], string>> = {
+    core: '异相反应', star: '星图线索', 'tide-gauge': '潮汐装置', 'ship-log': '航海记录', anchor: '深潮反应',
+    'gravity-node': '失重反应', terminal: '古代装置', 'legend-echo': '回响记录',
+  };
+  dialogNpc.value = { id: object.id, mapId: object.mapId, x: object.x, y: object.y, name: object.name, role: roleByKind[object.kind] ?? '潮光线索', palette: 'researcher' };
+  dialog.value = sceneForObject(object.id, game.save.story);
+  dialogIndex.value = 0;
+  dialogDone.value = false;
+}
+function closeDialog(): void {
+  if (!dialog.value || !game.save) return;
+  if (dialog.value.grantFlags?.length || dialog.value.activeQuest) game.advanceStory(dialog.value.grantFlags, dialog.value.activeQuest);
+  if (dialog.value.tide) game.setTide(dialog.value.tide);
+  dialog.value = null;
+  dialogNpc.value = null;
+  dialogIndex.value = 0;
+  dialogDone.value = false;
+}
+function nextDialog(): void {
+  if (!dialog.value) return;
+  if (!dialogDone.value) { dialogDone.value = true; return; }
+  if (dialogIndex.value < dialog.value.lines.length - 1) { dialogIndex.value++; dialogDone.value = false; return; }
+  if (!dialog.value.choices?.length) closeDialog();
+}
+async function chooseDialog(kind: 'close' | 'trainer-battle' | 'warp' | 'set-tide', battleId?: string, mapId?: string, x?: number, y?: number, nextTide?: 'high' | 'low'): Promise<void> {
+  if (kind === 'close') { closeDialog(); return; }
+  if (kind === 'set-tide' && nextTide) {
+    game.setTide(nextTide);
+    if (nextTide === 'low') game.advanceStory(['tide_low'], 'find-ship-log');
+    dialog.value = null; dialogNpc.value = null;
+    return;
+  }
+  if (kind === 'warp' && mapId !== undefined && x !== undefined && y !== undefined) {
+    dialog.value = null; dialogNpc.value = null;
+    await runTransition(transition, 'cave', '深空遗址', () => { game.travelTo(mapId, x, y); syncViewFromSave(); });
+    return;
+  }
+  const trainer = battleId ? STORY_TRAINERS[battleId] : undefined;
+  if (!trainer) return;
+  const ok = battle.startStoryTrainer(trainer.team, trainer.name, trainer.id);
+  if (!ok) return;
+  dialog.value = null; dialogNpc.value = null; heldDir = null; moveAnim = null; leaving = true;
+  router.push({ name: 'battle' }).then((f) => { if (f) leaving = false; }).catch(() => { leaving = false; });
+}
+function openGateHint(text: string, x = Math.round(view.px), y = Math.round(view.py)): void {
+  dialogNpc.value = { id: 'path-marker', mapId: map.value.id, x, y, name: '前方的路', role: '', palette: 'villager' };
+  dialog.value = { lines: [{ speaker: '前方的路', text }] };
+  dialogIndex.value = 0; dialogDone.value = false;
+}
+function showBlockedExit(): void {
+  const px = Math.round(view.px), py = Math.round(view.py);
+  for (const exit of map.value.warps) {
+    if (Math.abs(exit.x - px) + Math.abs(exit.y - py) !== 1) continue;
+    const requirement = STORY_WARP_REQUIREMENTS[`${map.value.id}:${exit.toMapId}`];
+    if (requirement && !game.hasStoryFlag(requirement.flag)) {
+      openGateHint(requirement.hint, exit.x, exit.y);
+      return;
+    }
+  }
+}
+
 const KEY_MAP: Record<string, [number, number]> = {
   ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
   w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
   W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0],
 };
 function onKey(e: KeyboardEvent): void {
+  if (e.key === ' ' || e.key === 'Enter' || e.key.toLowerCase() === 'e') {
+    e.preventDefault();
+    if (dialog.value) nextDialog();
+    else if (nearbyNpc.value) openNpc(nearbyNpc.value);
+    else if (nearbyObject.value) openObject(nearbyObject.value);
+    else showBlockedExit();
+    return;
+  }
   const dir = KEY_MAP[e.key];
   if (!dir) return;
   e.preventDefault();
@@ -145,9 +242,8 @@ function onKeyUp(e: KeyboardEvent): void {
   if (e.key in KEY_MAP) heldDir = null;
 }
 
-function heal(): void {
-  game.healAll();
-}
+function heal(): void { game.healAll(); }
+function interact(): void { if (dialog.value) nextDialog(); else if (nearbyNpc.value) openNpc(nearbyNpc.value); else if (nearbyObject.value) openObject(nearbyObject.value); else showBlockedExit(); }
 
 onMounted(() => {
   leaving = false;
@@ -179,13 +275,16 @@ watch(() => game.save?.position, () => {
         <h2 class="h-title" style="margin:0">{{ map.name }}</h2>
         <span class="chip">{{ dn === 'day' ? '☀️ 白天' : '🌙 夜晚' }}</span>
         <span class="chip" v-if="map.hidden">隐藏地图</span>
+        <span class="chip" v-if="map.id === 'sea-route'">{{ tide === 'low' ? '🌊 低潮' : '🌊 高潮' }}</span>
       </div>
       <div class="row" style="gap:6px">
         <button class="sm ghost" @click="showMap = !showMap">🗺 地图</button>
+<button class="sm ghost" @click="interact">💬 交互</button>
         <button class="sm ghost" @click="heal">💊 治疗</button>
       </div>
     </div>
-    <p class="tiny muted" style="margin:0 0 8px">{{ map.description }} {{ map.ambient }}</p>
+    <p class="tiny muted" style="margin:0 0 5px">{{ map.description }} {{ map.ambient }}</p>
+    <div class="objective"><span>主线目标</span><strong>{{ objective }}</strong></div>
 
     <div class="canvas-wrap">
       <WorldCanvas
@@ -194,7 +293,24 @@ watch(() => game.save?.position, () => {
         :py="view.py"
         :facing="view.facing"
         :moving="view.moving"
+        :npcs="npcs"
+        :interact-npc-id="nearbyNpc?.id ?? null"
+        :objects="objects"
+        :interact-object-id="nearbyObject?.id ?? null"
+        :tide="tide"
       />
+    </div>
+
+    <div v-if="(nearbyNpc || nearbyObject) && !dialog" class="interact-hint">按 <b>E</b> / 空格 {{ nearbyNpc ? `与 ${nearbyNpc.name} 对话` : `调查 ${nearbyObject?.name}` }}</div>
+
+    <div v-if="dialog && dialogNpc" class="dialog-layer" @click.self="nextDialog">
+      <div class="dialog-box">
+        <div class="dialog-head"><span class="dialog-portrait">{{ dialogNpc.name.slice(0, 1) }}</span><div><b>{{ dialog.lines[dialogIndex]?.speaker }}</b><small>{{ dialog.lines[dialogIndex]?.role || dialogNpc.role }}</small></div></div>
+        <p class="dialog-text">{{ dialog.lines[dialogIndex]?.text }}</p>
+        <div v-if="dialogIndex < dialog.lines.length - 1 || !dialogDone" class="dialog-next">{{ dialogDone ? '点击或按空格继续' : '点击或按空格显示完整文字' }}</div>
+        <div v-else-if="dialog.choices?.length" class="dialog-choices"><button v-for="choice in dialog.choices" :key="choice.label" :class="choice.kind === 'trainer-battle' ? 'gold' : 'ghost'" @click="chooseDialog(choice.kind, choice.battleId, choice.mapId, choice.x, choice.y, choice.tide)">{{ choice.label }}</button></div>
+        <button v-else class="sm ghost dialog-close" @click="closeDialog">结束对话</button>
+      </div>
     </div>
 
     <!-- crossing transition overlay -->
@@ -252,4 +368,13 @@ watch(() => game.save?.position, () => {
 .map-canvas { flex:1; min-height: 0; }
 .map-fade-enter-active, .map-fade-leave-active { transition: opacity .2s; }
 .map-fade-enter-from, .map-fade-leave-to { opacity: 0; }
+
+.objective { border-left:3px solid var(--gold); background:rgba(255,203,5,.10); padding:5px 8px; margin-bottom:5px; font-size:12px; display:flex; gap:8px; align-items:center; }
+.objective span { color:var(--gold); font-weight:800; white-space:nowrap; }.objective strong { color:var(--ink); }
+.interact-hint { position:absolute; left:50%; bottom:18px; transform:translateX(-50%); z-index:15; background:rgba(10,17,31,.88); color:#f6f3e2; border:1px solid rgba(255,235,160,.55); border-radius:14px; padding:5px 12px; font-size:12px; box-shadow:0 3px 10px rgba(0,0,0,.35); }.interact-hint b { color:#ffe88c; }
+.dialog-layer { position:absolute; inset:0; z-index:55; display:flex; align-items:flex-end; padding:18px; background:linear-gradient(transparent 38%,rgba(5,8,18,.28)); }
+.dialog-box { width:min(760px,100%); margin:0 auto; background:linear-gradient(180deg,#1a2843,#101a2d); color:#f5f4ec; border:3px solid #d8b85c; box-shadow:0 8px 0 #080d18,0 18px 45px rgba(0,0,0,.58); border-radius:12px; padding:12px 16px; }
+.dialog-head { display:flex; align-items:center; gap:9px; color:#ffe89a; }.dialog-head small { display:block; color:#aebed8; font-size:11px; margin-top:1px; }.dialog-portrait { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:#456e9d; color:#fff; border:2px solid #b9daf7; font-weight:900; }
+.dialog-text { min-height:56px; margin:9px 0 5px; line-height:1.65; font-size:15px; text-shadow:0 1px 1px #000; }.dialog-next { color:#a9c9f5; font-size:11px; text-align:right; }.dialog-choices { display:flex; gap:8px; justify-content:flex-end; }.dialog-close { float:right; }
+
 </style>

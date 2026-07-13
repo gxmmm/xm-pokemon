@@ -50,6 +50,11 @@ export interface DrawPokemonOpts {
   hitFlash?: number;
   /** 0..1 knockback: sprite jolts backward (away from facing) + small hop on hit. */
   recoil?: number;
+  /** Short event-driven action offset; no continuous idle motion. */
+  actionDx?: number;
+  actionDy?: number;
+  actionTilt?: number;
+  actionScale?: number;
   /** overall alpha (faint -> low). */
   alpha?: number;
   /** grayscale amount 0..1 (fainted). */
@@ -60,6 +65,8 @@ export interface DrawPokemonOpts {
   castFrac?: number;
   /** skill element type for charge color theming. */
   castType?: TypeName;
+  /** readable name displayed with the local charge bar. */
+  castName?: string;
   /** 0..1 faint animation progress (scales down + sinks + fades). */
   faint?: number;
   status?: StatusKind | null;
@@ -95,12 +102,9 @@ export function drawPokemon(ctx: CanvasRenderingContext2D, o: DrawPokemonOpts): 
   // drawn under the sprite. Procedural; cast/<type>.png overrides the core.
   if (o.casting) drawCastCharge(ctx, o.cx, o.cy + s * 0.42, s, o.castFrac ?? 0, o.castType);
 
-  // bob while moving
-  const bobY = o.bob ? Math.sin(o.bob * Math.PI * 2) * s * 0.03 : 0;
-
   // sprite group: recoil/hop/faint-sink translate, facing flip, hit squash
   ctx.save();
-  ctx.translate(rx, ry + fp * s * 0.18); // hop up + faint sink down
+  ctx.translate((o.actionDx ?? 0) + rx, (o.actionDy ?? 0) + ry + fp * s * 0.18); // action, hit recoil + faint sink
   if (o.facing === -1) {
     ctx.translate(o.cx, 0);
     ctx.scale(-1, 1);
@@ -113,7 +117,9 @@ export function drawPokemon(ctx: CanvasRenderingContext2D, o: DrawPokemonOpts): 
   const sy = (1 + h * 0.14) * faintScale;
   const cy2 = o.cy + s * 0.05; // sprite vertical pivot
   ctx.translate(o.cx, cy2);
-  ctx.scale(sx, sy);
+  ctx.rotate(o.actionTilt ?? 0);
+  const actionScale = o.actionScale ?? 1;
+  ctx.scale(sx * actionScale, sy * actionScale);
   ctx.translate(-o.cx, -cy2);
 
   // filter: grayscale (fainted) + brightness flash (hit). Brightness flash
@@ -125,38 +131,51 @@ export function drawPokemon(ctx: CanvasRenderingContext2D, o: DrawPokemonOpts): 
   ctx.filter = filter || 'none';
 
   if (img) {
-    ctx.drawImage(img, x, y + bobY, s, s);
+    ctx.drawImage(img, x, y, s, s);
   } else {
-    drawFallbackCreature(ctx, o.cx, o.cy + bobY, s, o.types);
+    drawFallbackCreature(ctx, o.cx, o.cy, s, o.types);
   }
   ctx.filter = 'none';
 
-  // status tint (sprite-aligned flat overlay)
-  if (o.status) {
-    const tint = STATUS_TINT[o.status];
-    if (tint) {
-      ctx.globalAlpha = (o.alpha ?? 1) * 0.3;
-      ctx.fillStyle = tint;
-      ctx.fillRect(x, y + bobY, s, s);
-      ctx.globalAlpha = o.alpha ?? 1;
-    }
-  }
   ctx.restore(); // pop sprite group (flip + squash + recoil)
 
-  // status aura (world-space ambient particles, on top of the sprite)
+  // Statuses use transparent particles only. A sprite-aligned tint rectangle
+  // made transparent PNG creatures look as if they had an opaque color box.
   if (o.status) drawStatusAura(ctx, o.cx, o.cy, s, o.status, now);
+  if (o.casting && o.castName) drawCastLabel(ctx, o.cx, o.cy - s * 0.62, s, o.castName, o.castFrac ?? 0, o.castType);
 
   ctx.restore();
 }
 
-const STATUS_TINT: Record<StatusKind, string> = {
-  burn: '#ff5a2a',
-  poison: '#a33ea1',
-  paralyze: '#f7d02c',
-  freeze: '#9fd8ff',
-  sleep: '#8888aa',
-  confuse: '#f95587',
-};
+/** A compact local readout makes a windup understandable without relying on the
+ * scrolling battle log: move name above the caster plus a transparent progress bar. */
+function drawCastLabel(ctx: CanvasRenderingContext2D, cx: number, y: number, s: number, name: string, frac: number, type?: TypeName): void {
+  const color = (type && TYPE_COLORS[type]) || '#ffd24a';
+  const label = name.length > 10 ? `${name.slice(0, 9)}…` : name;
+  ctx.save();
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  const textW = Math.ceil(ctx.measureText(label).width);
+  const w = Math.max(s * 0.88, textW + 24);
+  const h = 27;
+  const x = cx - w / 2;
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = 'rgba(8,13,26,0.88)';
+  ctx.fillRect(x, y - h, w, h);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y - h + 0.5, w - 1, h - 1);
+  ctx.fillStyle = '#f5f8ff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, y - 18);
+  const barX = x + 7, barY = y - 9, barW = w - 14, barH = 4;
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = color;
+  ctx.fillRect(barX, barY, Math.max(2, barW * Math.max(0, Math.min(1, frac))), barH);
+  ctx.restore();
+}
 
 /** Charge-up visual while castProgress is active. `frac` 0..1 ramps intensity;
  *  particles spiral inward and a core brightens as the skill is about to fire. */

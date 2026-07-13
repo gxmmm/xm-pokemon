@@ -1,26 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { BATTLE_GRID } from '@pokemon-online/shared';
-import type { BattleEvent, TypeName } from '@pokemon-online/shared';
+import type { TypeName } from '@pokemon-online/shared';
 import type { BattlePresentation } from '../battle/PresentationTimeline.ts';
 import { SKILL_MAP } from '@pokemon-online/config';
 import { drawField, loadArenaBg, project, ARENA_W, ARENA_H, type Biome } from '../battle/BattleField.ts';
 import { drawPokemon, preloadPokemon } from '../battle/BattleSprite.ts';
 import { EffectManager, loadFxAssets } from '../battle/BattleEffects.ts';
+import { BattleActionTimeline } from '../battle/BattleActions.ts';
 
-const props = defineProps<{ presentation?: BattlePresentation; forecast?: BattleEvent[]; biome?: Biome }>();
+const props = defineProps<{ presentation?: BattlePresentation; biome?: Biome }>();
 const emit = defineEmits<{ impact: [intensity: number] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const fx = new EffectManager();
+const actions = new BattleActionTimeline();
 const hit = new Map<string, number>();      // uid -> hit feedback 0..1 (flash + squash + recoil)
 const prevHp = new Map<string, number>();
 const prevCell = new Map<string, { x: number; y: number }>();
 const faintProg = new Map<string, number>(); // uid -> 0..1 faint shrink animation
 const dustAcc = new Map<string, number>();   // uid -> footstep dust accumulator
-let bobPhase = 0;
-// camera (director): eased pan/zoom toward the focal exchange + decaying shake.
-let camX = 0, camY = 0, zoom = 1, shakeAmp = 0;
+// The battlefield is deliberately camera-stable. Impact feedback belongs only at
+// the struck location and on the affected combatant, never on the whole screen.
 // localized heavy-hit light (replaces the old full-screen flash)
 let flashAt: { x: number; y: number; t: number; life: number; color: string } | null = null;
 // Knockouts get a short, local aftermath halo; it lives in world space and
@@ -48,7 +49,7 @@ onMounted(() => {
   // background + optional VFX sprites load async; rendering is procedural until ready
   void Promise.all([loadArenaBg(), loadFxAssets()]);
 });
-onUnmounted(() => fx.clear());
+onUnmounted(() => { fx.clear(); actions.clear(); });
 
 /** Render one frame. dt is real seconds (scaled by battle speed) for effect lifetimes. */
 function render(dt: number): void {
@@ -57,65 +58,47 @@ function render(dt: number): void {
   if (!cv || !presentation) return;
   const ctx = cv.getContext('2d');
   if (!ctx) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // Pixel-art combat has its own fixed 1000×700 internal grid. Rendering it at
+  // device-pixel-ratio 2 doubled every frame's fill-rate without adding useful
+  // detail, especially under six simultaneous fighters and VFX. A 1× buffer is
+  // sharper for this style and substantially steadier on integrated graphics.
+  const dpr = 1;
   if (cv.width !== ARENA_W * dpr) { cv.width = ARENA_W * dpr; cv.height = ARENA_H * dpr; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
-  // consume new events -> spawn VFX + track focal / impact (director)
-  fx.consume(presentation.events, (uid) => cellOf(presentation, uid), (uid) => combatantOf(presentation, uid));
+  // Events first drive an explicit body-action timeline, then VFX use the
+  // resulting local skill anchor (mouth/claw/body direction) instead of the
+  // generic sprite center.
+  actions.consume(presentation.events, (uid) => cellOf(presentation, uid));
+  actions.update(dt);
+  fx.consume(
+    presentation.events,
+    (uid) => cellOf(presentation, uid),
+    (uid) => combatantOf(presentation, uid),
+    (uid, kind) => actions.anchorOf(uid ?? '', kind, cellOf(presentation, uid)),
+  );
   fx.update(dt);
 
-  // ── director camera: use the delayed future window to pre-aim high points ──
-  // Effects are still consumed only at presentation time. This forecast merely
-  // starts the framing roughly 160ms early, so a 3v3 high-impact exchange gets
-  // room on screen before its projectile/burst arrives.
-  const forecast = forecastFocal(presentation, props.forecast ?? []);
-  const actualFocal = fx.focalOf();
-  // Keep an ongoing big exchange stable, but allow a comparably meaningful
-  // imminent exchange to prepare the next shot instead of reacting late.
-  const focal = forecast && (!actualFocal || forecast.intensity >= actualFocal.intensity * 0.85)
-    ? forecast
-    : actualFocal;
+  // The camera never pans, zooms, or shakes. Local projectiles, bursts, numbers,
+  // hit reactions and KO halos carry the action without moving the entire arena.
   const impact = fx.impact();
   if (impact && impact.heavy) {
-    shakeAmp = Math.min(10, Math.max(shakeAmp, impact.intensity * 10));
     flashAt = { x: impact.x, y: impact.y, t: 0, life: impact.ko ? 0.34 : 0.25, color: impact.color };
     if (impact.ko) koAfterglow = { x: impact.x, y: impact.y, t: 0, life: 0.72, color: impact.color };
     // Presentation-only pause: parent holds the delayed timeline briefly while
     // the simulator itself continues at normal speed.
     emit('impact', impact.ko ? 1 : impact.intensity);
   }
-  const isKoFocus = !!actualFocal && actualFocal.koHold > 0;
-  const wantZoom = focal && focal.intensity > 0.2 ? 1 + Math.min(isKoFocus ? 0.075 : 0.06, focal.intensity * 0.08) : 1;
-  let wantCamX = 0, wantCamY = 0;
-  if (focal && focal.intensity > 0.2) {
-    // pull focal toward center (subtle 12%), clamped so we never reveal past edges
-    const limX = (wantZoom - 1) * ARENA_W / 2;
-    const limY = (wantZoom - 1) * ARENA_H / 2;
-    wantCamX = Math.max(-limX, Math.min(limX, (ARENA_W / 2 - focal.x) * 0.12));
-    wantCamY = Math.max(-limY, Math.min(limY, (ARENA_H / 2 - focal.y) * 0.12));
-  }
-  const ek = 1 - Math.exp(-dt * 5);
-  zoom += (wantZoom - zoom) * ek;
-  camX += (wantCamX - camX) * ek;
-  camY += (wantCamY - camY) * ek;
-  shakeAmp = Math.max(0, shakeAmp - dt * 40);
   const now = performance.now() / 1000;
-  const shX = (Math.sin(now * 53) + Math.sin(now * 31.7) * 0.5) * shakeAmp * 0.5;
-  const shY = (Math.cos(now * 47) + Math.cos(now * 29.3) * 0.5) * shakeAmp * 0.5;
 
   ctx.save();
-  ctx.translate(ARENA_W / 2 + shX, ARENA_H / 2 + shY);
-  ctx.scale(zoom, zoom);
-  ctx.translate(-ARENA_W / 2 + camX, -ARENA_H / 2 + camY);
 
   // oval arena floor (no grid lines)
   drawField(ctx, props.biome ?? 'grass', ARENA_W, ARENA_H);
 
   // sprites (sort so lower-y draws in front)
   const cs = [...presentation.combatants].sort((a, b) => a.pixel.y - b.pixel.y);
-  bobPhase = (bobPhase + dt * 6) % 1000;
   for (const c of cs) {
     preloadPokemon(c.speciesId, c.side === 'player'); // idempotent; loads newly deployed sprites
     const sp = project(c.pixel.x, c.pixel.y);
@@ -138,13 +121,9 @@ function render(dt: number): void {
     const h = hit.get(c.uid) ?? 0;
     if (h > 0) hit.set(c.uid, Math.max(0, h - dt * 5));
 
-    // focal dim: non-focal combatants darken while the featured exchange plays
-    let dim = 1;
-    if (focal && focal.intensity > 0.25 && c.uid !== focal.actorUid && !(focal.targetUids ?? [focal.targetUid]).includes(c.uid)) {
-      // During a knockout hold, push the surrounding 3v3 skirmish one step
-      // back without hiding it; teammates/opponents stay readable in frame.
-      dim = 1 - focal.intensity * (isKoFocus ? 0.58 : 0.45);
-    }
+    // Keep every combatant stable and equally framed. Contrast is carried by
+    // the local VFX at the attacker/target rather than dimming the full board.
+    const dim = 1;
 
     // faint animation progress (0..1 over 0.5s, then holds)
     if (!c.alive) faintProg.set(c.uid, Math.min(1, (faintProg.get(c.uid) ?? 0) + dt / 0.5));
@@ -152,11 +131,11 @@ function render(dt: number): void {
     const faint = faintProg.get(c.uid) ?? 0;
 
     // attacker forward-lunge offset (eases out and back)
-    const imp = fx.impulseOf(c.uid);
-    const lx = imp ? imp.dx : 0;
-    const ly = imp ? imp.dy : 0;
-    const cx = sp.x + lx;
-    const cy = sp.y + ly;
+    const action = actions.poseOf(c.uid);
+    // drawPokemon applies the action offset to the sprite group only, keeping
+    // its ground shadow and status anchor stable instead of double-translating.
+    const cx = sp.x;
+    const cy = sp.y;
 
     // team ground glow under the sprite (depth + side readability)
     const glow = c.side === 'player' ? '#4a90e2' : '#e25555';
@@ -173,9 +152,9 @@ function render(dt: number): void {
     const prevC = prevCell.get(c.uid);
     const moving = !prevC || Math.hypot(c.pixel.x - c.position.x, c.pixel.y - c.position.y) > 0.06;
     prevCell.set(c.uid, { x: c.position.x, y: c.position.y });
-    if (moving && c.alive) {
+    if (moving && c.alive && !c.castProgress) {
       const acc = (dustAcc.get(c.uid) ?? 0) + dt;
-      if (acc > 0.07) { dustAcc.set(c.uid, acc - 0.07); fx.spawnDust(sp.x + Math.sin(bobPhase * 10) * 3, sp.y + SPRITE * 0.42, '#bfc4cc'); }
+      if (acc > 0.16) { dustAcc.set(c.uid, acc - 0.16); fx.spawnDust(sp.x, sp.y + SPRITE * 0.42, '#bfc4cc'); }
       else dustAcc.set(c.uid, acc);
     }
 
@@ -198,14 +177,19 @@ function render(dt: number): void {
       facing: c.facing,
       hitFlash: h,
       recoil: h,
+      actionDx: action.dx,
+      actionDy: action.dy,
+      actionTilt: action.tilt,
+      actionScale: action.scale,
       alpha: (c.alive ? 1 : 0.3) * dim,
       gray: c.alive ? 0 : 0.8,
       casting: !!c.castProgress,
       castFrac,
       castType,
+      castName: c.castProgress ? (SKILL_MAP[c.castProgress.skillId]?.name ?? c.castProgress.skillId) : undefined,
       faint,
       status: c.status,
-      bob: moving ? bobPhase : 0,
+      bob: 0,
     });
   }
 
@@ -279,49 +263,27 @@ function render(dt: number): void {
   ctx.fillRect(0, 0, ARENA_W, ARENA_H);
 }
 
-/** Finds the next meaningful exchange in the simulation lead window. It never
- * renders an effect early; it only supplies a soft camera target for a better
- * 3v3 composition before the event reaches presentation time. */
-function forecastFocal(presentation: BattlePresentation, events: BattleEvent[]): { actorUid: string; targetUid: string; targetUids?: string[]; x: number; y: number; intensity: number } | null {
-  for (const e of events) {
-    if (!e.actor || !e.target) continue;
-    if (e.type !== 'skill' && e.type !== 'damage') continue;
-    const actor = cellOf(presentation, e.actor);
-    const targetUids = e.vfx?.targetUids?.length ? e.vfx.targetUids : [e.target];
-    const targets = targetUids.map((uid) => cellOf(presentation, uid)).filter((p): p is { x: number; y: number } => !!p);
-    if (!actor || targets.length === 0) continue;
-    const target = targets[0]!;
-    const targetCom = presentation.combatants.find((c) => c.uid === e.target);
-    const frac = e.type === 'damage' && targetCom ? (e.amount ?? 0) / targetCom.maxHp : 0;
-    const outcome = e.vfx;
-    const highlight = !!outcome?.crit || (outcome?.effectiveness ?? 1) > 1;
-    // A skill gives a gentle lead-in; structured crit/advantage/KO metadata
-    // strengthens the future framing without leaking any actual VFX early.
-    const intensity = e.type === 'damage'
-      ? Math.max(outcome?.ko ? 0.88 : 0.26, Math.min(0.88, frac * 4 + (highlight ? 0.16 : 0)))
-      : 0.24;
-    const gx = targets.reduce((sum, p) => sum + p.x, 0) / targets.length;
-    const gy = targets.reduce((sum, p) => sum + p.y, 0) / targets.length;
-    return { actorUid: e.actor, targetUid: e.target, targetUids: targetUids.filter((uid): uid is string => !!uid), x: (actor.x + gx) / 2, y: (actor.y + gy) / 2, intensity };
-  }
-  return null;
-}
-
+/** Converts a combatant's delayed grid position into the canvas point used by
+ * local projectiles, bursts, damage numbers and KO effects. */
 function cellOf(presentation: BattlePresentation, uid?: string): { x: number; y: number } | null {
   if (!uid) return null;
-  const c = presentation.combatants.find((x) => x.uid === uid);
-  if (!c) return null;
-  return project(c.pixel.x, c.pixel.y);
+  const c = presentation.combatants.find((combatant) => combatant.uid === uid);
+  return c ? project(c.pixel.x, c.pixel.y) : null;
 }
 
-/** maxHp lookup for the director (damage-share -> focal/impact intensity). */
+/** maxHp lookup for local damage-share impact intensity. */
 function combatantOf(presentation: BattlePresentation, uid?: string): { maxHp: number } | null {
   if (!uid) return null;
   const c = presentation.combatants.find((x) => x.uid === uid);
   return c ? { maxHp: c.maxHp } : null;
 }
 
-defineExpose({ render });
+/** Whether the local VFX created by the delayed presentation have finished. */
+function isPresentationSettled(): boolean {
+  return !fx.hasBlockingVisuals() && !actions.isActive() && !flashAt && !koAfterglow;
+}
+
+defineExpose({ render, isPresentationSettled });
 </script>
 
 <template>

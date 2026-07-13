@@ -119,8 +119,8 @@ function statTip(key: StatKey): string {
   if (!inst.value) return '';
   const b = statBreakdown(inst.value, key);
   const inner = b.key === 'hp'
-    ? `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + ${b.level} + 10)`
-    : `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + 5)`;
+    ? `(基础${b.base} × 0.15 + 资质${b.iv} × 等级${b.level} × 0.07 + 等级${b.level} + 10)`
+    : `(基础${b.base} × 0.10 + 资质${b.iv} × 等级${b.level} × 0.055 + 5)`;
   const mults = [`×成长${b.growth}`];
   if (b.key === 'hp') mults.push(`×血量${HP_MULTIPLIER}`);
   if (b.passiveMult !== 1) mults.push(`×被动${b.passiveMult}`);
