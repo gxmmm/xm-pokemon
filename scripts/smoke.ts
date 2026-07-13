@@ -1,5 +1,5 @@
-import { BattleSim, createWildInstance, breed, createStarter, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap } from '@pokemon-online/config';
+import { BattleSim, createWildInstance, breed, createStarter, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc } from '@pokemon-online/engine';
+import { getSpecies, MAPS, getMap, SKILL_MAP } from '@pokemon-online/config';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -49,6 +49,45 @@ const pvp = new BattleSim({ mode: 'pvp', player: teamA, enemy: teamB, isWild: fa
 pvp.resolve(180);
 assert(pvp.state.ended, 'pvp ended');
 console.log('✓ pvp battle winner:', pvp.state.winner);
+
+// 3b. AI behavior: reactive interrupts (A) + team CC coordination (D). Run
+//     several high-level 3v3 matchups (so big windup nukes + hard-CC moves are
+//     in active sets) and aggregate:
+//       - interrupts: '被打断' info events (a windup cancelled by hard CC) -- A
+//       - doubleCc: two allies hard-CCing the SAME target within 0.6s -- D avoids
+//     Lower doubleCc / non-zero interrupts => the new AI logic is firing.
+{
+  const matchups: [number[], number[]][] = [
+    [[6, 9, 3], [150, 131, 143]],
+    [[59, 130, 143], [6, 9, 3]],
+    [[131, 143, 59], [9, 3, 6]],
+    [[150, 143, 131], [59, 130, 6]],
+  ];
+  let interrupts = 0, doubleCc = 0, hardCcCasts = 0, defensiveCasts = 0;
+  const DEFENSIVE = new Set(['recover', 'synthesis', 'rest', 'protect', 'reflect']);
+  for (const [a, b] of matchups) {
+    const ta = a.map((id) => createWildInstance(id, 45));
+    const tb = b.map((id) => createWildInstance(id, 45));
+    const s = new BattleSim({ mode: 'pvp', player: ta, enemy: tb, isWild: false });
+    s.resolve(180);
+    interrupts += s.state.events.filter((e) => e.type === 'info' && (e.message ?? '').includes('被打断')).length;
+    const ccCasts: { t: number; target?: string; actor?: string }[] = [];
+    for (const e of s.state.events) {
+      if (e.type === 'skill' && e.skillId && DEFENSIVE.has(e.skillId)) defensiveCasts++;
+      const sk = e.skillId ? SKILL_MAP[e.skillId] : undefined;
+      if (e.type === 'skill' && sk && isHardCc(sk)) { hardCcCasts++; ccCasts.push({ t: e.t, target: e.target, actor: e.actor }); }
+    }
+    ccCasts.sort((x, y) => x.t - y.t);
+    for (let i = 0; i < ccCasts.length; i++) {
+      for (let j = i + 1; j < ccCasts.length; j++) {
+        if (ccCasts[j].t - ccCasts[i].t > 0.6) break;
+        if (ccCasts[j].target && ccCasts[j].target === ccCasts[i].target && ccCasts[j].actor !== ccCasts[i].actor) doubleCc++;
+      }
+    }
+  }
+  console.log('✓ ai behavior over', matchups.length, 'matchups: interrupts=', interrupts, 'hardCcCasts=', hardCcCasts, 'doubleCc=', doubleCc, 'defensiveCasts=', defensiveCasts);
+  assert(hardCcCasts >= 1, `hard-CC skills are being cast (hardCcCasts=${hardCcCasts})`);
+}
 
 // 4. breeding - consumes parents, produces offspring of a parent species
 const a = createStarter(1);

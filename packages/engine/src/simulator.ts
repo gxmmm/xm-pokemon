@@ -4,7 +4,7 @@ import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMul
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
-import { decide } from './ai.ts';
+import { decide, isHardCc } from './ai.ts';
 import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena } from './grid.ts';
 
 export interface BattleSimOptions {
@@ -519,6 +519,12 @@ export class BattleSim {
     if (!skill) return;
     c.cooldowns[skillId] = skill.cooldown;
     const target = this.find(c.currentTargetUid);
+    // D: mark hard-CC incoming on the target so allies don't double-CC it this
+    // window (team CC coordination). Covers both damage+CC (ice-beam) and pure
+    // status (sleep-powder) hard-CC aimed at an enemy.
+    if (target && skill.effect?.target === 'enemy' && isHardCc(skill)) {
+      target.ccIncomingUntil = this.state.time + 0.6;
+    }
     if (skill.power > 0) {
       if (!target || !target.alive) return;
       const vfxKind = skill.range === 'ranged' ? 'projectile' : 'melee';

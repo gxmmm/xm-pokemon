@@ -35,6 +35,19 @@ export function typeMultiplier(attack: TypeName, defender: TypeName | TypeName[]
   return mult;
 }
 
+/**
+ * Type-effectiveness softening for DAMAGE only. `typeMultiplier` (and the
+ * type-badge display / "效果绝佳" log) keep the raw 2 / 0.5 / 0 values; only
+ * the final damage multiplier is damped so super-effective hits aren't so
+ * swingy (x2 -> 1.5, x4 -> 2.5 with TYPE_DAMP 0.5). Only the super-effective
+ * side (eff > 1) is damped; resisted (eff < 1) and immune (0) are unchanged.
+ * Tunable: TYPE_DAMP 0..1 (1 = no nerf, 0 = neutralize type advantage). */
+export const TYPE_DAMP = 0.5;
+export function dmgTypeMult(eff: number): number {
+  if (eff <= 1) return eff; // resisted / neutral / immune unchanged
+  return 1 + (eff - 1) * TYPE_DAMP;
+}
+
 /** When attacking with `atk`, which defender types are strong (×2) / weak (×0.5) / immune (×0). */
 export function offensiveMatchups(atk: TypeName): { strong: TypeName[]; weak: TypeName[]; immune: TypeName[] } {
   const strong: TypeName[] = [], weak: TypeName[] = [], immune: TypeName[] = [];

@@ -1,5 +1,5 @@
 import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
-import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, NORMAL_ATTACK } from '@pokemon-online/config';
+import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, NORMAL_ATTACK, dmgTypeMult } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
 
@@ -106,6 +106,10 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   if (attacker.flashFireBoost && t === 'fire') dmg = Math.floor(dmg * 1.5);
   // adaptability: stronger STAB
   if (attacker.ability === 'adaptability' && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.33);
+  // F: dream-eater is a setup finisher - bonus damage on a sleeping target
+  // (combo with hypnosis / sleep-powder). No penalty off-sleep so it stays
+  // usable, but sleeping first is the rewarding line.
+  if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg = Math.floor(dmg * 1.5);
 
   // crit
   let critChance = 0.0625;
@@ -124,6 +128,12 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 
   // defender damage reduction: multiscale at full hp
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.floor(dmg * 0.5);
+
+  // type effectiveness. (Bug fix: eff was computed and logged "效果绝佳！" but
+  // never multiplied into damage, so super-effective hits dealt the same as
+  // neutral. AI expectedDamage already applied eff; now reality matches.)
+  // Damped via dmgTypeMult so super-effective isn't swingy (x2->1.5, x4->2.5).
+  dmg = Math.floor(dmg * dmgTypeMult(eff));
 
   result.damage = Math.max(1, dmg);
   if (eff > 1) log.push(`效果绝佳！`);
