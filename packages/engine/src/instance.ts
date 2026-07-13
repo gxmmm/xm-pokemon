@@ -91,7 +91,8 @@ export function activeSkillsForLevel(speciesId: number, level: number): string[]
     if (skills.length >= ACTIVE_SKILL_MAX) break;
     if (!skills.includes(e.skill)) skills.push(e.skill);
   }
-  if (skills.length === 0) skills.push('tackle');
+  // intrinsic guarantees at least one move; the normal attack is always
+  // available regardless, so no tackle/struggle fallback is needed.
   return skills;
 }
 
@@ -186,7 +187,7 @@ export function applyExp(instance: PokemonInstance, amount: number): LevelUpResu
             instance.activeSkills.push(entry.skill);
             result.learnedSkills.push(entry.skill);
           } else {
-            // replace weakest power skill (keep tackle as a fallback anchor only if all are weak)
+            // replace weakest power skill so the new move gets a slot
             let weakestIdx = 0;
             let weakestPower = Infinity;
             instance.activeSkills.forEach((s, i) => {

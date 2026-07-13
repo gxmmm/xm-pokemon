@@ -8,6 +8,14 @@
  * sprites/effects/README.md); when absent everything is drawn procedurally so
  * the battle always has VFX offline. All particles are pixel rects - no
  * smoothing - to match the pixel-art style.
+ *
+ * Beyond spawned effects, this manager also tracks two render-side signals
+ * consumed by BattleCanvas:
+ *  - impulses: a short forward lunge applied to a combatant when it attacks
+ *    (gives melee/ranged casts "commitment"). Queried via impulseOf(uid).
+ *  - pendingImpact: screen-flash intensity/color from the heaviest damage
+ *    event this frame. Queried (and cleared) via impact().
+ *  - spawnDust(): movement footstep puffs, called by the canvas.
  */
 import type { BattleEvent, StatusKind, TypeName } from '@pokemon-online/shared';
 import { TYPE_COLORS } from '@pokemon-online/config';
@@ -57,12 +65,13 @@ type Effect =
   | { kind: 'burst'; x: number; y: number; t: number; life: number; color: string; r: number; imgName?: string; }
   | { kind: 'beam'; x: number; y: number; tx: number; ty: number; t: number; life: number; color: string; }
   | { kind: 'cast'; x: number; y: number; t: number; life: number; color: string; }
-  | { kind: 'number'; x: number; y: number; t: number; life: number; text: string; color: string; }
+  | { kind: 'number'; x: number; y: number; t: number; life: number; text: string; color: string; size: number; }
   | { kind: 'heal'; x: number; y: number; t: number; life: number; imgName?: string; }
   | { kind: 'status'; x: number; y: number; t: number; life: number; color: string; }
   | { kind: 'faint'; x: number; y: number; t: number; life: number; }
   | { kind: 'shield'; x: number; y: number; t: number; life: number; imgName?: string; }
-  | { kind: 'arrow'; x: number; y: number; t: number; life: number; up: boolean; color: string; };
+  | { kind: 'arrow'; x: number; y: number; t: number; life: number; up: boolean; color: string; }
+  | { kind: 'dust'; x: number; y: number; t: number; life: number; color: string; };
 
 const STATUS_COLOR: Record<StatusKind, string> = {
   burn: '#ff5a2a', poison: '#a33ea1', paralyze: '#f7d02c',
@@ -73,9 +82,15 @@ function typeColor(t?: TypeName): string {
   return (t && TYPE_COLORS[t]) || '#f2f2f2';
 }
 
+/** Forward-lunge impulse applied to the attacker when it commits to an
+ *  attack/skill. ax/ay is the peak pixel offset (direction = toward target). */
+interface Impulse { t: number; life: number; ax: number; ay: number; }
+
 export class EffectManager {
   private effects: Effect[] = [];
   private lastSeq = 0;
+  private impulses = new Map<string, Impulse>();
+  private pendingImpact: { color: string; intensity: number } | null = null;
 
   /** Process new events. `cellOf(uid)` returns the screen-px center of a
    *  combatant (or null). Spawns VFX for events with seq > lastSeq. Per-frame
@@ -119,6 +134,13 @@ export class EffectManager {
         if (!v) break;
         const from = this.pos(ev, cellOf, 'actor');
         const to = this.pos(ev, cellOf, 'target');
+        // attacker forward lunge (toward target). melee commits harder.
+        if (from && to && ev.actor) {
+          const dx = to.x - from.x, dy = to.y - from.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const amp = v.kind === 'melee' ? 12 : (v.kind === 'projectile' || v.kind === 'beam') ? 5 : v.kind === 'cast' ? 4 : 6;
+          this.impulses.set(ev.actor, { t: 0, life: 0.22, ax: (dx / len) * amp, ay: (dy / len) * amp });
+        }
         if (!from || !to) break;
         const color = typeColor(v.type);
         const typeImg = v.type ? `type/${v.type}` : undefined;
@@ -134,10 +156,18 @@ export class EffectManager {
       case 'damage': {
         const at = this.pos(ev, cellOf, 'target');
         if (!at) break;
-        if (v?.missed) { this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.8, text: '闪避', color: '#cfcfcf' }); break; }
-        this.push({ kind: 'burst', x: at.x, y: at.y, t: 0, life: 0.4, color: typeColor(v?.type), r: 20, imgName: v?.type ? `type/${v.type}` : undefined });
         const dmg = ev.amount ?? 0;
-        if (dmg > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.85, text: String(dmg), color: typeColor(v?.type) });
+        if (v?.missed) { this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.8, text: '闪避', color: '#cfcfcf', size: 13 }); break; }
+        // real hits (actor present, not DOT) scale the burst by damage and feed
+        // the screen-flash signal. DOT/miss stay small and don't flash.
+        const realHit = !!ev.actor && dmg > 0;
+        const r = realHit ? 14 + Math.min(22, dmg * 0.45) : 18;
+        this.push({ kind: 'burst', x: at.x, y: at.y, t: 0, life: 0.4, color: typeColor(v?.type), r, imgName: v?.type ? `type/${v.type}` : undefined });
+        if (dmg > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.85, text: String(dmg), color: typeColor(v?.type), size: 13 });
+        if (realHit) {
+          const inten = Math.min(1, Math.max(0.3, dmg / 40));
+          if (!this.pendingImpact || inten > this.pendingImpact.intensity) this.pendingImpact = { color: typeColor(v?.type), intensity: inten };
+        }
         break;
       }
       case 'heal': {
@@ -145,7 +175,7 @@ export class EffectManager {
         if (!at) break;
         this.push({ kind: 'heal', x: at.x, y: at.y, t: 0, life: 0.7, imgName: 'shared/heal' });
         const amt = ev.amount ?? 0;
-        if (amt > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.85, text: '+' + amt, color: '#4cd964' });
+        if (amt > 0) this.push({ kind: 'number', x: at.x, y: at.y - 14, t: 0, life: 0.85, text: '+' + amt, color: '#4cd964', size: 13 });
         break;
       }
       case 'status': {
@@ -173,8 +203,8 @@ export class EffectManager {
         // effectiveness / crit tags (stable strings from damage.ts)
         const at = this.pos(ev, cellOf, 'target');
         if (!at || !ev.message) break;
-        if (ev.message.includes('效果绝佳')) this.push({ kind: 'number', x: at.x, y: at.y - 30, t: 0, life: 0.9, text: '效果绝佳!', color: '#ffd24a' });
-        else if (ev.message.includes('击中要害')) this.push({ kind: 'number', x: at.x, y: at.y - 30, t: 0, life: 0.9, text: '要害!', color: '#ffd24a' });
+        if (ev.message.includes('效果绝佳')) this.push({ kind: 'number', x: at.x, y: at.y - 30, t: 0, life: 0.9, text: '效果绝佳!', color: '#ffd24a', size: 15 });
+        else if (ev.message.includes('击中要害')) this.push({ kind: 'number', x: at.x, y: at.y - 30, t: 0, life: 0.9, text: '要害!', color: '#ff7a3a', size: 15 });
         break;
       }
       default: break;
@@ -183,12 +213,39 @@ export class EffectManager {
 
   private push(e: Effect): void { this.effects.push(e); }
 
+  /** Spawn a footstep dust puff (called by the canvas while a combatant moves). */
+  spawnDust(x: number, y: number, color = '#cfcfcf'): void {
+    this.push({ kind: 'dust', x, y, t: 0, life: 0.4, color });
+  }
+
+  /** Current lunge offset (px) for a combatant, or null. Eases out-and-back via
+   *  sin(pi*k) so the sprite returns to rest. */
+  impulseOf(uid: string): { dx: number; dy: number } | null {
+    const im = this.impulses.get(uid);
+    if (!im) return null;
+    const k = Math.min(1, im.t / im.life);
+    const s = Math.sin(Math.PI * k);
+    return { dx: im.ax * s, dy: im.ay * s };
+  }
+
+  /** Heaviest damage-impact signal this frame (color + 0..1 intensity). Resets
+   *  after read so the canvas can drive a decaying screen flash. */
+  impact(): { color: string; intensity: number } | null {
+    const r = this.pendingImpact;
+    this.pendingImpact = null;
+    return r;
+  }
+
   update(dt: number): void {
     for (const e of this.effects) e.t += dt;
     this.effects = this.effects.filter((e) => e.t < e.life);
+    for (const [uid, im] of this.impulses) {
+      im.t += dt;
+      if (im.t >= im.life) this.impulses.delete(uid);
+    }
   }
 
-  clear(): void { this.effects = []; this.lastSeq = 0; }
+  clear(): void { this.effects = []; this.lastSeq = 0; this.impulses.clear(); this.pendingImpact = null; }
 
   draw(ctx: CanvasRenderingContext2D): void {
     for (const e of this.effects) {
@@ -205,6 +262,7 @@ export class EffectManager {
         case 'faint': this.drawFaint(ctx, e, k); break;
         case 'shield': this.drawShield(ctx, e, k); break;
         case 'arrow': this.drawArrow(ctx, e, k); break;
+        case 'dust': this.drawDust(ctx, e, k); break;
       }
     }
   }
@@ -226,11 +284,22 @@ export class EffectManager {
       ctx.drawImage(img, x - s / 2, y - s / 2, s, s);
       return;
     }
-    // trail
+    // additive glow halo (energy head)
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, 11);
+    grad.addColorStop(0, e.color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    // pixel trail
     const dx = e.tx - e.x, dy = e.ty - e.y;
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len, uy = dy / len;
     for (let i = 1; i <= 4; i++) this.px(ctx, x - ux * i * 3, y - uy * i * 3, 4, 4, e.color, 0.5 - i * 0.1);
+    // hard pixel core
     this.px(ctx, x - 2, y - 2, 6, 6, e.color, 1);
     this.px(ctx, x - 1, y - 1, 3, 3, '#ffffff', 0.9);
   }
@@ -241,6 +310,15 @@ export class EffectManager {
     ctx.rotate(e.ang);
     const a = 1 - k;
     const span = 26 + k * 10;
+    // additive glow underlay
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = e.color;
+    ctx.globalAlpha = a * 0.6;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(0, 0, span, -0.9, 0.9);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = e.color;
     ctx.globalAlpha = a;
     ctx.lineWidth = 3;
@@ -267,12 +345,22 @@ export class EffectManager {
       return;
     }
     const r = e.r * (0.4 + k * 1.3);
-    // white center flash (pops on impact), fades fast
+    // expanding shockwave ring (fast, white -> fades) - the "punch"
+    ctx.globalCompositeOperation = 'lighter';
+    const sr = e.r * (0.3 + k * 2.2);
+    ctx.globalAlpha = (1 - k) * 0.7;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, 4 * (1 - k));
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, sr, 0, Math.PI * 2);
+    ctx.stroke();
+    // white center flash (pops on impact), additive
     ctx.globalAlpha = (1 - k) * 0.8;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(e.x, e.y, r * 0.5 * (1 - k * 0.5), 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
     // type-colored ring
     ctx.globalAlpha = 1 - k;
     ctx.strokeStyle = e.color;
@@ -280,11 +368,11 @@ export class EffectManager {
     ctx.beginPath();
     ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
     ctx.stroke();
-    // 10 pixel particles flying out
-    const n = 10;
+    // 16 pixel particles flying out
+    const n = 16;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      const d = r * 0.9;
+      const d = r * (0.7 + 0.3 * ((i * 13) % 7) / 7);
       this.px(ctx, e.x + Math.cos(a) * d - 1.5, e.y + Math.sin(a) * d - 1.5, 3, 3, e.color, 1 - k);
     }
     ctx.globalAlpha = 1;
@@ -292,6 +380,15 @@ export class EffectManager {
 
   private drawBeam(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'beam' }>, k: number): void {
     const a = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    // additive glow halo
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = e.color;
+    ctx.globalAlpha = a * 0.4;
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y); ctx.lineTo(e.tx, e.ty);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
     ctx.strokeStyle = e.color;
     ctx.globalAlpha = a;
     ctx.lineWidth = 5;
@@ -310,16 +407,18 @@ export class EffectManager {
   private drawCast(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'cast' }>, k: number): void {
     const r = 16 + Math.sin(k * Math.PI) * 6;
     const n = 6;
+    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + k * Math.PI * 2;
       this.px(ctx, e.x + Math.cos(a) * r - 1.5, e.y + Math.sin(a) * r - 1.5, 3, 3, e.color, Math.sin(k * Math.PI));
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   private drawNumber(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'number' }>, k: number): void {
     const y = e.y - k * 22;
     ctx.globalAlpha = k < 0.15 ? k / 0.15 : 1 - (k - 0.7) / 0.3;
-    ctx.font = 'bold 13px "Courier New", monospace';
+    ctx.font = `bold ${e.size}px "Courier New", monospace`;
     ctx.textAlign = 'center';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
@@ -348,11 +447,13 @@ export class EffectManager {
   }
 
   private drawStatus(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'status' }>, k: number): void {
+    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + k * 2;
       const r = 6 + k * 16;
       this.px(ctx, e.x + Math.cos(a) * r - 1, e.y + Math.sin(a) * r - 1, 3, 3, e.color, 1 - k);
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   private drawFaint(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'faint' }>, k: number): void {
@@ -394,6 +495,19 @@ export class EffectManager {
     }
     ctx.fill();
     ctx.fillRect(e.x - 2, y - 4, 4, 8);
+    ctx.globalAlpha = 1;
+  }
+
+  private drawDust(ctx: CanvasRenderingContext2D, e: Extract<Effect, { kind: 'dust' }>, k: number): void {
+    const r = 2 + k * 6;
+    ctx.globalAlpha = (1 - k) * 0.5;
+    ctx.fillStyle = e.color;
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + e.t * 4;
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r * 0.4, 1.5 + k * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.globalAlpha = 1;
   }
 }

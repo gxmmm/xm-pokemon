@@ -1,4 +1,5 @@
 import type { Stats, StatKey, IV, PokemonInstance, BattleCombatant } from '@pokemon-online/shared';
+import { HP_MULTIPLIER } from '@pokemon-online/shared';
 import { getSpecies, PASSIVE_MAP, ABILITY_MAP } from '@pokemon-online/config';
 
 /**
@@ -17,7 +18,9 @@ export function baseStat(speciesId: number, iv: IV, growth: number, level: numbe
   const base = species.base[key];
   if (key === 'hp') {
     const v = Math.floor(((2 * base + iv.hp) * level) / 100) + level + 10;
-    return Math.max(1, Math.floor(v * growth));
+    // HP ×HP_MULTIPLIER (redesign): inflate HP so fights last longer. Passives/
+    // abilities apply on top, so tank passives scale with the bigger pool too.
+    return Math.max(1, Math.floor(v * growth * HP_MULTIPLIER));
   }
   const v = Math.floor(((2 * base + iv[key]) * level) / 100) + 5;
   return Math.max(1, Math.floor(v * growth));

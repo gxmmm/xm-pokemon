@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
-import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL } from '@pokemon-online/config';
+import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS } from '@pokemon-online/config';
 import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import Tip from '../components/Tip.vue';
 import type { PassiveSkill, Rarity, Ability, Skill } from '@pokemon-online/shared';
+import { DEX_REVEAL_ALL } from '@pokemon-online/shared';
 
 const game = useGameStore();
 const caught = computed(() => game.dexCount);
@@ -15,7 +16,7 @@ const seen = computed(() => game.dexSeen);
 const selectedId = ref<number | null>(null);
 const species = computed(() => (selectedId.value ? getSpecies(selectedId.value) : null));
 const entry = computed(() => (selectedId.value ? game.save?.pokedex[selectedId.value] : undefined));
-const isSeen = computed(() => !!entry.value?.seen);
+const isSeen = computed(() => DEX_REVEAL_ALL || !!entry.value?.seen);
 
 const ivCeil = computed(() => (species.value ? ivCeiling(species.value.rarity) : 31));
 const ivFloorVal = computed(() => (species.value ? ivFloor(species.value.rarity) : 1));
@@ -28,6 +29,18 @@ const RARITY_LABEL: Record<Rarity, string> = {
 
 function entryOf(id: number) { return game.save?.pokedex[id]; }
 function select(id: number): void { selectedId.value = id; }
+const isRevealed = (id: number) => DEX_REVEAL_ALL || !!entryOf(id)?.seen;
+// reverse lookup: speciesId -> maps where it appears (with level range)
+const encounterMaps = computed(() => {
+  const m: Record<number, { map: string; min: number; max: number }[]> = {};
+  for (const map of MAPS) {
+    for (const e of map.encounters) {
+      (m[e.speciesId] ??= []).push({ map: map.name, min: e.minLevel, max: e.maxLevel });
+    }
+  }
+  return m;
+});
+function mapsOf(id: number) { return encounterMaps.value[id] ?? []; }
 
 const TRIGGER_LABEL: Record<string, string> = {
   onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时',
@@ -58,13 +71,13 @@ function skillTip(s: Skill | undefined): string {
       <div class="grid grid-4">
         <div
           v-for="sp in SPECIES_LIST" :key="sp.id" class="dex-cell"
-          :class="{ caught: entryOf(sp.id)?.caught, seen: entryOf(sp.id)?.seen && !entryOf(sp.id)?.caught, selected: selectedId===sp.id }"
+          :class="{ caught: entryOf(sp.id)?.caught, seen: isRevealed(sp.id) && !entryOf(sp.id)?.caught, selected: selectedId===sp.id }"
           @click="select(sp.id)"
         >
           <div class="num">#{{ String(sp.id).padStart(3,'0') }}</div>
-          <PokemonSprite v-if="entryOf(sp.id)?.seen" :species-id="sp.id" :size="48" :faded="!entryOf(sp.id)?.caught" />
+          <PokemonSprite v-if="isRevealed(sp.id)" :species-id="sp.id" :size="48" :faded="!entryOf(sp.id)?.caught" />
           <div v-else class="silhouette">❔</div>
-          <div class="name">{{ entryOf(sp.id)?.seen ? sp.name : '？？？' }}</div>
+          <div class="name">{{ isRevealed(sp.id) ? sp.name : '？？？' }}</div>
           <div v-if="entryOf(sp.id)?.caught" class="tiny muted">持有 {{ entryOf(sp.id)?.count }}</div>
         </div>
       </div>
@@ -101,6 +114,12 @@ function skillTip(s: Skill | undefined): string {
           资质：{{ ivFloorVal }}~{{ ivCeil }}（野生随机）<br />
           成长：×{{ growthFloorVal }}~×{{ growthCeil }}（野生随机·炼妖按公式）
         </div>
+
+        <div class="sub bold">出现地图</div>
+        <div v-if="mapsOf(species.id).length" class="tiny row" style="gap:4px;flex-wrap:wrap">
+          <span v-for="m in mapsOf(species.id)" :key="m.map + m.min" class="chip sm-chip">{{ m.map }} Lv.{{ m.min }}-{{ m.max }}</span>
+        </div>
+        <div v-else class="tiny muted">不可野外捕获（可通过炼妖/进化获得）</div>
 
         <div class="sub bold">全部可能技能 <span class="tiny muted" style="font-weight:400">（天生必带·升级习得）</span></div>
         <div v-for="s in species.intrinsic" :key="'in-'+s" class="tiny skill-row">
@@ -156,7 +175,7 @@ function skillTip(s: Skill | undefined): string {
 <style scoped>
 .dex-layout { display:flex; gap:12px; align-items:flex-start; }
 .dex-left { flex:1; min-width:0; }
-.dex-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; }
+.dex-right { width: 340px; flex-shrink:0; position:sticky; top:8px; max-height: calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
 @media (max-width: 900px) { .dex-layout { flex-direction:column; } .dex-right { width:100%; position:static; max-height:none; } }
 .dex-cell {
   background: var(--panel); color: var(--ink); border-radius: 10px; padding: 8px 6px;

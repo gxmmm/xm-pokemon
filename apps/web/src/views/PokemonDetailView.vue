@@ -9,6 +9,7 @@ import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import Tip from '../components/Tip.vue';
 import type { Personality, Ability, Skill, IV, StatKey } from '@pokemon-online/shared';
+import { HP_MULTIPLIER } from '@pokemon-online/shared';
 
 const route = useRoute();
 const router = useRouter();
@@ -120,6 +121,7 @@ function statTip(key: StatKey): string {
     ? `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + ${b.level} + 10)`
     : `((2×基础${b.base} + 资质${b.iv}) × 等级${b.level} ÷ 100 + 5)`;
   const mults = [`×成长${b.growth}`];
+  if (b.key === 'hp') mults.push(`×血量${HP_MULTIPLIER}`);
   if (b.passiveMult !== 1) mults.push(`×被动${b.passiveMult}`);
   if (b.abilityMult !== 1) mults.push(`×特性${b.abilityMult}`);
   return `${STAT_FULL[b.key]} ${b.final}\n${inner}\n${mults.join(' ')}`;

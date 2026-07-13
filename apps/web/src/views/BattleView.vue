@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
@@ -28,6 +28,22 @@ let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
 const safeSim = computed<BattleSim>(() => sim.value as BattleSim);
+// skill-cast avatar flash: uid -> intensity 0..1, set to 1 on a 'skill' event,
+// decays each frame. Reset when a new battle (sim) starts.
+const skillFlash = ref<Record<string, number>>({});
+const interruptFlash = ref<Record<string, number>>({});
+let lastSeq = 0;
+let hitStop = 0; // hit-stop freeze seconds; sim.tick passes ~0.08x dt while > 0
+watch(sim, () => { lastSeq = 0; hitStop = 0; skillFlash.value = {}; interruptFlash.value = {}; });
+function avatarStyle(uid: string): Record<string, string> {
+  const f = skillFlash.value[uid] ?? 0;
+  if (f <= 0) return {};
+  return {
+    filter: `brightness(${1 + f * 2.5}) drop-shadow(0 0 ${f * 8}px rgba(255,255,255,${f * 0.9}))`,
+    transform: `scale(${1 + f * 0.25})`,
+  };
+}
+function interruptVal(uid: string): number { return interruptFlash.value[uid] ?? 0; }
 const combatants = computed<BattleCombatant[]>(() => { void tick.value; return sim.value?.state.combatants ?? []; });
 const playerComs = computed(() => combatants.value.filter((c) => c.side === 'player'));
 const enemyComs = computed(() => combatants.value.filter((c) => c.side === 'enemy'));
@@ -78,11 +94,41 @@ function frame(now: number): void {
   const realDt = Math.min(0.05, (now - (frame as unknown as { last?: number }).last!) / 1000);
   (frame as unknown as { last?: number }).last = now;
   const s = sim.value;
-  if (s && !s.isOver && running.value) {
-    s.tick(realDt * speed.value);
-    tick.value++;
+  if (s) {
+    // scan new events first: side-panel avatar flashes + hit-stop trigger.
+    // hit-stop fires on real hits only (actor present, not DOT), scaled by the
+    // share of target maxHp dealt (3..9s cap -> feels like a 60-90ms freeze).
+    const evs = s.state.events;
+    for (const e of evs) {
+      if ((e.seq ?? 0) <= lastSeq) continue;
+      if (e.type === 'skill' && e.actor) skillFlash.value[e.actor] = 1;
+      if (e.type === 'info' && e.actor && /被打断/.test(e.message ?? '')) interruptFlash.value[e.actor] = 1;
+      if (e.type === 'damage' && e.actor && (e.amount ?? 0) > 0) {
+        const tgt = s.state.combatants.find((c) => c.uid === e.target);
+        if (tgt) hitStop = Math.max(hitStop, Math.min(0.09, Math.max(0.03, (e.amount ?? 0) / tgt.maxHp * 1.4)));
+      }
+    }
+    if (evs.length) lastSeq = Math.max(lastSeq, evs[evs.length - 1].seq ?? 0);
+    for (const k of Object.keys(skillFlash.value)) {
+      const v = skillFlash.value[k] - realDt * 4;
+      if (v <= 0) delete skillFlash.value[k]; else skillFlash.value[k] = v;
+    }
+    for (const k of Object.keys(interruptFlash.value)) {
+      const v = interruptFlash.value[k] - realDt * 3;
+      if (v <= 0) delete interruptFlash.value[k]; else interruptFlash.value[k] = v;
+    }
+
+    // advance the sim; during hit-stop nearly freeze it (0.08x) so the impact
+    // frame lands with weight. Render below still gets full dt so VFX (burst,
+    // flash, particles) keep animating through the freeze.
+    if (!s.isOver && running.value) {
+      const dtScaled = realDt * speed.value;
+      s.tick(hitStop > 0 ? dtScaled * 0.08 : dtScaled);
+      tick.value++;
+      hitStop = Math.max(0, hitStop - dtScaled);
+    }
+    canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   }
-  if (s) canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   if (s && s.isOver && !ended.value) onEnd();
   raf = requestAnimationFrame(frame);
 }
@@ -207,12 +253,14 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
             <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
           </div>
           <div class="mc-skills">
-            <PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" />
+            <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
             <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
               <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
               <span v-else>{{ s.char }}</span>
             </div>
             <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
+            <span v-if="c.castProgress" class="cast-tag">蓄力</span>
+            <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
           </div>
         </div>
       </div>
@@ -232,12 +280,14 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
             <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
           </div>
           <div class="mc-skills">
-            <PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" />
+            <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
             <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
               <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
               <span v-else>{{ s.char }}</span>
             </div>
             <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
+            <span v-if="c.castProgress" class="cast-tag">蓄力</span>
+            <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
           </div>
         </div>
       </div>
@@ -321,6 +371,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .mc-head .ell { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:78px; }
 .mc-hp { flex:1; min-width:30px; }
 .mc-skills { display:flex; align-items:center; gap:3px; margin-top:4px; flex-wrap:wrap; }
+.mc-avatar { display:inline-flex; transition: filter .08s ease, transform .08s ease; }
 
 .cd-chip {
   width:22px; height:22px; border-radius:5px; display:flex; align-items:center; justify-content:center;
@@ -329,6 +380,8 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .cd-chip.ready { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
 .cd-chip:not(.ready) { opacity:.5; filter: grayscale(.4); }
 .status-tag { font-size:10px; font-weight:800; padding:0 4px; border-radius:4px; margin-left:auto; }
+.cast-tag { font-size:10px; font-weight:800; padding:0 5px; border-radius:4px; background:var(--gold); color:#333; box-shadow:0 0 6px rgba(255,203,5,.7); }
+.cast-tag.bad { background:var(--bad); color:#fff; box-shadow:0 0 6px rgba(210,59,59,.7); }
 .status-tag.burn { background:#e25822; color:#fff; }
 .status-tag.poison { background:#9b59b6; color:#fff; }
 .status-tag.paralyze { background:#f1c40f; color:#333; }

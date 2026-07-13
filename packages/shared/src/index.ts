@@ -11,6 +11,13 @@ export const ACTIVE_SKILL_MAX = 4;
  *  accumulate up to this many across generations (24 slots). */
 export const PASSIVE_SKILL_MAX = 24;
 export const IV_MAX = 31;
+/** HP multiplier - scales all HP so fights last longer (血量设计 ×3). Damage
+ *  formula unchanged; this only inflates HP, lengthening fights ~3x. */
+export const HP_MULTIPLIER = 3;
+/** Dex reveal-all switch: when true the Pokedex shows every species' name +
+ *  sprite (no "???" fog) regardless of seen/caught progress. Caught count stays
+ *  real. Flip to false to restore the discovery-based fog later. */
+export const DEX_REVEAL_ALL = true;
 export const GROWTH_MIN = 0.8;
 /** Growth (成长) hard cap. Rarest wild species reach this; breeding fluctuates
  *  growth around the parents' average but can never exceed it (no breakthrough). */

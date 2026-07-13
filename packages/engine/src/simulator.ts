@@ -239,17 +239,14 @@ export class BattleSim {
       }
       if (c.currentHp <= 0) this.faint(c);
     }
-    // timed status
-    if (c.status === 'sleep' || c.status === 'confuse') {
+    // status timer: all statuses are finite now (control nerf - no permanent
+    // burn/poison/paralyze, no random freeze). They all tick down and clear.
+    if (c.status && c.statusTimer > 0) {
       c.statusTimer -= dt;
       if (c.statusTimer <= 0) {
-        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 从${c.status === 'sleep' ? '睡眠' : '混乱'}中恢复`);
+        const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
+        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 从${label[c.status]}中恢复`);
         c.status = null;
-      }
-    } else if (c.status === 'freeze') {
-      if (this.rng() < 0.2 * dt) {
-        c.status = null;
-        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 解除了冰冻`);
       }
     }
   }
@@ -366,18 +363,28 @@ export class BattleSim {
     }
   }
 
+  /** A windup (castProgress) is interrupted by hard control (flinch/sleep/freeze):
+   *  the cast is cancelled, the skill does NOT fire, and the combatant must
+   *  re-decide. Emits a "被打断" info so the UI can flash the avatar. */
+  private interruptCast(c: BattleCombatant): void {
+    if (!c.castProgress) return;
+    const skill = SKILL_MAP[c.castProgress.skillId];
+    c.castProgress = null;
+    c.plan = null;
+    c.nextDecisionAt = this.state.time + 0.3;
+    this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`);
+  }
+
   private inflictStatus(target: BattleCombatant, status: StatusKind, duration: number): void {
     // immunities via ability
-    if (status === 'paralyze' && (target.ability === 'limber')) return;
-    if (status === 'poison' && (target.ability === 'immunity')) return;
+    if (status === 'paralyze' && target.ability === 'limber') return;
+    if (status === 'poison' && target.ability === 'immunity') return;
     if (target.status) return; // one status at a time
-    if (status === 'sleep' || status === 'confuse' || status === 'freeze') {
-      target.status = status;
-      target.statusTimer = duration;
-    } else {
-      target.status = status;
-      target.statusTimer = -1;
-    }
+    // All statuses are FINITE now (control nerf): no permanent burn/poison/paralyze.
+    // Caller may pass an explicit duration; otherwise use the per-status default.
+    const DEFAULT_DUR: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
+    target.status = status;
+    target.statusTimer = duration > 0 ? duration : DEFAULT_DUR[status];
     const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
     this.emit('status', undefined, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
   }
@@ -416,7 +423,7 @@ export class BattleSim {
         if (self && e.stat) this.addStatStage(self, e.stat as 'atk' | 'def' | 'spd', e.stages ?? -1);
         break;
       case 'status':
-        if (self && e.status) this.inflictStatus(self, e.status, e.duration ?? 3);
+        if (self && e.status) this.inflictStatus(self, e.status, e.duration ?? 0);
         break;
       case 'dot':
         if (self && e.magnitude) {
@@ -587,9 +594,18 @@ export class BattleSim {
     }
     for (const c of this.state.combatants) {
       if (!c.alive) continue;
-      if (this.state.time < (c.flinchUntil ?? 0)) continue;
+      // flinch (畏缩): skips action AND interrupts any in-progress windup
+      if (this.state.time < (c.flinchUntil ?? 0)) {
+        if (c.castProgress) this.interruptCast(c);
+        continue;
+      }
       // casting
       if (c.castProgress) {
+        // hard control (sleep/freeze) interrupts the windup
+        if (c.status === 'sleep' || c.status === 'freeze') {
+          this.interruptCast(c);
+          continue;
+        }
         c.castProgress.remaining -= dt;
         if (c.castProgress.remaining <= 0) {
           const sid = c.castProgress.skillId;

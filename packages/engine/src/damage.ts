@@ -1,5 +1,5 @@
 import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
-import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP } from '@pokemon-online/config';
+import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, NORMAL_ATTACK } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
 
@@ -133,5 +133,5 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 }
 
 export function getSkill(id: string): Skill {
-  return SKILL_MAP[id] ?? SKILL_MAP['tackle'];
+  return SKILL_MAP[id] ?? NORMAL_ATTACK;
 }

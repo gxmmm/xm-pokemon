@@ -261,7 +261,7 @@ const EVOLUTIONS: Record<number, { to: number; level: number }[]> = {
 function buildLearnset(primary: TypeName): LearnsetEntry[] {
   const pool = TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal;
   const levels = [1, 9, 15, 23, 31, 39, 47, 55];
-  const entries: LearnsetEntry[] = [{ level: 1, skill: 'tackle' }];
+  const entries: LearnsetEntry[] = [];
   pool.forEach((skill, i) => {
     if (i >= levels.length) return;
     if (entries.some((e) => e.skill === skill)) return;
