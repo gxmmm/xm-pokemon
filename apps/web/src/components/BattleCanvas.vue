@@ -4,7 +4,7 @@ import { BATTLE_GRID } from '@pokemon-online/shared';
 import type { TypeName } from '@pokemon-online/shared';
 import type { BattlePresentation } from '../battle/PresentationTimeline.ts';
 import { SKILL_MAP } from '@pokemon-online/config';
-import { drawField, loadArenaBg, project, ARENA_W, ARENA_H, type Biome } from '../battle/BattleField.ts';
+import { drawCombatantPlatform, drawField, loadArenaBg, project, ARENA_W, ARENA_H, type Biome } from '../battle/BattleField.ts';
 import { drawPokemon, preloadPokemon } from '../battle/BattleSprite.ts';
 import { EffectManager, loadFxAssets } from '../battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../battle/BattleActions.ts';
@@ -94,7 +94,7 @@ function render(dt: number): void {
 
   ctx.save();
 
-  // oval arena floor (no grid lines)
+  // cached perspective biome scene (no tactical grid overlay)
   drawField(ctx, props.biome ?? 'grass', ARENA_W, ARENA_H);
 
   // sprites (sort so lower-y draws in front)
@@ -137,16 +137,9 @@ function render(dt: number): void {
     const cx = sp.x;
     const cy = sp.y;
 
-    // team ground glow under the sprite (depth + side readability)
-    const glow = c.side === 'player' ? '#4a90e2' : '#e25555';
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = (0.14 + 0.04 * Math.sin(now * 3 + c.uid.length)) * dim;
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.ellipse(cx, sp.y + SPRITE * 0.42, SPRITE * 0.34, SPRITE * 0.12, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
+    // Formation plates make team ownership and footing readable without the old
+    // floating oval shadows. The field itself now supplies the world-scale scene.
+    drawCombatantPlatform(ctx, cx, sp.y + SPRITE * 0.42, c.side, c.alive, SPRITE);
 
     // footstep dust while traveling between cells
     const prevC = prevCell.get(c.uid);
