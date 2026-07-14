@@ -1,5 +1,5 @@
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
+import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
@@ -156,11 +156,12 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   console.log('✓ skill balance budgets:', SKILLS.length);
 }
 
-// 3a3. First-wave species signatures are configuration-driven, show up in the
+// 3a3. Iconic-species signatures are configuration-driven, show up in the
 // learned skill list at their intended levels, and use real configured skills.
 {
   const signatureIds = Object.keys(SIGNATURE_SKILLS).map(Number);
-  assert(signatureIds.length === 12, 'first-wave signature roster contains 12 species');
+  assert(signatureIds.length === ICONIC_SIGNATURE_SPECIES.length, 'every iconic signature species is configured');
+  assert(ICONIC_SIGNATURE_SPECIES.every((id) => signatureIds.includes(id)), 'curated iconic roster exactly has signatures');
   for (const speciesId of signatureIds) {
     const signature = SIGNATURE_SKILLS[speciesId]!;
     const species = getSpecies(speciesId);
@@ -172,7 +173,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   }
   const pikachu = createWildInstance(25, 55);
   assert(pikachu.activeSkills.includes('volt-chain'), 'Pikachu equips Volt Chain at high level');
-  console.log('✓ first-wave species signatures:', signatureIds.length);
+  console.log('✓ iconic species signatures:', signatureIds.length);
 }
 
 // 3a4. Species combat roles are a tactical layer on top of personality: tanks

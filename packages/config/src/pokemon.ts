@@ -259,7 +259,7 @@ const EVOLUTIONS: Record<number, { to: number; level: number }[]> = {
 
 export interface SignatureSkillConfig { skill: string; level: number; role: CombatRole; label: string; }
 
-/** First-wave species signatures. They deliberately reuse the common skill
+/** Iconic-species signatures. They deliberately reuse the common skill
  * engine so content can expand without a bespoke combat code path per species. */
 export const SIGNATURE_SKILLS: Record<number, SignatureSkillConfig> = {
   3: { skill: 'verdant-snare', level: 39, role: 'control', label: '持续控制' },
@@ -270,12 +270,40 @@ export const SIGNATURE_SKILLS: Record<number, SignatureSkillConfig> = {
   94: { skill: 'shadow-trap', level: 39, role: 'control', label: '暗影控制' },
   112: { skill: 'earth-shatter', level: 39, role: 'area', label: '范围压制' },
   131: { skill: 'tidal-aegis', level: 31, role: 'support', label: '护盾续航' },
+  133: { skill: 'potential-surge', level: 31, role: 'growth', label: '可能性加速' },
   143: { skill: 'heavy-slam', level: 39, role: 'tank', label: '前排控制' },
   149: { skill: 'dragon-surge', level: 47, role: 'bruiser', label: '成长爆发' },
   150: { skill: 'psyonic-annihilation', level: 47, role: 'burst', label: '终极群攻' },
   151: { skill: 'genesis-pulse', level: 39, role: 'support', label: '自我回复' },
+  18: { skill: 'gale-commander', level: 39, role: 'kite', label: '风场提速' },
+  26: { skill: 'thunder-crown', level: 47, role: 'area', label: '雷域群压' },
+  36: { skill: 'moonlit-ward', level: 39, role: 'support', label: '月辉护持' },
+  59: { skill: 'sunfire-pursuit', level: 47, role: 'burst', label: '烈焰收割' },
+  68: { skill: 'fourfold-guard', level: 47, role: 'bruiser', label: '四臂连进' },
+  130: { skill: 'tempest-breaker', level: 47, role: 'burst', label: '暴潮终结' },
+  134: { skill: 'aqua-recovery', level: 39, role: 'support', label: '水愈续航' },
+  135: { skill: 'lightning-feint', level: 39, role: 'kite', label: '电光拉扯' },
+  136: { skill: 'blaze-retaliation', level: 39, role: 'burst', label: '烈焰反攻' },
+  142: { skill: 'sky-ambush', level: 39, role: 'kite', label: '高空突袭' },
+  144: { skill: 'frostbound-hymn', level: 47, role: 'control', label: '霜歌冻结' },
+  145: { skill: 'thunderstorm-reign', level: 47, role: 'area', label: '雷暴统御' },
+  146: { skill: 'solarflare-wing', level: 47, role: 'area', label: '日炎群焚' },
 };
 
+/**
+ * Curated fan-favorite / series-icon species that receive bespoke moves.
+ * Kept explicit rather than inferred from rarity so content expansion can add
+ * recognisable favorites without turning every legendary into a signature.
+ */
+export const ICONIC_SIGNATURE_SPECIES = [
+  3, 6, 9, 18, 25, 26, 36, 59, 65, 68, 94, 112, 130, 131, 133,
+  134, 135, 136, 142, 143, 144, 145, 146, 149, 150, 151,
+] as const;
+
+const missingIconicSignatures = ICONIC_SIGNATURE_SPECIES.filter((id) => !SIGNATURE_SKILLS[id]);
+if (missingIconicSignatures.length) {
+  throw new Error(`Missing iconic species signatures: ${missingIconicSignatures.join(', ')}`);
+}
 
 /**
  * Species combat roles are player-facing tactical guidance. They do not change
