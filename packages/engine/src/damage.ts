@@ -33,8 +33,13 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   if (dab?.effect.kind === 'custom' && dab.effect.chance && (defender.ability === 'sand-veil' || defender.ability === 'snow-cloak')) {
     evasion += dab.effect.chance;
   }
+  const aab = ABILITY_MAP[attacker.ability];
+  if (aab?.effect.kind === 'accuracyBoost') {
+    evasion *= aab.effect.mult ?? 1;
+  }
+  const adjustedAcc = Math.min(1, acc + (aab?.effect.kind === 'accuracyBoost' ? aab.effect.magnitude ?? 0 : 0));
   const noGuard = ABILITY_MAP[attacker.ability]?.effect.kind === 'custom' && attacker.ability === 'no-guard';
-  if (!noGuard && rng() > acc * (1 - evasion)) {
+  if (!noGuard && rng() > adjustedAcc * (1 - evasion)) {
     result.missed = true;
     log.push(`${attacker.name} 的攻击没有命中！`);
     return result;
@@ -107,7 +112,6 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     dmg = Math.floor(dmg * typeBoost);
 
     // ability: onLowHp type boost (blaze/overgrow/torrent/swarm)
-    const aab = ABILITY_MAP[attacker.ability];
     if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult) {
       if (attacker.currentHp / attacker.maxHp <= 1 / 3) dmg = Math.floor(dmg * aab.effect.mult);
     }
@@ -127,6 +131,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     const p = PASSIVE_MAP[pid];
     if (p?.effect.kind === 'crit' && p.effect.chance) critChance += p.effect.chance;
   }
+  if (ABILITY_MAP[defender.ability]?.effect.kind === 'critImmunity') critChance = 0;
   if (rng() < critChance) {
     result.crit = true;
     dmg = Math.floor(dmg * 1.5);
@@ -142,6 +147,9 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   // Type effectiveness applies only to active skills. It is damped via
   // dmgTypeMult so super-effective hits do not become overly swingy.
   if (!isNormalAttack) dmg = Math.floor(dmg * dmgTypeMult(eff));
+  // Counter Instinct empowers only the next damaging active skill. The simulator
+  // consumes the flag after a successful hit, keeping this function pure.
+  if (!isNormalAttack && (attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.floor(dmg * 1.15);
 
   result.damage = Math.max(1, dmg);
   if (eff > 1) log.push(`效果绝佳！`);

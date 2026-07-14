@@ -53,6 +53,19 @@ console.log('✓ stats:', stats);
   console.log('✓ role-led species skill groups:', SPECIES_LIST.length);
 }
 
+// 1b1. Save / breeding compatibility: an instance may carry a legacy or
+// cross-species inherited ability. Static species pools guide new rolls only;
+// existing instance ability ids remain intact and simply use their own effect.
+{
+  const legacy = createWildInstance(10, 20);
+  legacy.ability = 'magic-guard'; // not native to Caterpie, but valid inherited data
+  const legacyStats = computeStats(legacy);
+  assert(legacy.ability === 'magic-guard' && legacyStats.hp > 0, 'cross-species inherited ability remains usable');
+  const unknown = { ...legacy, ability: 'retired-ability' };
+  assert(computeStats(unknown).hp > 0, 'unknown legacy ability id safely falls back without corrupting a save');
+  console.log('✓ ability save compatibility');
+}
+
 // 1c. Growth skills must create actual in-battle progression rather than being
 // a descriptive label only: Magikarp's growth rhythm gains attack after 5 sec.
 {
@@ -115,6 +128,200 @@ assert(outcomeEvents.some((e) => typeof e.vfx?.crit === 'boolean' && typeof e.vf
 assert(outcomeEvents.some((e) => e.vfx?.ko), 'a defeated combatant has a KO-tagged damage event');
 console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e.vfx?.ko).length);
 
+// 3a-abilities. The first high-coverage ability batch must be real combat
+// mechanics, not descriptive config. These tests invoke focused battle states
+// to protect each trigger path and also accept old / cross-species inherited
+// ability ids without rejecting a save.
+{
+  const combatant = (speciesId: number, level = 50) => createWildInstance(speciesId, level);
+  const forceAbility = (inst: PokemonInstance, ability: string) => { inst.ability = ability; return inst; };
+  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+
+  // Natural Cure: status expiry heals 12% and records an internal 8s cooldown.
+  {
+    const holder = forceAbility(combatant(1), 'natural-cure');
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 301 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!;
+    c.currentHp = Math.floor(c.maxHp * 0.5); c.status = 'paralyze'; c.statusTimer = 0.05;
+    const before = c.currentHp;
+    sim.tick(0.1);
+    assert(c.currentHp >= before + Math.floor(c.maxHp * 0.12) && c.currentHp <= before + Math.ceil(c.maxHp * 0.12), 'natural cure heals 12% after status expires');
+    assert((c.abilityCooldowns?.['natural-cure'] ?? 0) > 7.8, 'natural cure begins its internal cooldown');
+  }
+
+  // Shell Armor cancels a forced critical hit.
+  {
+    const attacker = forceAbility(combatant(6), 'keen-eye');
+    const defender = forceAbility(combatant(1), 'shell-armor');
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [defender], isWild: false, seed: 302 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    const result = computeDamage(a, d, SKILL_MAP['flamethrower']!, () => 0);
+    assert(!result.crit, 'shell armor negates critical hits');
+  }
+
+  // Inner Focus stops stun / flinch effects, including their cast interruption.
+  {
+    const holder = forceAbility(combatant(65), 'inner-focus');
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 303 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!;
+    (sim as unknown as { applyEffect: (a: BattleCombatant, b: BattleCombatant, id: string, damage: number) => void }).applyEffect(c, c, 'bone-club', 0);
+    assert((c.flinchUntil ?? 0) <= sim.state.time, 'inner focus prevents flinch');
+  }
+
+  // Sturdy leaves a full-HP defender at one HP once, then is consumed.
+  {
+    const attacker = combatant(150, 55);
+    const holder = forceAbility(combatant(10, 5), 'sturdy');
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [holder], isWild: false, seed: 304 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    d.maxHp = 1; d.currentHp = 1;
+    resolve(sim, a, 'psyonic-annihilation');
+    assert(d.currentHp === 1 && d.sturdyUsed, 'sturdy prevents one full-HP lethal hit');
+  }
+
+  // Keen Eye both raises accuracy and partially pierces Sand Veil's evasion.
+  {
+    const attacker = forceAbility(combatant(6), 'keen-eye');
+    const defender = forceAbility(combatant(1), 'sand-veil');
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [defender], isWild: false, seed: 305 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    const result = computeDamage(a, d, SKILL_MAP['fire-blast']!, () => 0.8);
+    assert(!result.missed, 'keen eye accuracy overcomes part of evasion');
+  }
+
+  // Rock Head grants a short shield after a damaging melee active skill.
+  {
+    const holder = forceAbility(combatant(143), 'rock-head');
+    holder.activeSkills = ['body-slam'];
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 306 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!, target = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    c.currentTargetUid = target.uid; resolve(sim, c, 'body-slam');
+    assert(c.shields > 0 && (c.abilityCooldowns?.['rock-head'] ?? 0) > 0, 'rock head gains a shield after melee damage');
+  }
+
+  // Serene Grace enhances only a damage move's secondary roll, capped at 70%.
+  {
+    const holder = forceAbility(combatant(25), 'serene-grace');
+    holder.activeSkills = ['thunder'];
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 307 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!, target = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    c.currentTargetUid = target.uid;
+    const original = (sim as unknown as { rng: () => number }).rng;
+    let rolls = 0; (sim as unknown as { rng: () => number }).rng = () => (++rolls === 1 ? 0 : 0.45);
+    resolve(sim, c, 'thunder'); (sim as unknown as { rng: () => number }).rng = original;
+    assert(target.status === 'paralyze', 'serene grace boosts a damaging secondary effect');
+  }
+
+  // Magic Guard ignores direct-status DOT, DOT buffs, and confusion self-damage.
+  {
+    const holder = forceAbility(combatant(36), 'magic-guard');
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 308 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!;
+    c.status = 'poison'; c.statusTimer = 3; c.buffs.push({ id: 'dot-test', kind: 'dot', remaining: 3, magnitude: 0.1 });
+    const hp = c.currentHp; sim.tick(1.1); assert(c.currentHp === hp, 'magic guard blocks poison and DOT damage');
+  }
+
+  // Synchronize mirrors the first incoming status back to the source.
+  {
+    const holder = forceAbility(combatant(151), 'synchronize');
+    const foe = combatant(10);
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 309 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!, target = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    const applied = (sim as unknown as { inflictStatus: (t: BattleCombatant, status: 'paralyze', duration: number, source: BattleCombatant) => boolean }).inflictStatus(c, 'paralyze', 2, target);
+    assert(applied && target.status === 'paralyze', 'synchronize reflects the first received status');
+  }
+
+  // Pressure slows only skill cooldown recovery and does not stack multiplicatively.
+  {
+    const holder = forceAbility(combatant(150), 'pressure');
+    const foe = combatant(10);
+    foe.activeSkills = ['body-slam'];
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 310 });
+    const target = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    target.cooldowns['body-slam'] = 10; sim.tick(1);
+    assert(target.cooldowns['body-slam']! > 9.1 && target.cooldowns['body-slam']! < 9.2, 'pressure applies 15% slower skill cooldown recovery');
+  }
+  console.log('✓ first ability batch mechanics');
+}
+
+// 3a-original-abilities. Five project-original ordinary abilities use new IDs.
+// Static species pools select them for future wild generation, while legacy IDs
+// remain untouched so existing saves keep their original semantics.
+{
+  const make = (speciesId: number, ability: string, level = 45) => {
+    const inst = createWildInstance(speciesId, level); inst.ability = ability; return inst;
+  };
+  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+
+  // 节奏感 (legacy id illuminate): hit -> reduce another cooling skill by 0.35s.
+  {
+    const holder = make(16, 'combat-rhythm'); holder.activeSkills = ['body-slam', 'take-down'];
+    const foe = make(10, 'keen-eye');
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 331 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!, target = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    c.currentTargetUid = target.uid; c.cooldowns['body-slam'] = 0; c.cooldowns['take-down'] = 3;
+    resolve(sim, c, 'body-slam');
+    assert(c.cooldowns['take-down']! > 2.64 && c.cooldowns['take-down']! < 2.66, 'rhythm reduces another skill cooldown');
+  }
+
+  // 临危不乱 (legacy id damp): crossing 35% HP from a direct hit gains defense.
+  {
+    const attacker = make(10, 'keen-eye', 5); attacker.activeSkills = ['body-slam'];
+    const holder = make(143, 'steady-nerves', 50);
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [holder], isWild: false, seed: 332 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    d.currentHp = Math.floor(d.maxHp * 0.34); a.currentTargetUid = d.uid; a.cooldowns['body-slam'] = 0;
+    resolve(sim, a, 'body-slam');
+    assert(d.statStages.def === 1, 'calm-under-pressure gains defense below threshold');
+  }
+
+  // 余韧 (legacy id magnet-pull): a fully broken shield returns 6% max HP.
+  {
+    const attacker = make(150, 'keen-eye', 45); attacker.activeSkills = ['body-slam'];
+    const holder = make(81, 'lasting-grit', 45);
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [holder], isWild: false, seed: 333 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    d.currentHp = Math.floor(d.maxHp * 0.5); d.shields = 1; d.buffs.push({ id: 'shield-test', kind: 'shield', remaining: 10, magnitude: 1 });
+    const before = d.currentHp;
+    a.currentTargetUid = d.uid; a.cooldowns['body-slam'] = 0; resolve(sim, a, 'body-slam');
+    assert(d.currentHp >= before - 100 + Math.floor(d.maxHp * 0.06) && d.healingDone >= Math.floor(d.maxHp * 0.06), 'resilience heals when a shield breaks');
+  }
+
+  // 反制本能 (legacy id unnerve): big hit arms and the next active hit consumes +15% damage.
+  {
+    const attacker = make(10, 'keen-eye', 5); attacker.activeSkills = ['hyper-beam'];
+    const holder = make(143, 'counter-instinct', 50); holder.activeSkills = ['body-slam'];
+    const sim = new BattleSim({ mode: 'pvp', player: [attacker], enemy: [holder], isWild: false, seed: 334 });
+    const a = sim.state.combatants.find((x) => x.side === 'player')!, d = sim.state.combatants.find((x) => x.side === 'enemy')!;
+    a.currentTargetUid = d.uid; a.cooldowns['hyper-beam'] = 0; resolve(sim, a, 'hyper-beam');
+    assert((d.counterInstinctUntil ?? 0) > sim.state.time, 'counter instinct arms after a big skill');
+    const boosted = computeDamage(d, a, SKILL_MAP['body-slam']!, () => 0.5).damage;
+    d.counterInstinctUntil = 0;
+    const base = computeDamage(d, a, SKILL_MAP['body-slam']!, () => 0.5).damage;
+    assert(boosted > base, 'counter instinct improves the next active skill damage');
+  }
+
+  // 先机 (legacy id run-away): a temporary opening speed stage is removed on expiry.
+  {
+    const holder = make(133, 'opening-initiative');
+    const foe = make(10, 'keen-eye');
+    const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 335 });
+    const c = sim.state.combatants.find((x) => x.side === 'player')!;
+    assert(c.statStages.spd === 1, 'initiative grants opening speed');
+    (sim as unknown as { statusTick: (c: BattleCombatant, dt: number) => void }).statusTick(c, 6.1);
+    assert(c.statStages.spd === 0, 'initiative speed expires after six seconds');
+  }
+  const legacyIds = new Set(['illuminate', 'damp', 'magnet-pull', 'unnerve', 'run-away']);
+  assert(SPECIES_LIST.every((species) => species.abilities.every((id) => !legacyIds.has(id))), 'future species pools no longer assign replaced legacy abilities');
+  assert(['combat-rhythm', 'steady-nerves', 'lasting-grit', 'counter-instinct', 'opening-initiative'].every((id) => SPECIES_LIST.some((species) => species.abilities.includes(id))), 'new ordinary abilities are assigned in species pools');
+  console.log('✓ original ordinary ability replacements');
+}
+
 // 3a0. First-pass attack balance: a neutral normal attack remains meaningful,
 // while type advantage belongs to active skills and no longer multiplies normal
 // attacks. Seeded rolls prevent crits and random variance from hiding regressions.
@@ -122,6 +329,9 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const balance = new BattleSim({ mode: 'pvp', player: [createWildInstance(6, 50)], enemy: [createWildInstance(1, 50)], isWild: false, seed: 83 });
   const attacker = balance.state.combatants.find((c) => c.side === 'player')!;
   const defender = balance.state.combatants.find((c) => c.side === 'enemy')!;
+  // Encounter IVs are intentionally random; pin only this balance fixture so
+  // the chip-damage sentinel tests the formula rather than incidental rolls.
+  attacker.stats.atk = 100; defender.stats.def = 40;
   const normal = computeDamage(attacker, defender, NORMAL_ATTACK, () => 0.5).damage;
   const ember = computeDamage(attacker, defender, SKILL_MAP['ember']!, () => 0.5).damage;
   const flamethrower = computeDamage(attacker, defender, SKILL_MAP['flamethrower']!, () => 0.5).damage;

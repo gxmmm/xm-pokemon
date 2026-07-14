@@ -158,7 +158,11 @@ export type AbilityTrigger =
 
 export type AbilityKind =
   | 'weather' | 'statBoost' | 'typeImmunity' | 'typeBoost' | 'hpRegen'
-  | 'shield' | 'counter' | 'speedBoost' | 'critBoost' | 'damageReduction' | 'custom';
+  | 'shield' | 'counter' | 'speedBoost' | 'critBoost' | 'damageReduction'
+  | 'statusRecovery' | 'critImmunity' | 'flinchImmunity' | 'endure' | 'accuracyBoost'
+  | 'contactShield' | 'secondaryBoost' | 'indirectImmunity' | 'statusReflect'
+  | 'cooldownPressure' | 'lowHpDefense' | 'cooldownRhythm' | 'openingSpeed'
+  | 'shieldRecovery' | 'counterInstinct' | 'custom';
 
 export interface AbilityEffect {
   kind: AbilityKind;
@@ -169,6 +173,10 @@ export interface AbilityEffect {
   chance?: number;
   stages?: number;
   status?: StatusKind;
+  /** Generic timed-effect duration, in seconds. */
+  duration?: number;
+  /** Per-ability internal cooldown, in seconds. */
+  cooldown?: number;
 }
 
 /**
@@ -440,6 +448,14 @@ export interface BattleCombatant {
   facing: 1 | -1;
   // runtime
   cooldowns: Record<string, number>; // skillId -> seconds remaining
+  /** Battle-local ability cooldowns; never persisted in a PokemonInstance. */
+  abilityCooldowns?: Record<string, number>;
+  /** Timestamp until which an on-enter cooldown-pressure effect applies. */
+  pressureUntil?: number;
+  /** One-use full-HP survival flag for Sturdy-like effects. */
+  sturdyUsed?: boolean;
+  /** Timestamp for the next active skill empowered by Counter Instinct. */
+  counterInstinctUntil?: number;
   normalAttackCd: number;
   status: StatusKind | null;
   statusTimer: number;

@@ -89,6 +89,9 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     pixel: { x: gx, y: gy },
     facing: side === 'player' ? 1 : -1,
     cooldowns,
+    abilityCooldowns: {},
+    pressureUntil: 0,
+    sturdyUsed: false,
     normalAttackCd: 0,
     normalRangeCells,
     normalIsRanged,
@@ -212,6 +215,16 @@ export class BattleSim {
         }
       }
       this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的威吓降低了对手的攻击！`);
+    } else if (ab.effect.kind === 'cooldownPressure') {
+      const until = this.state.time + (ab.effect.duration ?? 8);
+      for (const e of this.state.combatants) {
+        if (e.side !== c.side && e.alive) e.pressureUntil = Math.max(e.pressureUntil ?? 0, until);
+      }
+      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的压迫感笼罩战场！`);
+    } else if (ab.effect.kind === 'openingSpeed' && ab.effect.stat === 'spd') {
+      this.addStatStage(c, 'spd', ab.effect.stages ?? 1);
+      c.buffs.push({ id: 'opening-speed', kind: 'opening-speed', stat: 'spd', stages: ab.effect.stages ?? 1, remaining: ab.effect.duration ?? 6 });
+      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 抢得了先机！`);
     }
   }
 
@@ -251,20 +264,28 @@ export class BattleSim {
         }
       }
       b.remaining -= dt;
+      if (b.kind === 'shield' && b.remaining <= 0 && b.magnitude) {
+        c.shields = Math.max(0, c.shields - b.magnitude);
+      }
+      if (b.kind === 'opening-speed' && b.remaining <= 0 && b.stat && b.stages) {
+        this.addStatStage(c, b.stat as 'atk' | 'def' | 'spd', -b.stages);
+        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的先机节奏平复了。`);
+      }
     }
     c.buffs = c.buffs.filter((b) => b.remaining > 0);
     // dot from buffs (leech-seed / toxic)
     c.dotAccumulator = (c.dotAccumulator ?? 0) + dt;
     if (c.dotAccumulator >= 1) {
       c.dotAccumulator = 0;
+      const immuneIndirect = ABILITY_MAP[c.ability]?.effect.kind === 'indirectImmunity';
       // poison/burn status dot
-      if (c.status === 'poison' || c.status === 'burn') {
+      if (!immuneIndirect && (c.status === 'poison' || c.status === 'burn')) {
         const dmg = Math.max(1, Math.floor(c.maxHp * 0.0625));
         c.currentHp -= dmg;
         this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到${c.status === 'burn' ? '灼伤' : '中毒'}伤害`, { kind: 'impact', type: c.status === 'burn' ? 'fire' : 'poison', amount: dmg });
       }
       // dot buffs
-      for (const b of c.buffs) {
+      if (!immuneIndirect) for (const b of c.buffs) {
         if (b.kind === 'dot' && b.magnitude) {
           const dmg = Math.max(1, Math.floor(c.maxHp * b.magnitude));
           c.currentHp -= dmg;
@@ -281,6 +302,17 @@ export class BattleSim {
         const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
         this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 从${label[c.status]}中恢复`);
         c.status = null;
+        const ab = ABILITY_MAP[c.ability];
+        if (ab?.effect.kind === 'statusRecovery') {
+          const cds = c.abilityCooldowns ??= {};
+          if ((cds['natural-cure'] ?? 0) <= 0) {
+            const healed = Math.max(0, Math.min(Math.floor(c.maxHp * (ab.effect.magnitude ?? 0.12)), c.maxHp - c.currentHp));
+            c.currentHp += healed;
+            c.healingDone += healed;
+            cds['natural-cure'] = ab.effect.cooldown ?? 8;
+            this.emit('heal', c.uid, c.uid, undefined, healed, `${c.name} 的自然回复恢复了HP！`, { kind: 'heal', amount: healed });
+          }
+        }
       }
     }
   }
@@ -460,6 +492,16 @@ export class BattleSim {
     if (source && source.uid !== target.uid && ['paralyze', 'freeze', 'sleep', 'confuse'].includes(status)) source.controlSeconds += appliedDuration;
     const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
     this.emit('status', source?.uid, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
+    if (source && source.uid !== target.uid && ABILITY_MAP[target.ability]?.effect.kind === 'statusReflect') {
+      const reflectKey = `synchronize_${source.uid}`;
+      const cds = target.abilityCooldowns ??= {};
+      if ((cds[reflectKey] ?? 0) <= 0 && !source.status) {
+        cds[reflectKey] = 9999;
+        if (this.inflictStatus(source, status, appliedDuration, target)) {
+          this.emit('info', target.uid, source.uid, undefined, undefined, `${target.name} 的同步反射了异常！`);
+        }
+      }
+    }
     return true;
   }
 
@@ -530,6 +572,10 @@ export class BattleSim {
         break;
       case 'stun':
         if (self) {
+          if (ABILITY_MAP[self.ability]?.effect.kind === 'flinchImmunity') {
+            this.emit('info', self.uid, undefined, skillId, undefined, `${self.name} 的精神力稳住了心神！`);
+            break;
+          }
           if (self.castProgress) caster.interrupts += 1;
           self.flinchUntil = this.state.time + (e.duration ?? 1);
           self.plan = null;
@@ -626,13 +672,48 @@ export class BattleSim {
       dmg = Math.max(1, Math.floor(dmg * 0.8));
     }
     // shield absorb
+    const shieldBefore = defender.shields;
     if (defender.shields > 0) {
       const absorbed = Math.min(defender.shields, dmg);
       defender.shields -= absorbed;
       defender.shieldAbsorbed += absorbed;
       dmg -= absorbed;
     }
+    const defenderAbilityBeforeHit = ABILITY_MAP[defender.ability];
+    if (shieldBefore > 0 && defender.shields <= 0 && defenderAbilityBeforeHit?.effect.kind === 'shieldRecovery') {
+      const cds = defender.abilityCooldowns ??= {};
+      if ((cds['shield-recovery'] ?? 0) <= 0) {
+        const healed = Math.max(0, Math.min(Math.floor(defender.maxHp * (defenderAbilityBeforeHit.effect.magnitude ?? 0.06)), defender.maxHp - defender.currentHp));
+        defender.currentHp += healed;
+        defender.healingDone += healed;
+        cds['shield-recovery'] = defenderAbilityBeforeHit.effect.cooldown ?? 6;
+        this.emit('heal', defender.uid, defender.uid, undefined, healed, `${defender.name} 的余韧恢复了HP！`, { kind: 'heal', amount: healed });
+      }
+    }
+    const sturdy = ABILITY_MAP[defender.ability]?.effect.kind === 'endure';
+    if (sturdy && !defender.sturdyUsed && defender.currentHp >= defender.maxHp && dmg >= defender.currentHp) {
+      dmg = Math.max(0, defender.currentHp - 1);
+      defender.sturdyUsed = true;
+      this.emit('info', defender.uid, undefined, undefined, undefined, `${defender.name} 的结实撑住了！`);
+    }
     defender.currentHp -= dmg;
+    const defenderAbility = ABILITY_MAP[defender.ability];
+    if (dmg > 0 && defenderAbility?.effect.kind === 'counterInstinct' && (skill.power >= 85 || (skill.castTime ?? 0) > 0)) {
+      const cds = defender.abilityCooldowns ??= {};
+      if ((cds['counter-instinct'] ?? 0) <= 0) {
+        defender.counterInstinctUntil = this.state.time + (defenderAbility.effect.duration ?? 8);
+        cds['counter-instinct'] = defenderAbility.effect.cooldown ?? 5;
+        this.emit('info', defender.uid, attacker.uid, skillId, undefined, `${defender.name} 激起了反制本能！`);
+      }
+    }
+    if (dmg > 0 && defenderAbility?.effect.kind === 'lowHpDefense' && defender.currentHp / defender.maxHp <= (defenderAbility.effect.magnitude ?? 0.35)) {
+      const cds = defender.abilityCooldowns ??= {};
+      if ((cds['low-hp-defense'] ?? 0) <= 0) {
+        cds['low-hp-defense'] = 9999;
+        this.addStatStage(defender, 'def', defenderAbility.effect.stages ?? 1);
+        this.emit('info', defender.uid, undefined, undefined, undefined, `${defender.name} 临危不乱，防御提升了！`);
+      }
+    }
     // Track real HP damage on the combatant itself so the post-battle report
     // remains complete even when the presentation event log is trimmed.
     attacker.damageDealt += dmg;
@@ -651,6 +732,35 @@ export class BattleSim {
       secondary: spread ? spread.hitIndex > 0 : undefined,
       impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
     });
+    const attackerAbility = ABILITY_MAP[attacker.ability];
+    if (skillId !== NORMAL_ATTACK.id && skill.range === 'melee' && attackerAbility?.effect.kind === 'contactShield' && dmg > 0) {
+      const cds = attacker.abilityCooldowns ??= {};
+      if ((cds['rock-head'] ?? 0) <= 0) {
+        const shield = Math.floor(attacker.maxHp * (attackerAbility.effect.magnitude ?? 0.04));
+        attacker.shields += shield;
+        attacker.buffs.push({ id: 'rock-head_' + Date.now(), kind: 'shield', remaining: attackerAbility.effect.duration ?? 2.5, magnitude: shield });
+        cds['rock-head'] = attackerAbility.effect.cooldown ?? 4;
+        this.emit('buff', attacker.uid, undefined, undefined, undefined, `${attacker.name} 的坚硬脑袋形成了护盾！`, { kind: 'shield' });
+      }
+    }
+    const attackerAbilityForRhythm = ABILITY_MAP[attacker.ability];
+    if (skillId !== NORMAL_ATTACK.id && dmg > 0 && attackerAbilityForRhythm?.effect.kind === 'cooldownRhythm') {
+      const cds = attacker.abilityCooldowns ??= {};
+      if ((cds['cooldown-rhythm'] ?? 0) <= 0) {
+        const next = Object.entries(attacker.cooldowns)
+          .filter(([id, cd]) => id !== skillId && cd > 0.04)
+          .sort((a, b) => a[1] - b[1])[0];
+        if (next) {
+          attacker.cooldowns[next[0]] = Math.max(0, next[1] - (attackerAbilityForRhythm.effect.magnitude ?? 0.35));
+          this.emit('info', attacker.uid, undefined, skillId, undefined, `${attacker.name} 把握住了战斗节奏！`);
+        }
+        cds['cooldown-rhythm'] = attackerAbilityForRhythm.effect.cooldown ?? 3;
+      }
+    }
+    if (skillId !== NORMAL_ATTACK.id && (attacker.counterInstinctUntil ?? 0) > this.state.time && dmg > 0) {
+      attacker.counterInstinctUntil = 0;
+      this.emit('info', attacker.uid, undefined, skillId, undefined, `${attacker.name} 释放了反制本能！`);
+    }
     if (ko) {
       attacker.knockouts += 1;
       this.faint(defender);
@@ -705,7 +815,11 @@ export class BattleSim {
         // Secondary effects roll once per hit target, matching the damage event.
         if (skill.effect && victim.alive) {
           const e = skill.effect;
-          if (this.rng() < (e.chance ?? 1)) this.applyEffect(c, e.target === 'self' ? c : victim, skillId, dealt);
+          const ability = ABILITY_MAP[c.ability];
+          const secondaryChance = ability?.effect.kind === 'secondaryBoost'
+            ? Math.min(ability.effect.magnitude ?? 0.7, (e.chance ?? 1) * (ability.effect.mult ?? 1.75))
+            : e.chance ?? 1;
+          if (this.rng() < secondaryChance) this.applyEffect(c, e.target === 'self' ? c : victim, skillId, dealt);
         }
       }
     } else {
@@ -815,10 +929,14 @@ export class BattleSim {
         const p = PASSIVE_MAP[pid];
         if (p?.effect.kind === 'cdReduction' && p.effect.mult) cdr *= p.effect.mult;
       }
-      for (const id of Object.keys(c.cooldowns)) c.cooldowns[id] = Math.max(0, c.cooldowns[id]! - dt * (2 - cdr));
+      const pressured = (c.pressureUntil ?? 0) > this.state.time;
+      const pressureMult = pressured ? 0.85 : 1;
+      for (const id of Object.keys(c.cooldowns)) c.cooldowns[id] = Math.max(0, c.cooldowns[id]! - dt * (2 - cdr) * pressureMult);
+      for (const id of Object.keys(c.abilityCooldowns ?? {})) c.abilityCooldowns![id] = Math.max(0, c.abilityCooldowns![id]! - dt);
       c.normalAttackCd = Math.max(0, c.normalAttackCd - dt);
       c.moveCd = Math.max(0, (c.moveCd ?? 0) - dt);
       this.statusTick(c, dt);
+      if ((c.counterInstinctUntil ?? 0) <= this.state.time) c.counterInstinctUntil = 0;
       this.passiveRegen(c, dt);
       this.speedBoost(c, dt);
       this.updatePixel(c, dt);
@@ -860,9 +978,13 @@ export class BattleSim {
         }
         if (c.status === 'confuse' && this.rng() < 0.33) {
           // self hit
-          const dmg = Math.max(1, Math.floor(c.maxHp * 0.08));
-          c.currentHp -= dmg;
-          this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });
+          const dmg = ABILITY_MAP[c.ability]?.effect.kind === 'indirectImmunity' ? 0 : Math.max(1, Math.floor(c.maxHp * 0.08));
+          if (dmg > 0) {
+            c.currentHp -= dmg;
+            this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });
+          } else {
+            this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的魔法防守抵消了混乱伤害！`);
+          }
           if (c.currentHp <= 0) this.faint(c);
           c.plan = null;
           continue;

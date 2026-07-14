@@ -174,16 +174,16 @@ const RAW: Raw[] = [
 // Per-type pools. Species pick deterministically by id for variety; starters &
 // a few iconic species get explicit overrides.
 const TYPE_ABILITY_POOL: Record<string, string[]> = {
-  normal: ['intimidate', 'keen-eye', 'guts', 'inner-focus', 'illuminate', 'natural-cure'],
+  normal: ['intimidate', 'keen-eye', 'guts', 'inner-focus', 'combat-rhythm', 'natural-cure'],
   fire: ['flame-body', 'flash-fire', 'guts'],
   water: ['water-absorb', 'rain-dish', 'shell-armor', 'natural-cure'],
   grass: ['natural-cure', 'marvel-scale', 'shell-armor', 'chlorophyll'],
-  electric: ['static', 'volt-absorb', 'illuminate'],
+  electric: ['static', 'volt-absorb', 'combat-rhythm'],
   ice: ['shell-armor', 'thick-fat', 'inner-focus'],
   fighting: ['guts', 'huge-power', 'inner-focus'],
   poison: ['poison-point', 'natural-cure', 'marvel-scale'],
   ground: ['sand-veil', 'rock-head', 'guts'],
-  flying: ['keen-eye', 'inner-focus', 'guts', 'illuminate'],
+  flying: ['keen-eye', 'inner-focus', 'guts', 'opening-initiative'],
   psychic: ['natural-cure', 'serene-grace', 'inner-focus', 'marvel-scale'],
   bug: ['swarm', 'keen-eye', 'guts', 'inner-focus'],
   rock: ['rock-head', 'sturdy', 'shell-armor'],
@@ -202,16 +202,16 @@ const ABILITY_OVERRIDES: Record<number, string[]> = {
   25: ['static', 'lightning-rod'], 26: ['static', 'lightning-rod'],
   35: ['cute-charm'], 36: ['cute-charm', 'magic-guard'],
   53: ['limber'], 59: ['intimidate', 'flash-fire'], 38: ['flash-fire', 'drought'],
-  62: ['water-absorb', 'damp'], 65: ['synchronize', 'inner-focus'],
+  62: ['water-absorb', 'steady-nerves'], 65: ['synchronize', 'inner-focus'],
   68: ['guts', 'no-guard'], 94: ['cursed-body', 'levitate'],
   113: ['natural-cure', 'serene-grace'], 130: ['intimidate', 'moxie'],
   134: ['water-absorb'], 135: ['volt-absorb'], 136: ['flash-fire', 'guts'],
-  133: ['run-away', 'adaptability'], 132: ['limber', 'imposter'],
+  133: ['opening-initiative', 'adaptability'], 132: ['limber', 'imposter'],
   143: ['thick-fat', 'immunity'], 131: ['water-absorb', 'shell-armor'],
-  81: ['magnet-pull', 'sturdy'], 82: ['magnet-pull', 'sturdy'],
+  81: ['lasting-grit', 'sturdy'], 82: ['lasting-grit', 'sturdy'],
   58: ['intimidate', 'flash-fire'], 91: ['shell-armor', 'skill-link'],
   144: ['pressure', 'snow-cloak'], 145: ['pressure', 'static'],
-  146: ['pressure', 'flame-body'], 150: ['pressure', 'unnerve'], 151: ['synchronize'],
+  146: ['pressure', 'flame-body'], 150: ['pressure', 'counter-instinct'], 151: ['synchronize'],
 };
 
 // abilities referenced in overrides that aren't in ABILITIES fall back to a
