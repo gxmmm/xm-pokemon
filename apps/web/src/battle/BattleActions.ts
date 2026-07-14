@@ -1,4 +1,5 @@
 import type { BattleEvent, BattleVfx } from '@pokemon-online/shared';
+import type { DirectedBattleCue } from '@pokemon-online/presentation';
 
 export type BattleActionKind = 'melee' | 'projectile' | 'beam' | 'burst';
 export interface ActionPose { dx: number; dy: number; tilt: number; scale: number; }
@@ -19,10 +20,14 @@ type Pt = { x: number; y: number };
  * Short, event-driven body actions for static battle sprites. This deliberately
  * has no idle loop: a unit stays still until it commits to a real attack, then
  * follows one readable anticipation → release → recovery curve.
+ *
+ * `consume` remains as a legacy event adapter. New consumers should call
+ * `consumeCues`, which accepts the renderer-neutral BattleDirector output.
  */
 export class BattleActionTimeline {
   private actions = new Map<string, ActionState>();
   private lastSeq = 0;
+  private consumedCueIds = new Set<string>();
 
   consume(events: readonly BattleEvent[], cellOf: (uid?: string) => Pt | null): void {
     for (const event of events) {
@@ -33,23 +38,32 @@ export class BattleActionTimeline {
       if (event.vfx.kind === 'cast') continue; // castProgress owns the persistent windup pose
       const kind = event.vfx.kind;
       if (kind !== 'melee' && kind !== 'projectile' && kind !== 'beam' && kind !== 'burst') continue;
-      const from = cellOf(event.actor);
-      const to = cellOf(event.target);
-      const dx = (to?.x ?? from?.x ?? 0) - (from?.x ?? 0);
-      const dy = (to?.y ?? from?.y ?? 0) - (from?.y ?? 0);
-      const length = Math.hypot(dx, dy) || 1;
-      const life = kind === 'melee' ? 0.34 : kind === 'beam' ? 0.42 : 0.30;
-      this.actions.set(event.actor, {
-        uid: event.actor,
-        skillId: event.skillId,
-        kind,
-        t: 0,
-        life,
-        nx: dx / length,
-        ny: dy / length,
-        namedSkill: event.type === 'skill' && event.skillId !== '__normal__',
-      });
+      this.start(event.actor, event.target, event.skillId, kind, event.type === 'skill' && event.skillId !== '__normal__', cellOf);
     }
+  }
+
+  /** Compatibility adapter for the new presentation contract. Animation cues
+   * carry the attack form and anchors; Canvas still owns only pose interpolation. */
+  consumeCues(cues: readonly DirectedBattleCue[], cellOf: (uid?: string) => Pt | null): void {
+    for (const directed of cues) {
+      if (this.consumedCueIds.has(directed.id)) continue;
+      this.consumedCueIds.add(directed.id);
+      const cue = directed.cue;
+      if (cue.type !== 'animation' || !cue.subjectId) continue;
+      const kind = cue.animation;
+      if (kind !== 'melee' && kind !== 'projectile' && kind !== 'beam' && kind !== 'burst') continue;
+      this.start(cue.subjectId, cue.targetIds?.[0], cue.skillId, kind, cue.skillId !== undefined && cue.skillId !== '__normal__', cellOf);
+    }
+  }
+
+  private start(uid: string, targetUid: string | undefined, skillId: string | undefined, kind: BattleActionKind, namedSkill: boolean, cellOf: (uid?: string) => Pt | null): void {
+    const from = cellOf(uid);
+    const to = cellOf(targetUid);
+    const dx = (to?.x ?? from?.x ?? 0) - (from?.x ?? 0);
+    const dy = (to?.y ?? from?.y ?? 0) - (from?.y ?? 0);
+    const length = Math.hypot(dx, dy) || 1;
+    const life = kind === 'melee' ? 0.34 : kind === 'beam' ? 0.42 : 0.30;
+    this.actions.set(uid, { uid, skillId, kind, t: 0, life, nx: dx / length, ny: dy / length, namedSkill });
   }
 
   update(dt: number): void {
@@ -100,5 +114,5 @@ export class BattleActionTimeline {
 
   isActive(): boolean { return this.actions.size > 0; }
 
-  clear(): void { this.actions.clear(); this.lastSeq = 0; }
+  clear(): void { this.actions.clear(); this.lastSeq = 0; this.consumedCueIds.clear(); }
 }

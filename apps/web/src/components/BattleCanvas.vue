@@ -7,13 +7,16 @@ import { SKILL_MAP } from '@pokemon-online/config';
 import { drawCombatantPlatform, drawField, loadArenaBg, project, ARENA_W, ARENA_H, type Biome } from '../battle/BattleField.ts';
 import { drawPokemon, preloadPokemon } from '../battle/BattleSprite.ts';
 import { EffectManager, loadFxAssets } from '../battle/BattleEffects.ts';
+import { CanvasCueAdapter } from '../battle/CanvasCueAdapter.ts';
+import type { DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattleActionTimeline } from '../battle/BattleActions.ts';
 
-const props = defineProps<{ presentation?: BattlePresentation; biome?: Biome }>();
+const props = defineProps<{ presentation?: BattlePresentation; biome?: Biome; cues?: readonly DirectedBattleCue[] }>();
 const emit = defineEmits<{ impact: [intensity: number] }>();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 const fx = new EffectManager();
+const cueAdapter = new CanvasCueAdapter();
 const actions = new BattleActionTimeline();
 const hit = new Map<string, number>();      // uid -> hit feedback 0..1 (flash + squash + recoil)
 const prevHp = new Map<string, number>();
@@ -49,7 +52,7 @@ onMounted(() => {
   // background + optional VFX sprites load async; rendering is procedural until ready
   void Promise.all([loadArenaBg(), loadFxAssets()]);
 });
-onUnmounted(() => { fx.clear(); actions.clear(); });
+onUnmounted(() => { fx.clear(); actions.clear(); cueAdapter.clear(); });
 
 /** Render one frame. dt is real seconds (scaled by battle speed) for effect lifetimes. */
 function render(dt: number): void {
@@ -67,13 +70,13 @@ function render(dt: number): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
-  // Events first drive an explicit body-action timeline, then VFX use the
-  // resulting local skill anchor (mouth/claw/body direction) instead of the
-  // generic sprite center.
-  actions.consume(presentation.events, (uid) => cellOf(presentation, uid));
+  // Canvas is now a compatibility cue consumer. BattleDirector owns core
+  // event interpretation; this component only adapts and draws its cues.
+  const cues = props.cues ?? [];
+  actions.consumeCues(cues, (uid) => cellOf(presentation, uid));
   actions.update(dt);
-  fx.consume(
-    presentation.events,
+  fx.consumeLegacyEvents(
+    cueAdapter.consume(cues),
     (uid) => cellOf(presentation, uid),
     (uid) => combatantOf(presentation, uid),
     (uid, kind) => actions.anchorOf(uid ?? '', kind, cellOf(presentation, uid)),

@@ -1,20 +1,71 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useBattleStore } from '../stores/battle.ts';
-import { getMap, isWalkable, isEncounterTile, MAP_MAP, STORY_TRAINERS, STORY_WARP_REQUIREMENTS, isLowTideReefCell, isTideBlockedCell, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, type StoryNpc, type StoryObject, type StoryScene } from '@pokemon-online/config';
+import { getMap, isWalkable, isEncounterTile, MAP_MAP, STORY_TRAINERS, STORY_WARP_REQUIREMENTS, WORLD_SCENE_BY_MAP_ID, isLowTideReefCell, isTideBlockedCell, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, type StoryNpc, type StoryObject, type StoryScene } from '@pokemon-online/config';
 import { rollWildGroup, ENCOUNTER_CHANCE, dayNight } from '@pokemon-online/engine';
 import type { Facing } from '@pokemon-online/shared';
+import type { QualityProfile, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
+import { selectQualityProfile } from '@pokemon-online/renderer';
 import WorldCanvas from '../components/WorldCanvas.vue';
+import PixiWorldViewport from '../components/PixiWorldViewport.vue';
 import WorldMap from '../components/WorldMap.vue';
 import { createTransitionState, runTransition } from '../world/transitions.ts';
+import { consumeWorldReturnVisualTransition, requestBattleVisualTransition } from '../game/SceneVisualTransition.ts';
 
 const game = useGameStore();
 const battle = useBattleStore();
 const router = useRouter();
+const returnedFromGpuBattle = consumeWorldReturnVisualTransition();
 
 const map = computed(() => getMap(game.save!.currentMapId));
+type WorldRendererMode = 'canvas' | 'pixi';
+const rendererMode = ref<WorldRendererMode>(returnedFromGpuBattle?.mapId === 'pallet' ? 'pixi' : 'canvas');
+const pixiQuality = ref<QualityProfile>(returnedFromGpuBattle?.quality ?? 'standard');
+const pixiStatus = ref(returnedFromGpuBattle ? '正在恢复 GPU 雾湾镇 renderer…' : 'Canvas compatibility renderer');
+const pixiWorldRef = ref<InstanceType<typeof PixiWorldViewport> | null>(null);
+const gpuWorldScene = computed(() => map.value.id === 'pallet' ? WORLD_SCENE_BY_MAP_ID.pallet : undefined);
+const canUseGpuWorld = computed(() => !!gpuWorldScene.value);
+const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
+  { id: 'player', kind: 'player', position: { x: view.px, y: view.py }, facing: view.facing },
+  ...npcs.value.map((npc) => ({ id: npc.id, kind: 'npc' as const, position: { x: npc.x, y: npc.y } })),
+  ...objects.value.map((object) => ({ id: object.id, kind: 'object' as const, position: { x: object.x, y: object.y } })),
+]);
+function browserRendererQuality(): QualityProfile {
+  const probe = document.createElement('canvas');
+  return selectQualityProfile({ webgl: !!probe.getContext('webgl'), webgl2: !!probe.getContext('webgl2'), devicePixelRatio: window.devicePixelRatio }).quality;
+}
+function toggleWorldRenderer(): void {
+  if (!canUseGpuWorld.value || rendererMode.value === 'pixi') {
+    rendererMode.value = 'canvas';
+    pixiStatus.value = 'Canvas compatibility renderer';
+    return;
+  }
+  pixiQuality.value = browserRendererQuality();
+  rendererMode.value = 'pixi';
+  pixiStatus.value = '正在初始化 GPU 雾湾镇 renderer…';
+}
+async function onPixiWorldReady(): Promise<void> {
+  pixiStatus.value = `GPU 雾湾镇 ${pixiQuality.value} renderer`;
+  if (returnedFromGpuBattle?.mapId === 'pallet') {
+    await nextTick();
+    await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 260, color: '#0b2430' });
+  }
+}
+function onPixiWorldUnavailable(message: string): void {
+  rendererMode.value = 'canvas';
+  pixiStatus.value = `GPU 不可用，已回退 Canvas：${message}`;
+}
+async function enterBattleRoute(): Promise<void> {
+  // Route handoff transports visual intent only. Battle facts have already been
+  // created by the battle store and world movement stays frozen by `leaving`.
+  if (rendererMode.value === 'pixi' && map.value.id === 'pallet') {
+    await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
+    requestBattleVisualTransition({ mapId: 'pallet', quality: pixiQuality.value });
+  }
+  await router.push({ name: 'battle' });
+}
 const dn = computed(() => dayNight());
 const showMap = ref(false);
 const visitedSet = computed(() => new Set(game.save?.visitedMaps ?? []));
@@ -35,6 +86,7 @@ const dialogDone = ref(false);
 const objective = computed(() => storyQuestLabel(game.save?.story.activeQuest ?? 'meet-professor'));
 const tide = computed(() => game.save?.story.tide ?? 'high');
 const canInteract = computed(() => (!!nearbyNpc.value || !!nearbyObject.value) && !dialog.value && !transition.active && !leaving);
+watch(canUseGpuWorld, (available) => { if (!available) { rendererMode.value = 'canvas'; pixiStatus.value = 'Canvas compatibility renderer'; } });
 
 // render-time float position, interpolated between tiles for smooth walking.
 // save.position stays integer (the logical cell); `view` is what the canvas draws.
@@ -141,7 +193,7 @@ if (requirement && !game.hasStoryFlag(requirement.flag)) { openGateHint(requirem
           leaving = true;
           heldDir = null;
           moveAnim = null;
-          router.push({ name: 'battle' }).then((f) => { if (f) leaving = false; }).catch(() => { leaving = false; });
+          void enterBattleRoute().then(() => { if (router.currentRoute.value.name !== 'battle') leaving = false; }).catch(() => { leaving = false; });
         }
       }
     }
@@ -199,7 +251,7 @@ async function chooseDialog(kind: 'close' | 'trainer-battle' | 'warp' | 'set-tid
   const ok = battle.startStoryTrainer(trainer.team, trainer.name, trainer.id);
   if (!ok) return;
   dialog.value = null; dialogNpc.value = null; heldDir = null; moveAnim = null; leaving = true;
-  router.push({ name: 'battle' }).then((f) => { if (f) leaving = false; }).catch(() => { leaving = false; });
+  void enterBattleRoute().then(() => { if (router.currentRoute.value.name !== 'battle') leaving = false; }).catch(() => { leaving = false; });
 }
 function openGateHint(text: string, x = Math.round(view.px), y = Math.round(view.py)): void {
   dialogNpc.value = { id: 'path-marker', mapId: map.value.id, x, y, name: '前方的路', role: '', palette: 'villager' };
@@ -279,15 +331,16 @@ watch(() => game.save?.position, () => {
       </div>
       <div class="row" style="gap:6px">
         <button class="sm ghost" @click="showMap = !showMap">🗺 地图</button>
-<button class="sm ghost" @click="interact">💬 交互</button>
+        <button class="sm ghost" @click="interact">💬 交互</button>
         <button class="sm ghost" @click="heal">💊 治疗</button>
+        <button v-if="canUseGpuWorld" class="sm ghost" :title="pixiStatus" @click="toggleWorldRenderer">{{ rendererMode === 'pixi' ? 'GPU 雾湾' : 'Canvas' }}</button>
       </div>
     </div>
     <p class="tiny muted" style="margin:0 0 5px">{{ map.description }} {{ map.ambient }}</p>
     <div class="objective"><span>主线目标</span><strong>{{ objective }}</strong></div>
 
     <div class="canvas-wrap">
-      <WorldCanvas
+      <WorldCanvas v-if="rendererMode === 'canvas'"
         :map="map"
         :px="view.px"
         :py="view.py"
@@ -299,6 +352,7 @@ watch(() => game.save?.position, () => {
         :interact-object-id="nearbyObject?.id ?? null"
         :tide="tide"
       />
+      <PixiWorldViewport v-else-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :quality="pixiQuality" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
     </div>
 
     <div v-if="(nearbyNpc || nearbyObject) && !dialog" class="interact-hint">按 <b>E</b> / 空格 {{ nearbyNpc ? `与 ${nearbyNpc.name} 对话` : `调查 ${nearbyObject?.name}` }}</div>

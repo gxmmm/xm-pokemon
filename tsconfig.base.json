@@ -23,7 +23,13 @@
       "@pokemon-online/config": ["packages/config/src/index.ts"],
       "@pokemon-online/config/*": ["packages/config/src/*"],
       "@pokemon-online/engine": ["packages/engine/src/index.ts"],
-      "@pokemon-online/engine/*": ["packages/engine/src/*"]
+      "@pokemon-online/engine/*": ["packages/engine/src/*"],
+      "@pokemon-online/presentation": ["packages/presentation/src/index.ts"],
+      "@pokemon-online/presentation/*": ["packages/presentation/src/*"],
+      "@pokemon-online/renderer": ["packages/renderer/src/index.ts"],
+      "@pokemon-online/renderer/*": ["packages/renderer/src/*"],
+      "@pokemon-online/renderer-pixi": ["packages/renderer-pixi/src/index.ts"],
+      "@pokemon-online/renderer-pixi/*": ["packages/renderer-pixi/src/*"]
     }
   },
   "include": ["packages/**/*", "apps/**/*"],

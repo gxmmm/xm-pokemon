@@ -14,6 +14,9 @@ export default defineConfig({
       '@pokemon-online/shared': fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
       '@pokemon-online/config': fileURLToPath(new URL('../../packages/config/src/index.ts', import.meta.url)),
       '@pokemon-online/engine': fileURLToPath(new URL('../../packages/engine/src/index.ts', import.meta.url)),
+      '@pokemon-online/presentation': fileURLToPath(new URL('../../packages/presentation/src/index.ts', import.meta.url)),
+      '@pokemon-online/renderer': fileURLToPath(new URL('../../packages/renderer/src/index.ts', import.meta.url)),
+      '@pokemon-online/renderer-pixi': fileURLToPath(new URL('../../packages/renderer-pixi/src/index.ts', import.meta.url)),
     },
   },
   build: {

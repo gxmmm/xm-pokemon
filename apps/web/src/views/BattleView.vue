@@ -10,13 +10,18 @@ import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import BattleCanvas from '../components/BattleCanvas.vue';
+import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { Biome } from '../battle/BattleField.ts';
-import { interpolateBattle, snapshotBattle, type BattlePresentation, type BattleSnapshot } from '../battle/PresentationTimeline.ts';
+import { selectQualityProfile, type QualityProfile } from '@pokemon-online/renderer';
+import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
+import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
+import { consumeBattleVisualTransition, requestWorldReturnVisualTransition } from '../game/SceneVisualTransition.ts';
 import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
 const router = useRouter();
+const enteredFromGpuWorld = consumeBattleVisualTransition();
 
 const speed = ref(1);
 const running = ref(true);
@@ -25,15 +30,48 @@ const resultMsg = ref('');
 const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
 const canvasRef = ref<InstanceType<typeof BattleCanvas> | null>(null);
+const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
+type BattleRendererMode = 'canvas' | 'pixi';
+// Canvas remains the default compatibility renderer until the full Stage-3
+// vertical slice is accepted. GPU mode is a user-controlled parallel path.
+const rendererMode = ref<BattleRendererMode>(enteredFromGpuWorld?.mapId === 'pallet' ? 'pixi' : 'canvas');
+const pixiQuality = ref<QualityProfile>(enteredFromGpuWorld?.quality ?? 'standard');
+const pixiStatus = ref(enteredFromGpuWorld ? 'GPU harbor-to-battle transition' : 'Canvas compatibility renderer');
+const returningToWorld = ref(false);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
+function browserRendererQuality(): QualityProfile {
+  const probe = document.createElement('canvas');
+  const webgl = !!probe.getContext('webgl');
+  const webgl2 = !!probe.getContext('webgl2');
+  return selectQualityProfile({ webgl, webgl2, devicePixelRatio: window.devicePixelRatio }).quality;
+}
+function toggleRenderer(): void {
+  if (rendererMode.value === 'pixi') {
+    rendererMode.value = 'canvas';
+    pixiStatus.value = 'Canvas compatibility renderer';
+    return;
+  }
+  pixiQuality.value = browserRendererQuality();
+  rendererMode.value = 'pixi';
+  pixiStatus.value = '正在初始化 GPU renderer…';
+}
+function onPixiReady(): void { pixiStatus.value = `GPU ${pixiQuality.value} renderer`; }
+function onPixiUnavailable(message: string): void {
+  rendererMode.value = 'canvas';
+  pixiStatus.value = `GPU 不可用，已回退 Canvas：${message}`;
+}
+function activeRendererSettled(): boolean {
+  return rendererMode.value === 'pixi'
+    ? pixiRef.value?.isPresentationSettled() ?? false
+    : canvasRef.value?.isPresentationSettled() ?? false;
+}
 // skill-cast avatar flash: uid -> intensity 0..1, set to 1 on a 'skill' event,
 // decays each frame. Reset when a new battle (sim) starts.
 const skillFlash = ref<Record<string, number>>({});
 const interruptFlash = ref<Record<string, number>>({});
-const PRESENTATION_DELAY = 0.16; // seconds: enough director lead-in without feeling laggy
-const SNAPSHOT_HISTORY = 2.5;
+const presentationBridge = new BattlePresentationBridge();
 const presentation = ref<BattlePresentation | null>(null);
 // The canvas needs the full presentation cadence; side cards and the combat log
 // do not. Keep DOM/reactivity updates at 12fps to avoid six cards re-rendering
@@ -42,21 +80,17 @@ const hudCombatants = ref<BattleCombatant[]>([]);
 const battleLog = ref<string[]>([]);
 const hudOver = ref(false);
 let nextHudSyncAt = 0;
-let snapshots: BattleSnapshot[] = [];
-let presentationTime = 0;
-let presentationHold = 0; // presentation-only hit-stop; the simulator never slows
-let lastPresentationSeq = 0;
+let presentationCaughtUp = false;
+const presentationCues = ref<DirectedBattleCue[]>([]);
 
 watch(sim, (next) => {
-  presentation.value = null;
-  snapshots = [];
-  presentationTime = 0;
-  presentationHold = 0;
-  lastPresentationSeq = 0;
+  presentation.value = presentationBridge.reset(next ?? undefined);
+  presentationCaughtUp = false;
+  presentationCues.value = [];
   skillFlash.value = {};
   interruptFlash.value = {};
   nextHudSyncAt = 0;
-  if (next) { captureSnapshot(next); syncHud(next); }
+  if (next) syncHud(next);
 }, { immediate: true });
 function avatarStyle(uid: string): Record<string, string> {
   const f = skillFlash.value[uid] ?? 0;
@@ -167,62 +201,30 @@ function skillCds(c: BattleCombatant): { id: string; name: string; char: string;
 }
 const STATUS_TAG: Record<string, string> = { burn: '灼', poison: '毒', paralyze: '痹', freeze: '冰', sleep: '眠', confuse: '乱' };
 
-function captureSnapshot(s: BattleSim): void {
-  const time = s.state.time;
-  const last = snapshots[snapshots.length - 1];
-  if (!last || time > last.time) snapshots.push(snapshotBattle(time, s.state.combatants));
-  else if (last.time === time) snapshots[snapshots.length - 1] = snapshotBattle(time, s.state.combatants);
-  const keepFrom = time - SNAPSHOT_HISTORY;
-  while (snapshots.length > 2 && snapshots[1].time < keepFrom) snapshots.shift();
-}
-
-function presentationCombatants(at: number): BattleCombatant[] {
-  if (snapshots.length === 0) return [];
-  let before = snapshots[0];
-  let after = snapshots[snapshots.length - 1];
-  for (let i = 1; i < snapshots.length; i++) {
-    if (snapshots[i].time >= at) { after = snapshots[i]; before = snapshots[i - 1]; break; }
-  }
-  return interpolateBattle(before, after, at);
-}
-
 function updatePresentation(s: BattleSim, dtScaled: number): void {
-  captureSnapshot(s);
-  // A manual resolve / a long suspended browser frame can jump simulation time
-  // far ahead without intermediate snapshots. Do not turn that into a minute of
-  // catch-up playback; snap cleanly to the resolved state instead.
-  if (s.state.time - presentationTime > 0.75) {
-    presentationTime = s.state.time;
-    presentationHold = 0;
-    snapshots = [snapshotBattle(s.state.time, s.state.combatants)];
+  const frame = presentationBridge.advance(s, dtScaled);
+  presentation.value = frame.presentation;
+  presentationCues.value = [...frame.cues];
+  // Pixi consumes the same director hit-stop cue. The bridge pauses only its
+  // delayed visual cursor, never BattleSim's authoritative rule clock.
+  if (rendererMode.value === 'pixi') {
+    for (const directed of frame.cues) {
+      if (directed.cue.type === 'hit-stop') presentationBridge.requestHitStop(Math.max(0, (directed.cue.milliseconds - 30) / 70));
+    }
   }
-  // When the battle is over, drain the remaining delayed timeline all the way
-  // to its final frame before showing the result panel.
-  const target = s.isOver ? s.state.time : Math.max(0, s.state.time - PRESENTATION_DELAY);
-  if (presentationHold > 0) presentationHold = Math.max(0, presentationHold - dtScaled);
-  else {
-    // Catch up faster after an impact pause, but never overtake the planned
-    // presentation delay. Normal playback remains exactly at battle speed.
-    const gap = Math.max(0, target - presentationTime);
-    presentationTime = Math.min(target, presentationTime + dtScaled * (gap > 0.035 ? 2.4 : 1));
-  }
-  const events = s.state.events.filter((e) => e.t <= presentationTime + 0.001);
-  presentation.value = { time: presentationTime, combatants: presentationCombatants(presentationTime), events };
+  presentationCaughtUp = frame.isCaughtUp;
+  processPresentationEvents(frame.newEvents);
 }
 
 function processPresentationEvents(events: readonly import('@pokemon-online/shared').BattleEvent[]): void {
-  for (const e of events) {
-    if ((e.seq ?? 0) <= lastPresentationSeq) continue;
-    if (e.type === 'skill' && e.actor) skillFlash.value[e.actor] = 1;
-    if (e.type === 'info' && e.actor && /被打断/.test(e.message ?? '')) interruptFlash.value[e.actor] = 1;
+  for (const event of events) {
+    if (event.type === 'skill' && event.actor) skillFlash.value[event.actor] = 1;
+    if (event.type === 'info' && event.actor && /被打断/.test(event.message ?? '')) interruptFlash.value[event.actor] = 1;
   }
-  if (events.length) lastPresentationSeq = Math.max(lastPresentationSeq, events[events.length - 1].seq ?? 0);
 }
 
 function onCanvasImpact(intensity: number): void {
-  // A high-impact moment holds only the presentation cursor. The simulator,
-  // cooldowns, AI, and authoritative results keep progressing normally.
-  presentationHold = Math.max(presentationHold, Math.min(0.20, 0.075 + intensity * 0.10));
+  presentationBridge.requestHitStop(intensity);
 }
 
 function frame(now: number): void {
@@ -240,7 +242,6 @@ function frame(now: number): void {
       syncHud(s);
       nextHudSyncAt = now + 1000 / 12;
     }
-    processPresentationEvents(presentation.value?.events ?? []);
     for (const k of Object.keys(skillFlash.value)) {
       const v = skillFlash.value[k] - realDt * 5;
       if (v <= 0) delete skillFlash.value[k]; else skillFlash.value[k] = v;
@@ -256,7 +257,7 @@ function frame(now: number): void {
   // Do not cover the canvas the instant the simulator decides a winner. The
   // final delayed event (especially a KO burst/faint) must finish its local VFX
   // before the result modal becomes visible.
-  if (s && s.isOver && !ended.value && presentationTime >= s.state.time - 0.001 && canvasRef.value?.isPresentationSettled()) onEnd();
+  if (s && s.isOver && !ended.value && presentationCaughtUp && activeRendererSettled()) onEnd();
   raf = requestAnimationFrame(frame);
 }
 function onEnd(): void {
@@ -290,10 +291,12 @@ function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
   const scripted = battle.storyBattleId ? STORY_TRAINERS[battle.storyBattleId] : undefined;
   if (scripted) {
     if (winner === 'player') {
-      const total = Math.max(20, scripted.team.reduce((sum, entry) => sum + entry.level * 6, 0));
-      totalExp.value = total;
-      for (const p of game.pveTeamInstances) expResults.value.push(game.grantExp(p.uid, Math.floor(total / Math.max(1, game.pveTeamInstances.length))));
-      game.advanceStory(scripted.winFlags, scripted.questAfter);
+      if (scripted.rewardExp !== false) {
+        const total = Math.max(20, scripted.team.reduce((sum, entry) => sum + entry.level * 6, 0));
+        totalExp.value = total;
+        for (const p of game.pveTeamInstances) expResults.value.push(game.grantExp(p.uid, Math.floor(total / Math.max(1, game.pveTeamInstances.length))));
+      }
+      if (!scripted.repeatable) game.advanceStory(scripted.winFlags, scripted.questAfter);
       resultMsg.value = scripted.winText ?? `${scripted.name} 露出不甘心的笑容："这次算你赢。潮汐的谜团，我们各凭本事。"`;
     } else {
       resultMsg.value = `${scripted.name}："别灰心。回去调整队伍，再来一次。"`;
@@ -338,7 +341,18 @@ function releaseAll(): void {
   finalize(undefined);
 }
 
-function finalize(caught: PokemonInstance | undefined): void {
+async function returnToWorld(): Promise<void> {
+  if (returningToWorld.value) return;
+  returningToWorld.value = true;
+  if (rendererMode.value === 'pixi' && battle.mapId === 'pallet') {
+    await pixiRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
+    requestWorldReturnVisualTransition({ mapId: 'pallet', quality: pixiQuality.value });
+  }
+  battle.clear();
+  await router.replace({ name: 'world' });
+}
+
+async function finalize(caught: PokemonInstance | undefined): Promise<void> {
   game.recordBattle({
     win: sim.value?.state.winner === 'player',
     expGained: totalExp.value,
@@ -347,11 +361,10 @@ function finalize(caught: PokemonInstance | undefined): void {
   });
   game.healAll(); // auto full-heal entire roster after battle (frozen design)
   void game.persist(true);
-  battle.clear();
-  router.replace({ name: 'world' });
+  await returnToWorld();
 }
 
-function leave(): void {
+async function leave(): Promise<void> {
   game.recordBattle({
     win: sim.value?.state.winner === 'player',
     expGained: totalExp.value,
@@ -360,8 +373,7 @@ function leave(): void {
   });
   game.healAll();
   void game.persist(true);
-  battle.clear();
-  router.replace({ name: 'world' });
+  await returnToWorld();
 }
 
 function skip(): void {
@@ -407,13 +419,15 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <BattleCanvas ref="canvasRef" :presentation="presentation ?? undefined" :biome="biome" @impact="onCanvasImpact" />
+        <BattleCanvas v-if="rendererMode === 'canvas'" ref="canvasRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" @impact="onCanvasImpact" />
+        <PixiBattleViewport v-else ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :intro-transition="enteredFromGpuWorld?.mapId === 'pallet'" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
         <div class="arena-controls">
           <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
           <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
           <button class="sm ghost" @click="skip">⏭</button>
+          <button class="sm ghost renderer-mode" :title="pixiStatus" @click="toggleRenderer">{{ rendererMode === 'pixi' ? 'GPU' : 'Canvas' }}</button>
         </div>
       </div>
 

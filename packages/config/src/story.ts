@@ -41,6 +41,9 @@ export interface StoryTrainer {
   winFlags: string[];
   questAfter: string;
   winText?: string;
+  /** Friendly rematches never advance story or grant repeatable EXP. */
+  repeatable?: boolean;
+  rewardExp?: boolean;
 }
 
 /**
@@ -88,6 +91,11 @@ export const STORY_TRAINERS: Record<string, StoryTrainer> = {
     id: 'baiye-first', name: '劲敌 白夜', team: [{ speciesId: 133, level: 7 }],
     winFlags: ['rival_defeated'], questAfter: 'investigate-firefly',
     winText: '白夜露出不甘心的笑容："这次算你赢。潮汐的谜团，我们各凭本事。"',
+  },
+  'baiye-rematch': {
+    id: 'baiye-rematch', name: '劲敌 白夜（切磋）', team: [{ speciesId: 133, level: 7 }],
+    winFlags: [], questAfter: '', repeatable: true, rewardExp: false,
+    winText: '白夜收起精灵球："不错，再来一次也不会让你松懈。"',
   },
   'mist-runner-trial': {
     id: 'mist-runner-trial', name: '雾行试炼者 织羽', team: [{ speciesId: 48, level: 8 }],
@@ -204,7 +212,10 @@ export function sceneForNpc(npcId: string, story: StoryState): StoryScene {
         { speaker: '白夜', text: '这不是胜负而已——在真正的异象前，犹豫会让伙伴受伤。来一场切磋！' },
       ], choices: [{ label: '接受切磋', kind: 'trainer-battle', battleId: 'baiye-first' }, { label: '稍后再说', kind: 'close' }],
     };
-    return { lines: [{ speaker: '白夜', role: '你的劲敌', text: '不错嘛。萤火林道的巡查员说，他也看见了海蓝色的光。别被我甩在后面。' }] };
+    return {
+      lines: [{ speaker: '白夜', role: '你的劲敌', text: '不错嘛。萤火林道的巡查员说，他也看见了海蓝色的光。想再确认阵容的话，随时来切磋。' }],
+      choices: [{ label: '再次切磋（不推进剧情）', kind: 'trainer-battle', battleId: 'baiye-rematch' }, { label: '先去探索', kind: 'close' }],
+    };
   }
   if (npcId === 'lantern-scout') {
     if (!flagged('firefly_signal_found')) return {

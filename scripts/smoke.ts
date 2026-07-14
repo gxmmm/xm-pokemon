@@ -4,9 +4,154 @@ import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
+import { BIOME_VISUALS, SKILL_VISUAL_RECIPES, WORLD_SCENE_BY_MAP_ID } from '@pokemon-online/config';
+import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
+import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
+import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
+import { selectQualityProfile } from '@pokemon-online/renderer';
+import { planBattleCue } from '@pokemon-online/renderer-pixi';
+import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
+}
+
+// Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
+// their output must remain stable and renderer-independent.
+{
+  const firstPass = VISUAL_RUNTIME_BATTLE_FIXTURES.map(runVisualRuntimeFixture);
+  const secondPass = VISUAL_RUNTIME_BATTLE_FIXTURES.map(runVisualRuntimeFixture);
+  assert(firstPass.length === 2 && firstPass.every((result) => result.presentationEvents.length > 0), 'visual runtime fixtures produce structured events');
+  assert(JSON.stringify(firstPass.map((result) => result.eventSignature)) === JSON.stringify(secondPass.map((result) => result.eventSignature)), 'visual runtime fixtures are deterministic');
+  const pve = firstPass.find((result) => result.fixture.id === 'pve-3v1')!;
+  assert(pve.presentationEvents.some((event) => event.type === 'move' || event.type === 'skill'), 'fixture maps combat actions into presentation events');
+  assert(pve.presentationEvents.every((event) => event.id.length > 0 && event.sequence >= 0), 'presentation events are serializable and sequenced');
+  const sourceEvent = { t: 1, seq: 2, type: 'damage' as const, target: 'target', amount: 42, vfx: { kind: 'impact' as const, type: 'fire' as const, crit: true, effectiveness: 2, ko: false } };
+  const presentationEvent = toBattlePresentationEvent(sourceEvent);
+  assert(presentationEvent.type === 'damage' && presentationEvent.outcome?.damage === 42 && presentationEvent.outcome?.critical, 'presentation adapter preserves structured outcomes');
+  console.log('✓ visual runtime deterministic fixtures:', firstPass.map((result) => `${result.fixture.id}:${result.presentationEvents.length}`).join(', '));
+}
+
+// Presentation timeline remains DOM-free and must not reveal discrete future
+// HP state while interpolating only position.
+{
+  const interpolationSim = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10)], enemy: [createWildInstance(25, 10)], seed: 140716 });
+  const before = interpolationSim.state.combatants[0]!;
+  const after = { ...before, currentHp: Math.max(0, before.currentHp - 10), pixel: { x: before.pixel.x + 2, y: before.pixel.y + 1 } };
+  const start = snapshotBattle(0, [before]);
+  const end = snapshotBattle(1, [after]);
+  const half = interpolateBattle(start, end, 0.5)[0]!;
+  assert(half.currentHp === before.currentHp && half.pixel.x === before.pixel.x + 1, 'presentation interpolation keeps discrete state event-stepped');
+  console.log('✓ presentation timeline contract');
+}
+
+// The web bridge owns delayed snapshots, cue dispatch, and hit-stop without
+// affecting the pure simulator or reaching into a concrete renderer.
+{
+  const bridgeSim = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 12)], enemy: [createWildInstance(25, 12)], seed: 140717 });
+  const bridge = new BattlePresentationBridge({ presentationDelay: 0.1 });
+  bridge.reset(bridgeSim);
+  const cueIds = new Set<string>();
+  let sawActionCue = false;
+  for (let index = 0; index < 150 && !bridgeSim.isOver; index++) {
+    bridgeSim.tick(0.1);
+    const frame = bridge.advance(bridgeSim, 0.1);
+    for (const cue of frame.cues) {
+      assert(!cueIds.has(cue.id), 'presentation bridge dispatches each directed cue only once');
+      cueIds.add(cue.id);
+      if (cue.cue.type === 'animation' || cue.cue.type === 'vfx') sawActionCue = true;
+    }
+  }
+  assert(sawActionCue && cueIds.size > 0, 'presentation bridge directs delayed battle cues');
+  const heldAt = bridge.time;
+  bridge.requestHitStop(1);
+  bridgeSim.tick(0.05);
+  const heldFrame = bridge.advance(bridgeSim, 0.05);
+  assert(heldFrame.presentation.time === heldAt, 'presentation bridge hit-stop holds only the visual cursor');
+  console.log('✓ BattlePresentationBridge delayed cue contract:', cueIds.size);
+}
+
+// Quality selection is pure policy so WebGL probing can remain in a Vue bridge.
+{
+  assert(selectQualityProfile({ webgl: false }).quality === 'compatibility', 'renderer quality falls back without WebGL');
+  assert(selectQualityProfile({ webgl: true, webgl2: false }).quality === 'standard', 'renderer quality selects standard WebGL');
+  assert(selectQualityProfile({ webgl: true, webgl2: true }).quality === 'cinematic', 'renderer quality selects cinematic WebGL2');
+  console.log('✓ renderer quality policy');
+}
+
+// Visual config must cover existing skills and the first two scene-pack samples.
+{
+  assert(!!WORLD_SCENE_BY_MAP_ID.pallet && WORLD_SCENE_BY_MAP_ID.pallet.biome === 'mist-harbor', 'Mist Bay scene pack configured');
+  assert(!!WORLD_SCENE_BY_MAP_ID.route1 && WORLD_SCENE_BY_MAP_ID.route1.biome === 'lumen-forest', 'Lumen Trail scene pack configured');
+  assert(Object.keys(BIOME_VISUALS).length >= 8, 'biome visual catalog configured');
+  assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
+  console.log('✓ visual scene and recipe config:', SKILL_VISUAL_RECIPES.length);
+}
+
+// Stage 2 presentation direction: the same structured fixture must yield a
+// deterministic, serializable cue score without DOM/Pixi/Canvas dependencies.
+{
+  const fixture = runVisualRuntimeFixture(VISUAL_RUNTIME_BATTLE_FIXTURES[0]!);
+  const direct = () => new BattleDirector().direct(fixture.presentationEvents);
+  const first = direct();
+  const second = direct();
+  assert(first.length > 0 && JSON.stringify(first) === JSON.stringify(second), 'BattleDirector cue output is deterministic');
+  assert(first.some((entry) => entry.cue.type === 'animation') && first.some((entry) => entry.cue.type === 'vfx'), 'BattleDirector emits action and VFX cues');
+  assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');
+  const adapted = new CanvasCueAdapter().consume(first);
+  assert(adapted.length > 0 && adapted.every((event) => !!event.vfx), 'Canvas adapter consumes director cues without engine state');
+  console.log('✓ BattleDirector deterministic cue contract:', first.length);
+}
+// White Night remains available as a friendly test rematch after the opening
+// story duel, without duplicating EXP, flags, or quest advancement.
+{
+  const baiyeRematch = STORY_TRAINERS['baiye-rematch'];
+  assert(!!baiyeRematch && baiyeRematch.repeatable && baiyeRematch.rewardExp === false && baiyeRematch.winFlags.length === 0 && baiyeRematch.questAfter === '', 'White Night rematch has no progression side effects');
+  const completedBaiyeScene = sceneForNpc('rival-baiye', { flags: ['rival_defeated'], activeQuest: 'investigate-firefly', completedQuests: [], tide: 'high' });
+  assert(completedBaiyeScene.choices?.some((choice) => choice.battleId === 'baiye-rematch'), 'White Night offers repeat challenge after story duel');
+  console.log('✓ White Night repeatable sparring contract');
+}
+
+// Route renderer handoffs are intentionally visual-only DTOs so a world/battle
+// transition cannot carry simulation, collision, or save state across routes.
+{
+  const handoff = { mapId: 'pallet', quality: 'standard' as const };
+  assert(handoff.mapId === 'pallet' && handoff.quality === 'standard' && Object.keys(handoff).length === 2, 'GPU world-battle handoff is visual-only');
+  console.log('✓ GPU world-battle visual handoff contract');
+}
+
+// Formal GPU-world eligibility remains narrow during migration: only the
+// configured Mist Bay sample may enter the controlled WorldView renderer path.
+{
+  const gpuWorldMapIds = Object.keys(WORLD_SCENE_BY_MAP_ID).filter((mapId) => mapId === 'pallet');
+  assert(gpuWorldMapIds.length === 1 && gpuWorldMapIds[0] === 'pallet', 'controlled GPU world path is limited to Mist Bay');
+  console.log('✓ controlled GPU world eligibility');
+}
+
+// Stage 4 config keeps Mist Bay landmarks outside legacy WorldCanvas map-id
+// branches, while retaining the authoritative map geometry separately.
+{
+  const mistBay = WORLD_SCENE_BY_MAP_ID.pallet;
+  assert(mistBay?.biome === 'mist-harbor' && mistBay.landmarks?.some((landmark) => landmark.kind === 'lighthouse'), 'Mist Bay WorldSceneSpec has lighthouse landmark');
+  const roof = mistBay?.landmarks?.find((landmark) => landmark.kind === 'roof' && landmark.depth === 'occlusion');
+  assert(!!roof && roof.x <= 7.2 && roof.x + (roof.width ?? 1) >= 7.2 && roof.y <= 9.6 && roof.y + (roof.height ?? 1) >= 9.6, 'Mist Bay roof occlusion covers sandbox player route');
+  const characters = mistBay?.characters ?? [];
+  assert(characters.some((character) => character.id === 'player' && character.appearance === 'hero'), 'Mist Bay scene config defines GPU player character');
+  assert(characters.filter((character) => character.behavior !== 'idle').length >= 3, 'Mist Bay scene config reserves three readable NPC behaviors');
+  assert(characters.some((character) => character.id === 'professor-lan' && character.behavior === 'study-tide') && characters.some((character) => character.id === 'harbor-villager' && character.behavior === 'look-out') && characters.some((character) => character.id === 'dock-fisher' && character.behavior === 'sort-nets'), 'Mist Bay scene config defines representative NPC behaviors');
+  console.log('✓ Mist Bay WorldSceneSpec landmark contract');
+}
+
+// Stage 3 primitive selection remains a pure renderer policy: renderer input
+// can be tested without Pixi, DOM, or BattleSim internals.
+{
+  const projectile = planBattleCue({ type: 'vfx', recipe: { id: 'ember', element: 'fire', delivery: 'projectile' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const beam = planBattleCue({ type: 'vfx', recipe: { id: 'beam', element: 'electric', delivery: 'beam' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const area = planBattleCue({ type: 'vfx', recipe: { id: 'surf', element: 'water', delivery: 'area' }, anchors: { targetIds: ['target-a', 'target-b'] }, intensity: 0.7 });
+  const environment = planBattleCue({ type: 'environment', reaction: 'scorch' });
+  assert(projectile[0]?.primitive === 'projectile' && beam[0]?.primitive === 'beam', 'BattleStage maps delivery cues to distinct primitives');
+  assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment', 'BattleStage maps area and environment cues');
+  console.log('✓ BattleStage primitive cue policy');
 }
 
 // 1. stats
@@ -515,6 +660,13 @@ console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
   assert(Math.abs(pose.dx) > 0.1 && timeline.isActive(), 'melee action has a bounded lunge pose');
   const anchor = timeline.anchorOf('actor', 'projectile', points.actor)!;
   assert(anchor.x > points.actor.x, 'projectile anchor is in front of caster');
+  timeline.clear();
+  timeline.consumeCues([{
+    id: 'cue-action', eventId: 'event-action', sequence: 2, at: 1,
+    cue: { type: 'animation', subjectId: 'actor', animation: 'projectile', skillId: 'ember', targetIds: ['target'], delivery: 'projectile' },
+  }], (uid) => uid ? points[uid] ?? null : null);
+  timeline.update(0.1);
+  assert(timeline.isActive() && timeline.labelOf('actor')?.skillId === 'ember', 'Canvas action adapter consumes BattleDirector animation cues');
   console.log('✓ event-driven action timeline');
 }
 

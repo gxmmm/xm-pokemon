@@ -17,6 +17,9 @@ export const router = createRouter({
     { path: '/pvp', name: 'pvp', component: () => import('./views/PvpView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/shop', name: 'shop', component: () => import('./views/ShopView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue'), meta: { requiresAuth: true, requiresSave: true } },
+    { path: '/renderer-spike', name: 'renderer-spike', component: () => import('./views/RendererSpikeView.vue'), meta: { requiresAuth: true, requiresSave: true } },
+    { path: '/battle-stage-sandbox', name: 'battle-stage-sandbox', component: () => import('./views/BattleStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
+    { path: '/world-stage-sandbox', name: 'world-stage-sandbox', component: () => import('./views/WorldStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/:pathMatch(.*)*', redirect: '/world' },
   ],
 });
