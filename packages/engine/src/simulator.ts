@@ -237,8 +237,21 @@ export class BattleSim {
 
   // ── per-combatant status / regen ticks ──
   private statusTick(c: BattleCombatant, dt: number): void {
-    // buff timers
-    for (const b of c.buffs) b.remaining -= dt;
+    // Timed growth effects are intentionally battle-local. A growth skill
+    // creates a short “training window” that raises a stat at fixed intervals;
+    // its earned stages remain until the battle ends, while the window itself
+    // expires normally. Recasting refreshes the window instead of duplicating it.
+    for (const b of c.buffs) {
+      if (b.kind === 'ramp' && b.stat && b.stages) {
+        b.elapsed = (b.elapsed ?? 0) + dt;
+        const interval = b.interval ?? 5;
+        while (b.elapsed >= interval && b.remaining > 0) {
+          b.elapsed -= interval;
+          this.addStatStage(c, b.stat as 'atk' | 'def' | 'spd', b.stages);
+        }
+      }
+      b.remaining -= dt;
+    }
     c.buffs = c.buffs.filter((b) => b.remaining > 0);
     // dot from buffs (leech-seed / toxic)
     c.dotAccumulator = (c.dotAccumulator ?? 0) + dt;
@@ -496,6 +509,23 @@ export class BattleSim {
         if (self && e.magnitude) {
           self.buffs.push({ id: 'dot_' + Date.now(), kind: 'dot', remaining: e.duration ?? 6, magnitude: e.magnitude, from: caster.uid });
           this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 被施加了持续伤害`, { kind: 'status', status: e.status });
+        }
+        break;
+      case 'ramp':
+        if (self && e.stat && e.stages) {
+          // One active ramp per move prevents a short cooldown from creating
+          // overlapping timers; a new cast starts a fresh growth window.
+          self.buffs = self.buffs.filter((b) => b.id !== `ramp_${skillId}`);
+          self.buffs.push({
+            id: `ramp_${skillId}`,
+            kind: 'ramp',
+            stat: e.stat,
+            stages: e.stages,
+            remaining: e.duration ?? 15,
+            interval: e.interval ?? 5,
+            elapsed: 0,
+          });
+          this.emit('buff', self.uid, undefined, skillId, undefined, `${self.name} 进入了成长节奏`, { kind: 'buff' });
         }
         break;
       case 'stun':

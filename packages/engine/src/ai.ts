@@ -301,6 +301,9 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
         score = lowHp ? 120 * missingHp : (threatened && missingHp > 0.3 ? 70 * missingHp + 20 : 10);
       } else if (e?.kind === 'shield' && e.target === 'self') {
         score = lowHp ? 80 : (threatened ? 90 : 15);
+      } else if (e?.kind === 'ramp' && e.target === 'self') {
+        const alreadyRamping = c.buffs.some((b) => b.kind === 'ramp' && b.stat === e.stat && b.remaining > 1);
+        score = alreadyRamping ? 8 : (lowHp || threatened ? 12 : 62);
       } else if (e?.kind === 'buff' && e.target === 'self') {
         const alreadyBuffed = c.statStages[e.stat as 'atk' | 'def' | 'spd'] >= 2;
         if (alreadyBuffed) {
@@ -358,6 +361,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       // and controllers preserve a ready interrupt/disable window.
       if (role === 'support' && (e?.kind === 'heal' || e?.kind === 'shield')) score *= lowHp || threatened ? 1.55 : 1.25;
       if (role === 'tank' && (e?.kind === 'shield' || e?.kind === 'buff')) score *= lowHp || threatened ? 1.5 : 1.2;
+      if (role === 'growth' && e?.kind === 'ramp') score *= lowHp || threatened ? 0.7 : 1.42;
       if (role === 'control' && e?.target === 'enemy') score *= interruptTarget ? 1.45 : 1.18;
       // utility bias boosts non-damage moves (applies to every utility skill)
       if (p.skillBias === 'utility') score *= 1.6;

@@ -30,6 +30,44 @@ console.log('✓ stats:', stats);
   console.log(`✓ IV-led stat growth: base gap=${lowLevelBaseGap}, IV gap ${lowLevelIvGap}->${highLevelIvGap}`);
 }
 
+// 1b. Species skill groups are role-led but remain internally honest:
+// intrinsic and level-up lists never overlap, each configured signature keeps
+// its exact unlock level, and every “成长蜕变” species starts with a battle-ramp.
+{
+  for (const species of SPECIES_LIST) {
+    assert(!!species.combatRole, `${species.name} has a combat role`);
+    assert(species.intrinsic.length >= 1, `${species.name} has intrinsic skills`);
+    assert(species.intrinsic.every((id) => !!SKILL_MAP[id]), `${species.name} intrinsic skills resolve`);
+    assert(species.learnset.every((entry) => !!SKILL_MAP[entry.skill]), `${species.name} level skills resolve`);
+    assert(!species.learnset.some((entry) => species.intrinsic.includes(entry.skill)), `${species.name} intrinsic and learned skills are distinct`);
+    assert(new Set(species.learnset.map((entry) => entry.skill)).size === species.learnset.length, `${species.name} learned skills are unique`);
+    if (species.signatureSkill) {
+      const signature = SIGNATURE_SKILLS[species.id]!;
+      const entry = species.learnset.find((item) => item.skill === species.signatureSkill);
+      assert(!!entry && entry.level === signature.level, `${species.name} signature keeps its configured level`);
+    }
+    if (species.combatRole === 'growth') {
+      assert(species.intrinsic.some((id) => SKILL_MAP[id]?.effect?.kind === 'ramp'), `${species.name} starts with a battle-growth skill`);
+    }
+  }
+  console.log('✓ role-led species skill groups:', SPECIES_LIST.length);
+}
+
+// 1c. Growth skills must create actual in-battle progression rather than being
+// a descriptive label only: Magikarp's growth rhythm gains attack after 5 sec.
+{
+  const grower = createWildInstance(129, 30);
+  grower.activeSkills = ['evolution-rhythm'];
+  const target = createWildInstance(10, 30);
+  const growthSim = new BattleSim({ mode: 'pvp', player: [grower], enemy: [target], isWild: false, seed: 129 });
+  const caster = growthSim.state.combatants.find((c) => c.uid === grower.uid)!;
+  (growthSim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(caster, 'evolution-rhythm');
+  growthSim.tick(5.1);
+  assert(caster.statStages.atk >= 1, 'growth rhythm increases attack during battle');
+  assert(!caster.buffs.some((b) => b.kind === 'ramp' && b.elapsed === undefined), 'growth rhythm retains runtime timing state');
+  console.log('✓ battle growth ramp:', caster.statStages.atk, 'attack stage');
+}
+
 // 2. battle 1v1 PVE - must produce a winner without throwing
 const wild = createWildInstance(25, 8);
 const sim = new BattleSim({ mode: 'pve', player: [starter], enemy: [wild], isWild: true });
@@ -190,7 +228,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   support.personality = 'cool'; ready(supportSim.state.combatants);
   support.currentHp = Math.floor(support.maxHp * 0.2);
   const supportPlan = decide(support, supportSim.state, mulberry32(5))!;
-  assert(supportPlan.preferredSkillId === 'tidal-aegis', 'support role protects itself under lethal pressure');
+  assert(['tidal-aegis', 'tide-ward', 'renewal-chant'].includes(supportPlan.preferredSkillId ?? ''), 'support role uses a survival skill under lethal pressure');
 
   const bruiserSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(149, 55)], enemy: [createWildInstance(131, 55), createWildInstance(25, 55)], isWild: false, seed: 239 });
   const bruiser = bruiserSim.state.combatants.find((c) => c.side === 'player')!;

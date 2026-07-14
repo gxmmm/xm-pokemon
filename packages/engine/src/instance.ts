@@ -87,7 +87,11 @@ export function activeSkillsForLevel(speciesId: number, level: number): string[]
     if (!skills.includes(s)) skills.push(s);
   }
   const learned = species.learnset.filter((e) => e.level <= level).sort((a, b) => b.level - a.level);
-  for (const e of learned) {
+  // Signature and role techniques are the identity-bearing part of a kit. Pick
+  // them before ordinary progression so high-level Pokémon do not silently
+  // lose their defining sustain/control/growth move to the four-skill limit.
+  const preferred = learned.filter((e) => e.skill === species.signatureSkill || (SKILL_MAP[e.skill]?.power ?? 0) === 0);
+  for (const e of [...preferred, ...learned]) {
     if (skills.length >= ACTIVE_SKILL_MAX) break;
     if (!skills.includes(e.skill)) skills.push(e.skill);
   }

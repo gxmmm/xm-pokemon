@@ -277,26 +277,147 @@ export const SIGNATURE_SKILLS: Record<number, SignatureSkillConfig> = {
 };
 
 
+/**
+ * Species combat roles are player-facing tactical guidance. They do not change
+ * base stats or AI by themselves, so every species can have a clear identity
+ * without coupling static configuration to battle logic.
+ */
 export const COMBAT_ROLE_LABEL: Record<CombatRole, string> = {
-  burst: '爆发', bruiser: '近战成长', tank: '前排坦克', control: '控制打断',
-  support: '辅助续航', kite: '远程风筝', area: '范围压制',
+  burst: '爆发收割',
+  bruiser: '近战成长',
+  tank: '前排坦克',
+  control: '控制打断',
+  support: '辅助续航',
+  kite: '远程风筝',
+  area: '范围压制',
+  balanced: '均衡作战',
+  growth: '成长蜕变',
 };
 
-/** Build the learnset from the primary type's move pool plus an optional
- * species-exclusive signature skill. */
-function buildLearnset(primary: TypeName, speciesId: number): LearnsetEntry[] {
-  const pool = TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal;
-  const levels = [1, 9, 15, 23, 31, 39, 47, 55];
-  const entries: LearnsetEntry[] = [];
-  pool.forEach((skill, i) => {
-    if (i >= levels.length) return;
-    if (entries.some((e) => e.skill === skill)) return;
-    entries.push({ level: levels[i], skill });
-  });
+export const COMBAT_ROLE_DESCRIPTION: Record<CombatRole, string> = {
+  burst: '擅长在关键窗口集中火力，优先快速压低或收割目标。',
+  bruiser: '能承受一定伤害并持续贴身施压，越战越能发挥价值。',
+  tank: '适合站在队伍前方承伤、牵制，为同伴争取输出空间。',
+  control: '依靠异常、削弱或打断限制对手，为队伍创造主动权。',
+  support: '通过治疗、护盾或增益维持战线，提升队伍的持续作战能力。',
+  kite: '利用速度、射程或机动性保持距离，持续消耗并规避风险。',
+  area: '擅长同时影响多个敌人，在多目标战斗中扩大优势。',
+  balanced: '各项能力较为平均，可根据队伍缺口灵活承担不同任务。',
+  growth: '拥有战斗内逐步强化的招式：随时间累积属性优势，存活越久越强。',
+};
+
+export function combatRoleTooltipText(role: CombatRole): string {
+  return `定位：${COMBAT_ROLE_LABEL[role]}\n${COMBAT_ROLE_DESCRIPTION[role]}`;
+}
+
+/** Every Gen-1 species has one primary tactical identity for the Pokédex. */
+export const SPECIES_COMBAT_ROLES: Record<number, CombatRole> = {
+  1: 'control', 2: 'control', 3: 'control', 4: 'bruiser', 5: 'bruiser', 6: 'burst',
+  7: 'tank', 8: 'tank', 9: 'tank', 10: 'control', 11: 'tank', 12: 'kite',
+  13: 'control', 14: 'tank', 15: 'burst', 16: 'kite', 17: 'kite', 18: 'kite',
+  19: 'bruiser', 20: 'bruiser', 21: 'kite', 22: 'kite', 23: 'control', 24: 'control',
+  25: 'area', 26: 'area', 27: 'tank', 28: 'bruiser', 29: 'support', 30: 'support',
+  31: 'tank', 32: 'bruiser', 33: 'bruiser', 34: 'tank', 35: 'support', 36: 'support',
+  37: 'burst', 38: 'burst', 39: 'support', 40: 'support', 41: 'kite', 42: 'kite',
+  43: 'control', 44: 'control', 45: 'control', 46: 'control', 47: 'control', 48: 'control',
+  49: 'kite', 50: 'bruiser', 51: 'bruiser', 52: 'kite', 53: 'kite', 54: 'support',
+  55: 'bruiser', 56: 'bruiser', 57: 'bruiser', 58: 'burst', 59: 'burst', 60: 'control',
+  61: 'control', 62: 'bruiser', 63: 'burst', 64: 'burst', 65: 'control', 66: 'bruiser',
+  67: 'bruiser', 68: 'bruiser', 69: 'control', 70: 'control', 71: 'control', 72: 'control',
+  73: 'tank', 74: 'tank', 75: 'tank', 76: 'tank', 77: 'kite', 78: 'kite',
+  79: 'tank', 80: 'tank', 81: 'kite', 82: 'tank', 83: 'kite', 84: 'kite',
+  85: 'kite', 86: 'tank', 87: 'tank', 88: 'control', 89: 'tank', 90: 'tank',
+  91: 'tank', 92: 'control', 93: 'control', 94: 'control', 95: 'tank', 96: 'control',
+  97: 'control', 98: 'bruiser', 99: 'bruiser', 100: 'area', 101: 'area', 102: 'control',
+  103: 'control', 104: 'tank', 105: 'bruiser', 106: 'bruiser', 107: 'tank', 108: 'support',
+  109: 'control', 110: 'control', 111: 'tank', 112: 'area', 113: 'support', 114: 'control',
+  115: 'bruiser', 116: 'kite', 117: 'kite', 118: 'kite', 119: 'kite', 120: 'support',
+  121: 'support', 122: 'control', 123: 'bruiser', 124: 'control', 125: 'area', 126: 'area',
+  127: 'bruiser', 128: 'bruiser', 129: 'growth', 130: 'burst', 131: 'support', 132: 'balanced',
+  133: 'growth', 134: 'support', 135: 'kite', 136: 'burst', 137: 'control', 138: 'tank',
+  139: 'tank', 140: 'tank', 141: 'bruiser', 142: 'kite', 143: 'tank', 144: 'control',
+  145: 'area', 146: 'area', 147: 'growth', 148: 'growth', 149: 'bruiser', 150: 'burst',
+  151: 'support',
+};
+
+const missingCombatRoles = RAW.filter(([id]) => !SPECIES_COMBAT_ROLES[id]).map(([id]) => id);
+if (missingCombatRoles.length) {
+  throw new Error(`Missing combat roles for species: ${missingCombatRoles.join(', ')}`);
+}
+
+/**
+ * Role-oriented skill groups. Every species receives a distinct mix of:
+ * - 1--2 intrinsic moves that are immediately usable at level 1;
+ * - role technique(s) that create its tactical identity;
+ * - elemental progression moves selected deterministically within its type.
+ *
+ * Intrinsic moves are explicitly excluded from level-up entries. This keeps the
+ * Pokédex honest: “天生” and “升级领悟” never list the same skill twice.
+ */
+const ROLE_SKILL_PLAN: Record<CombatRole, string[]> = {
+  burst: ['battle-focus', 'finishing-ray', 'pressure-point'],
+  bruiser: ['relentless-strike', 'drain-pummel', 'grit-charge'],
+  tank: ['iron-stance', 'rooted-armor', 'heavy-guard'],
+  control: ['binding-gaze', 'chilling-snare', 'toxic-bind'],
+  support: ['restoring-light', 'tide-ward', 'renewal-chant'],
+  kite: ['tailwind', 'feint-star', 'slipstream-dart'],
+  area: ['resonance-wave', 'ember-ring', 'shock-field'],
+  balanced: ['adaptive-guard', 'steady-strike', 'measured-wave'],
+  growth: ['evolution-rhythm', 'shell-molt', 'quickening-cycle'],
+};
+
+function roleTechnique(role: CombatRole, id: number): string {
+  const techniques = ROLE_SKILL_PLAN[role];
+  return techniques[id % techniques.length]!;
+}
+
+function uniqueSkills(ids: string[]): string[] {
+  return [...new Set(ids)].filter((id) => !!SKILL_MAP[id]);
+}
+
+function elementalProgression(primary: TypeName, id: number): string[] {
+  const pool = uniqueSkills(TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal)
+    .filter((sid) => (SKILL_MAP[sid]?.power ?? 0) > 0)
+    .sort((a, b) => (SKILL_MAP[a]!.power - SKILL_MAP[b]!.power) || a.localeCompare(b));
+  if (pool.length === 0) return [];
+  // Keep the level-1 elemental move in the low-power band; rotate only inside
+  // that band so kin feel different without starting with an ultimate.
+  const basicCount = Math.min(pool.length, Math.max(1, Math.ceil(pool.length / 2)));
+  const basics = pool.slice(0, basicCount);
+  const offset = id % basics.length;
+  return [...basics.slice(offset), ...basics.slice(0, offset), ...pool.slice(basicCount)];
+}
+
+function buildIntrinsicSkills(primary: TypeName, id: number, role: CombatRole): string[] {
+  const progression = elementalProgression(primary, id);
+  const technique = roleTechnique(role, id);
+  const elementalBasic = progression[0];
+  // Every species begins with one elemental move and one role technique, so its
+  // positioning is present from the first battle rather than arriving too late.
+  const out = [elementalBasic, technique];
+  return uniqueSkills(out).slice(0, 2);
+}
+
+function buildLearnset(primary: TypeName, speciesId: number, role: CombatRole, intrinsic: string[]): LearnsetEntry[] {
   const signature = SIGNATURE_SKILLS[speciesId];
-  if (signature && !entries.some((e) => e.skill === signature.skill)) entries.push({ level: signature.level, skill: signature.skill });
-  entries.sort((a, b) => a.level - b.level || a.skill.localeCompare(b.skill));
-  return entries;
+  const progression = elementalProgression(primary, speciesId);
+  const roleMoves = ROLE_SKILL_PLAN[role].filter((skill) => !intrinsic.includes(skill));
+  // The active role technique comes first, so newly caught Pokémon keep an
+  // elemental core while leveling into a second, distinct tactical option.
+  const candidates = uniqueSkills([
+    roleMoves[0] ?? '',
+    ...progression,
+    ...roleMoves.slice(1),
+    signature?.skill ?? '',
+  ]).filter((skill) => !intrinsic.includes(skill));
+  const levels = [7, 15, 23, 31, 39, 47, 55];
+  const entries: LearnsetEntry[] = [];
+  for (const skill of candidates) {
+    if (entries.some((entry) => entry.skill === skill)) continue;
+    const level = signature?.skill === skill ? signature.level : levels[Math.min(entries.length, levels.length - 1)]!;
+    entries.push({ level, skill });
+  }
+  return entries.sort((a, b) => a.level - b.level || a.skill.localeCompare(b.skill));
 }
 
 /** Build the passive pool from the primary type's passive pool + generic.
@@ -328,47 +449,6 @@ function baseStatTotal(s: Stats): number {
   return s.hp + s.atk + s.def + s.spd;
 }
 
-/** Derive a combat role from the species' leading base stat. */
-function roleFromStats(base: Stats): 'atk' | 'def' | 'spd' | 'hp' {
-  if (base.atk >= base.def && base.atk >= base.spd && base.atk >= base.hp) return 'atk';
-  if (base.def >= base.spd && base.def >= base.hp) return 'def';
-  if (base.spd >= base.hp) return 'spd';
-  return 'hp';
-}
-
-/** 1-2 intrinsic (天生必带) skills per species. Picked from the LOW-power half
- *  of the primary type's move pool (basics like ember/water-gun/thunder-shock,
- *  NOT ultimates like fire-blast/thunder - a level-5 wild/bred mustn't start with
- *  its strongest move) with a role nudge (speedster prefers a ranged basic) and a
- *  deterministic per-id offset, so:
- *  - a bred offspring starts with a usable signature move (not tackle-only);
- *  - same-role kin don't all share the same intrinsic (不雷同). */
-function buildIntrinsicSkills(primary: TypeName, base: Stats, id: number): string[] {
-  const pool = (TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal).filter((s) => s !== 'tackle');
-  if (pool.length === 0) return [];
-  const role = roleFromStats(base);
-  // damaging moves only, ascending by power (basics first)
-  const damaging = pool
-    .map((s) => ({ s, sk: SKILL_MAP[s] }))
-    .filter((x) => (x.sk?.power ?? 0) > 0)
-    .sort((a, b) => a.sk!.power - b.sk!.power);
-  if (damaging.length === 0) return [];
-  // restrict to the low-power half so we never hand out an ultimate at level 1
-  const lowTier = damaging.slice(0, Math.max(1, Math.ceil(damaging.length / 2)));
-  let startIdx = 0;
-  if (role === 'spd') {
-    const ri = lowTier.findIndex((x) => x.sk!.range === 'ranged');
-    if (ri >= 0) startIdx = ri;
-  }
-  const off = id % lowTier.length;
-  const count = lowTier.length === 1 ? 1 : 1 + (id % 2); // 1 or 2
-  const out: string[] = [];
-  for (let i = 0; i < lowTier.length && out.length < count; i++) {
-    out.push(lowTier[(startIdx + i + off) % lowTier.length].s);
-  }
-  return out;
-}
-
 /** 1-2 intrinsic (必带) passives per species, taken deterministically from the
  *  front of the species' own (id-seeded) passive pool. The pool order already
  *  differs per species, so the slice differs too -> same-type kin don't all
@@ -384,6 +464,8 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
   const [id, name, enName, types, rawStats, growthRate, rarity, height, weight, dex] = row;
   const base = unifyStats(rawStats);
   const primary = types[0];
+  const combatRole = SPECIES_COMBAT_ROLES[id];
+  const intrinsic = buildIntrinsicSkills(primary, id, combatRole);
   const pool = TYPE_ABILITY_POOL[primary] ?? TYPE_ABILITY_POOL.normal;
 
   let abilities: string[];
@@ -415,10 +497,10 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
     growthRate,
     abilities,
     hiddenAbility,
-    learnset: buildLearnset(primary, id),
+    learnset: buildLearnset(primary, id, combatRole, intrinsic),
     signatureSkill: SIGNATURE_SKILLS[id]?.skill,
-    combatRole: SIGNATURE_SKILLS[id]?.role,
-    intrinsic: buildIntrinsicSkills(primary, base, id),
+    combatRole,
+    intrinsic,
     passivePool,
     intrinsicPassives: buildIntrinsicPassives(passivePool, id),
     evolution: EVOLUTIONS[id],

@@ -82,15 +82,17 @@ export interface Species {
 export type SkillCategory = 'physical' | 'special' | 'status';
 
 /** Broad battlefield identity used for player-facing species guidance and future AI. */
-export type CombatRole = 'burst' | 'bruiser' | 'tank' | 'control' | 'support' | 'kite' | 'area';
+export type CombatRole = 'burst' | 'bruiser' | 'tank' | 'control' | 'support' | 'kite' | 'area' | 'balanced' | 'growth';
 
 export interface SkillEffect {
-  kind: 'dot' | 'heal' | 'buff' | 'debuff' | 'stun' | 'lifesteal' | 'shield' | 'status';
+  kind: 'dot' | 'heal' | 'buff' | 'debuff' | 'stun' | 'lifesteal' | 'shield' | 'status' | 'ramp';
   target?: 'self' | 'enemy';
   stat?: StatKey;
   stages?: number; // -6..6
   chance?: number; // 0..1
   duration?: number; // seconds
+  /** Seconds between repeated effects, currently used by battle-growth (ramp) skills. */
+  interval?: number;
   magnitude?: number; // heal / dot dmg / shield hp
   status?: StatusKind;
 }
@@ -408,6 +410,9 @@ export interface TimedEffect {
   stages?: number;
   remaining: number;
   magnitude?: number;
+  /** Runtime accumulator for repeated timed effects such as `ramp`. */
+  elapsed?: number;
+  interval?: number;
   type?: TypeName;
   from?: string;
 }

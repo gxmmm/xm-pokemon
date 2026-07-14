@@ -48,6 +48,8 @@ export function contributionSummary(input: ContributionInput): string {
   if (role === 'area') return '以范围压制多个目标';
   if (role === 'bruiser') return input.knockouts ? `近战推进并完成 ${input.knockouts} 次击倒` : '近战推进，争取击杀窗口';
   if (role === 'kite') return '保持距离，持续拉扯输出';
+  if (role === 'growth') return '以战斗内强化逐步积累优势';
+  if (role === 'balanced') return '根据局势灵活承担攻防任务';
   if (input.healing > 0 || input.shield > 0) return `支援贡献：治疗 ${input.healing} · 护盾 ${input.shield}`;
   if (input.control > 0) return `控制 ${input.control.toFixed(1)} 秒`;
   if (input.knockouts > 0) return `完成 ${input.knockouts} 次击倒`;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
-import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL } from '@pokemon-online/config';
+import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
@@ -126,7 +126,7 @@ function skillTip(s: Skill | undefined): string {
             <div class="row" style="gap:6px;margin:4px 0;flex-wrap:wrap">
               <TypeBadge v-for="t in species.types" :key="t" :type="t" />
               <span class="chip">{{ RARITY_LABEL[species.rarity] }}</span>
-              <span v-if="species.combatRole" class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span>
+              <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
             </div>
             <div class="tiny muted">{{ species.dex }}</div>
           </div>
@@ -160,7 +160,7 @@ function skillTip(s: Skill | undefined): string {
           <span class="muted">威力{{ SKILL_MAP[s]?.power || 0 }} · {{ SKILL_MAP[s]?.range==='melee'?'近战':'远程' }}</span>
         </div>
         <div v-for="e in species.learnset" :key="e.level + '-' + e.skill" class="tiny skill-row">
-          <span class="lv-chip" :class="{ signature: species.signatureSkill === e.skill }">{{ species.signatureSkill === e.skill ? '专属' : `Lv.${e.level}` }}</span>
+          <span class="lv-chip" :class="{ signature: species.signatureSkill === e.skill }">{{ species.signatureSkill === e.skill ? `专属 Lv.${e.level}` : `Lv.${e.level}` }}</span>
           <Tip :text="skillTip(SKILL_MAP[e.skill])"><span class="bold">{{ SKILL_MAP[e.skill]?.name }}</span></Tip>
           <TypeBadge :type="SKILL_MAP[e.skill]?.type ?? 'normal'" size="sm" />
           <span class="muted">威力{{ SKILL_MAP[e.skill]?.power || 0 }} · {{ SKILL_MAP[e.skill]?.range==='melee'?'近战':'远程' }}</span>

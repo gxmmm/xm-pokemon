@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useMessage } from '../stores/message.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, expToNext, skillBudgetLabel, COMBAT_ROLE_LABEL } from '@pokemon-online/config';
+import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, expToNext, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { getAvailableEvolutions, computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
@@ -173,7 +173,7 @@ async function release(): Promise<void> {
           <span class="chip">Lv.{{ inst.level }}</span>
           <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip">{{ personality?.name }}型</span></Tip>
           <span class="chip" :class="{faded: inst.currentHp<=0}">{{ inst.origin==='bred'?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
-          <span v-if="species.combatRole" class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span>
+          <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
         </div>
         <div class="tiny muted">{{ species.dex }}</div>
       </div>

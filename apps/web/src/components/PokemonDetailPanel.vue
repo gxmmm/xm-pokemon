@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, skillBudgetLabel, COMBAT_ROLE_LABEL } from '@pokemon-online/config';
+import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from './PokemonSprite.vue';
 import TypeBadge from './TypeBadge.vue';
@@ -146,7 +146,7 @@ function skillTip(s: Skill | undefined): string {
           <TypeBadge v-for="t in species.types" :key="t" :type="t" size="sm" />
           <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip sm-chip">{{ personality?.name }}型</span></Tip>
           <span class="chip sm-chip">{{ isBred?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
-          <span v-if="species.combatRole" class="chip sm-chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span>
+          <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip sm-chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
           <span class="chip sm-chip" v-if="game.save!.pveTeam.includes(inst.uid)">PVE</span>
           <span class="chip sm-chip" v-if="game.save!.pvpTeam.includes(inst.uid)">PVP</span>
         </div>
