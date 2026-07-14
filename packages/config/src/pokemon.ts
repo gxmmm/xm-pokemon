@@ -1,4 +1,4 @@
-import type { Species, TypeName, Stats, GrowthRate, Rarity, LearnsetEntry } from '@pokemon-online/shared';
+import type { Species, TypeName, Stats, GrowthRate, Rarity, LearnsetEntry, CombatRole } from '@pokemon-online/shared';
 import { TYPE_LEARNSET, SKILL_MAP } from './skills.ts';
 import { TYPE_PASSIVE_POOL, GENERIC_PASSIVE_POOL } from './passive-skills.ts';
 
@@ -257,8 +257,34 @@ const EVOLUTIONS: Record<number, { to: number; level: number }[]> = {
   133: [{ to: 134, level: 36 }, { to: 135, level: 36 }, { to: 136, level: 36 }],
 };
 
-/** Build the learnset from the primary type's move pool spread across levels. */
-function buildLearnset(primary: TypeName): LearnsetEntry[] {
+export interface SignatureSkillConfig { skill: string; level: number; role: CombatRole; label: string; }
+
+/** First-wave species signatures. They deliberately reuse the common skill
+ * engine so content can expand without a bespoke combat code path per species. */
+export const SIGNATURE_SKILLS: Record<number, SignatureSkillConfig> = {
+  3: { skill: 'verdant-snare', level: 39, role: 'control', label: '持续控制' },
+  6: { skill: 'blazing-dive', level: 47, role: 'burst', label: '蓄力爆发' },
+  9: { skill: 'fortress-cannon', level: 39, role: 'tank', label: '远程压制' },
+  25: { skill: 'volt-chain', level: 31, role: 'area', label: '群体收割' },
+  65: { skill: 'mind-lock', level: 39, role: 'control', label: '控制打断' },
+  94: { skill: 'shadow-trap', level: 39, role: 'control', label: '暗影控制' },
+  112: { skill: 'earth-shatter', level: 39, role: 'area', label: '范围压制' },
+  131: { skill: 'tidal-aegis', level: 31, role: 'support', label: '护盾续航' },
+  143: { skill: 'heavy-slam', level: 39, role: 'tank', label: '前排控制' },
+  149: { skill: 'dragon-surge', level: 47, role: 'bruiser', label: '成长爆发' },
+  150: { skill: 'psyonic-annihilation', level: 47, role: 'burst', label: '终极群攻' },
+  151: { skill: 'genesis-pulse', level: 39, role: 'support', label: '自我回复' },
+};
+
+
+export const COMBAT_ROLE_LABEL: Record<CombatRole, string> = {
+  burst: '爆发', bruiser: '近战成长', tank: '前排坦克', control: '控制打断',
+  support: '辅助续航', kite: '远程风筝', area: '范围压制',
+};
+
+/** Build the learnset from the primary type's move pool plus an optional
+ * species-exclusive signature skill. */
+function buildLearnset(primary: TypeName, speciesId: number): LearnsetEntry[] {
   const pool = TYPE_LEARNSET[primary] ?? TYPE_LEARNSET.normal;
   const levels = [1, 9, 15, 23, 31, 39, 47, 55];
   const entries: LearnsetEntry[] = [];
@@ -267,7 +293,9 @@ function buildLearnset(primary: TypeName): LearnsetEntry[] {
     if (entries.some((e) => e.skill === skill)) return;
     entries.push({ level: levels[i], skill });
   });
-  entries.sort((a, b) => a.level - b.level);
+  const signature = SIGNATURE_SKILLS[speciesId];
+  if (signature && !entries.some((e) => e.skill === signature.skill)) entries.push({ level: signature.level, skill: signature.skill });
+  entries.sort((a, b) => a.level - b.level || a.skill.localeCompare(b.skill));
   return entries;
 }
 
@@ -387,7 +415,9 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
     growthRate,
     abilities,
     hiddenAbility,
-    learnset: buildLearnset(primary),
+    learnset: buildLearnset(primary, id),
+    signatureSkill: SIGNATURE_SKILLS[id]?.skill,
+    combatRole: SIGNATURE_SKILLS[id]?.role,
     intrinsic: buildIntrinsicSkills(primary, base, id),
     passivePool,
     intrinsicPassives: buildIntrinsicPassives(passivePool, id),

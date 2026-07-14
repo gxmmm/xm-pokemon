@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
-import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS } from '@pokemon-online/config';
+import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL } from '@pokemon-online/config';
 import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
@@ -31,6 +31,23 @@ const RARITY_LABEL: Record<Rarity, string> = {
 function entryOf(id: number) { return game.save?.pokedex[id]; }
 function select(id: number): void { selectedId.value = id; }
 const isRevealed = (id: number) => DEX_REVEAL_ALL || !!entryOf(id)?.seen;
+
+type DexLevelFilter = 'all' | 'low' | 'mid' | 'high';
+const levelFilter = ref<DexLevelFilter>('all');
+const DEX_LEVEL_TABS: { id: DexLevelFilter; label: string; min?: number; max?: number }[] = [
+  { id: 'all', label: '全部' },
+  { id: 'low', label: 'Lv.1–20', min: 1, max: 20 },
+  { id: 'mid', label: 'Lv.21–40', min: 21, max: 40 },
+  { id: 'high', label: 'Lv.41–55', min: 41, max: 55 },
+];
+const filteredSpecies = computed(() => {
+  const tab = DEX_LEVEL_TABS.find((item) => item.id === levelFilter.value)!;
+  if (!tab.min || !tab.max) return SPECIES_LIST;
+  return SPECIES_LIST.filter((sp) => {
+    const ranges = encounterMaps.value[sp.id] ?? [];
+    return ranges.some((range) => range.max >= tab.min! && range.min <= tab.max!);
+  });
+});
 // reverse lookup: speciesId -> maps where it appears (with level range)
 const encounterMaps = computed(() => {
   const m: Record<number, { map: string; min: number; max: number }[]> = {};
@@ -58,7 +75,7 @@ function skillTip(s: Skill | undefined): string {
   const target = s.targetMode === 'all-enemies'
     ? `敌方全体 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
     : '敌方单体';
-  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles} · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}`;
+  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles} · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 </script>
 
@@ -75,9 +92,14 @@ function skillTip(s: Skill | undefined): string {
           </div>
         </div>
       </div>
-      <div class="grid grid-4">
+      <div class="panel dex-browser">
+        <div class="dex-filter-tabs" role="tablist" aria-label="图鉴等级筛选">
+          <button v-for="tab in DEX_LEVEL_TABS" :key="tab.id" class="sm dex-tab" :class="{ active: levelFilter === tab.id }" @click="levelFilter = tab.id">{{ tab.label }}</button>
+        </div>
+        <div class="tiny muted dex-count">显示 {{ filteredSpecies.length }} / {{ SPECIES_LIST.length }}</div>
+        <div class="grid grid-4 dex-grid">
         <div
-          v-for="sp in SPECIES_LIST" :key="sp.id" class="dex-cell"
+          v-for="sp in filteredSpecies" :key="sp.id" class="dex-cell"
           :class="{ caught: entryOf(sp.id)?.caught, seen: isRevealed(sp.id) && !entryOf(sp.id)?.caught, selected: selectedId===sp.id }"
           @click="select(sp.id)"
         >
@@ -86,6 +108,7 @@ function skillTip(s: Skill | undefined): string {
           <div v-else class="silhouette">❔</div>
           <div class="name">{{ isRevealed(sp.id) ? sp.name : '？？？' }}</div>
           <div v-if="entryOf(sp.id)?.caught" class="tiny muted">持有 {{ entryOf(sp.id)?.count }}</div>
+        </div>
         </div>
       </div>
     </div>
@@ -103,6 +126,7 @@ function skillTip(s: Skill | undefined): string {
             <div class="row" style="gap:6px;margin:4px 0;flex-wrap:wrap">
               <TypeBadge v-for="t in species.types" :key="t" :type="t" />
               <span class="chip">{{ RARITY_LABEL[species.rarity] }}</span>
+              <span v-if="species.combatRole" class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span>
             </div>
             <div class="tiny muted">{{ species.dex }}</div>
           </div>
@@ -136,7 +160,7 @@ function skillTip(s: Skill | undefined): string {
           <span class="muted">威力{{ SKILL_MAP[s]?.power || 0 }} · {{ SKILL_MAP[s]?.range==='melee'?'近战':'远程' }}</span>
         </div>
         <div v-for="e in species.learnset" :key="e.level + '-' + e.skill" class="tiny skill-row">
-          <span class="lv-chip">Lv.{{ e.level }}</span>
+          <span class="lv-chip" :class="{ signature: species.signatureSkill === e.skill }">{{ species.signatureSkill === e.skill ? '专属' : `Lv.${e.level}` }}</span>
           <Tip :text="skillTip(SKILL_MAP[e.skill])"><span class="bold">{{ SKILL_MAP[e.skill]?.name }}</span></Tip>
           <TypeBadge :type="SKILL_MAP[e.skill]?.type ?? 'normal'" size="sm" />
           <span class="muted">威力{{ SKILL_MAP[e.skill]?.power || 0 }} · {{ SKILL_MAP[e.skill]?.range==='melee'?'近战':'远程' }}</span>
@@ -180,9 +204,15 @@ function skillTip(s: Skill | undefined): string {
 </template>
 
 <style scoped>
-.dex-layout { display:flex; gap:12px; align-items:flex-start; }
-.dex-left { flex:1; min-width:0; }
-.dex-right { width: 460px; flex-shrink:0; overscroll-behavior:contain; }
+.dex-layout { display:flex; gap:12px; align-items:stretch; height:calc(100vh - 120px); min-height:560px; }
+.dex-left { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; }
+.dex-right { width:460px; flex-shrink:0; overflow-y:auto; overscroll-behavior:contain; }
+.dex-browser { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.dex-filter-tabs { display:flex; flex-wrap:wrap; gap:5px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+.dex-tab { background:var(--panel-2); color:var(--muted); }
+.dex-tab.active { background:var(--accent); color:#fff; }
+.dex-count { padding:5px 1px; }
+.dex-grid { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; align-content:start; padding:1px 4px 4px 1px; }
 .dex-cell {
   background: var(--panel); color: var(--ink); border-radius: 10px; padding: 8px 6px;
   text-align: center; position: relative; box-shadow: 0 2px 0 rgba(0,0,0,.12);
@@ -198,6 +228,13 @@ function skillTip(s: Skill | undefined): string {
 .detail .sub { margin-top:6px; }
 .skill-row { display:flex; align-items:center; gap:6px; padding:3px 0; border-bottom:1px dashed #eee; }
 .lv-chip { display:inline-block; background:var(--accent-2); color:#fff; border-radius:6px; padding:0 6px; font-size:10px; font-weight:700; min-width:36px; text-align:center; }
+.lv-chip.signature { background:var(--gold); color:#333; }
+.role-chip { background:rgba(184,134,11,.16); color:#7a5600; }
 .empty { display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:240px; }
 .silhouette.big { font-size: 56px; opacity:.4; }
+@media (max-width: 900px) {
+  .dex-layout { height:auto; min-height:0; flex-direction:column; }
+  .dex-left { min-height:420px; }
+  .dex-right { width:auto; max-height:none; }
+}
 </style>

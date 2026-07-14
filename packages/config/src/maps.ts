@@ -1,4 +1,5 @@
-import type { GameMap } from '@pokemon-online/shared';
+import type { GameMap, Rarity } from '@pokemon-online/shared';
+import { SPECIES_LIST } from './pokemon.ts';
 
 /**
  * The explorable world. Per Principle 5 (world first) Pokemon live in maps,
@@ -71,107 +72,56 @@ const ILLUSION_TOWER_SUMMIT_TILES = tiles([
 ], 16);
 
 /**
- * A deliberately open-ended training annex in 雾湾镇. It is intended for
- * development and sandbox play: every floor has a different level band and
- * catch table so battle, capture, and breeding loops can be exercised without
- * having to interrupt the authored main story. It can be hidden behind a
- * release flag later without changing the floor data or save format.
+ * The training tower is a complete capture/test sandbox. Every species in the
+ * Pokedex appears on exactly one of its five floors; the floor controls the
+ * level band while each species keeps its configured rarity for encounter rolls.
  */
-const illusionTowerMaps: GameMap[] = [
-  {
-    id: 'illusion-tower-1', name: '幻境之塔·一层',
-    description: '幻境之塔的入门层。稳定的投影会生成 Lv.5–10 的宝可梦，适合熟悉战斗与捕捉。',
-    encounterFloor: true, width: 16, height: 14, tiles: ILLUSION_TOWER_TILES,
-    encounters: [
-      { speciesId: 16, weight: 24, minLevel: 5, maxLevel: 10 },
-      { speciesId: 19, weight: 24, minLevel: 5, maxLevel: 10 },
-      { speciesId: 52, weight: 18, minLevel: 6, maxLevel: 10 },
-      { speciesId: 63, weight: 16, minLevel: 6, maxLevel: 10 },
-      { speciesId: 66, weight: 12, minLevel: 7, maxLevel: 10, rarity: 'uncommon' },
-      { speciesId: 35, weight: 6, minLevel: 8, maxLevel: 10, rarity: 'rare' },
-    ],
-    connected: [{ to: 'pallet', x: 8, y: 13, label: '雾湾镇', direction: 'down' }, { to: 'illusion-tower-2', x: 8, y: 0, label: '二层', direction: 'up' }],
-    warps: [
-      { x: 8, y: 13, toMapId: 'pallet', toX: 7, toY: 5, transition: 'door', label: '雾湾镇', direction: 'down' },
-      { x: 8, y: 0, toMapId: 'illusion-tower-2', toX: 8, toY: 12, transition: 'cave', label: '幻境之塔·二层', direction: 'up' },
-    ],
-    ambient: '淡紫色的阶梯向上延伸，墙上的等级铭牌显示：推荐 Lv.5–10。',
-  },
-  {
-    id: 'illusion-tower-2', name: '幻境之塔·二层',
-    description: '投影开始加速的训练层。这里出现 Lv.12–18 的宝可梦。',
-    encounterFloor: true, width: 16, height: 14, tiles: ILLUSION_TOWER_TILES,
-    encounters: [
-      { speciesId: 41, weight: 22, minLevel: 12, maxLevel: 18 },
-      { speciesId: 58, weight: 18, minLevel: 12, maxLevel: 18 },
-      { speciesId: 77, weight: 18, minLevel: 13, maxLevel: 18 },
-      { speciesId: 92, weight: 18, minLevel: 13, maxLevel: 18 },
-      { speciesId: 102, weight: 14, minLevel: 14, maxLevel: 18 },
-      { speciesId: 64, weight: 10, minLevel: 16, maxLevel: 18, rarity: 'rare' },
-    ],
-    connected: [{ to: 'illusion-tower-1', x: 8, y: 13, label: '一层', direction: 'down' }, { to: 'illusion-tower-3', x: 8, y: 0, label: '三层', direction: 'up' }],
-    warps: [
-      { x: 8, y: 13, toMapId: 'illusion-tower-1', toX: 8, toY: 1, transition: 'cave', label: '幻境之塔·一层', direction: 'down' },
-      { x: 8, y: 0, toMapId: 'illusion-tower-3', toX: 8, toY: 12, transition: 'cave', label: '幻境之塔·三层', direction: 'up' },
-    ],
-    ambient: '浮动石台围绕中央光柱缓慢旋转，等级铭牌显示：推荐 Lv.12–18。',
-  },
-  {
-    id: 'illusion-tower-3', name: '幻境之塔·三层',
-    description: '适合组建中期队伍的平衡层。这里出现 Lv.20–28 的宝可梦。',
-    encounterFloor: true, width: 16, height: 14, tiles: ILLUSION_TOWER_TILES,
-    encounters: [
-      { speciesId: 67, weight: 20, minLevel: 20, maxLevel: 28 },
-      { speciesId: 93, weight: 20, minLevel: 20, maxLevel: 28 },
-      { speciesId: 108, weight: 18, minLevel: 21, maxLevel: 28 },
-      { speciesId: 111, weight: 18, minLevel: 21, maxLevel: 28 },
-      { speciesId: 118, weight: 14, minLevel: 20, maxLevel: 27 },
-      { speciesId: 123, weight: 10, minLevel: 24, maxLevel: 28, rarity: 'rare' },
-    ],
-    connected: [{ to: 'illusion-tower-2', x: 8, y: 13, label: '二层', direction: 'down' }, { to: 'illusion-tower-4', x: 8, y: 0, label: '四层', direction: 'up' }],
-    warps: [
-      { x: 8, y: 13, toMapId: 'illusion-tower-2', toX: 8, toY: 1, transition: 'cave', label: '幻境之塔·二层', direction: 'down' },
-      { x: 8, y: 0, toMapId: 'illusion-tower-4', toX: 8, toY: 12, transition: 'cave', label: '幻境之塔·四层', direction: 'up' },
-    ],
-    ambient: '晶体在脚边投下交错的影子，等级铭牌显示：推荐 Lv.20–28。',
-  },
-  {
-    id: 'illusion-tower-4', name: '幻境之塔·四层',
-    description: '高阶投影训练层。这里出现 Lv.30–40 的宝可梦。',
-    encounterFloor: true, width: 16, height: 14, tiles: ILLUSION_TOWER_TILES,
-    encounters: [
-      { speciesId: 82, weight: 20, minLevel: 30, maxLevel: 40 },
-      { speciesId: 91, weight: 18, minLevel: 30, maxLevel: 40 },
-      { speciesId: 112, weight: 18, minLevel: 31, maxLevel: 40 },
-      { speciesId: 126, weight: 16, minLevel: 32, maxLevel: 40 },
-      { speciesId: 127, weight: 16, minLevel: 32, maxLevel: 40 },
-      { speciesId: 130, weight: 12, minLevel: 36, maxLevel: 40, rarity: 'rare' },
-    ],
-    connected: [{ to: 'illusion-tower-3', x: 8, y: 13, label: '三层', direction: 'down' }, { to: 'illusion-tower-5', x: 8, y: 0, label: '五层', direction: 'up' }],
-    warps: [
-      { x: 8, y: 13, toMapId: 'illusion-tower-3', toX: 8, toY: 1, transition: 'cave', label: '幻境之塔·三层', direction: 'down' },
-      { x: 8, y: 0, toMapId: 'illusion-tower-5', toX: 8, toY: 12, transition: 'cave', label: '幻境之塔·五层', direction: 'up' },
-    ],
-    ambient: '高处的窗外没有天空，只有不断重绘的星雾。等级铭牌显示：推荐 Lv.30–40。',
-  },
-  {
-    id: 'illusion-tower-5', name: '幻境之塔·五层',
-    description: '幻境之塔的顶层试炼场。这里出现 Lv.45–55 的宝可梦，适合检验成型队伍。',
-    encounterFloor: true, width: 16, height: 14, tiles: ILLUSION_TOWER_SUMMIT_TILES,
-    encounters: [
-      { speciesId: 113, weight: 20, minLevel: 45, maxLevel: 55 },
-      { speciesId: 128, weight: 20, minLevel: 45, maxLevel: 55 },
-      { speciesId: 131, weight: 18, minLevel: 46, maxLevel: 55 },
-      { speciesId: 134, weight: 14, minLevel: 47, maxLevel: 55 },
-      { speciesId: 135, weight: 14, minLevel: 47, maxLevel: 55 },
-      { speciesId: 143, weight: 10, minLevel: 50, maxLevel: 55, rarity: 'rare' },
-      { speciesId: 149, weight: 4, minLevel: 54, maxLevel: 55, rarity: 'rare' },
-    ],
-    connected: [{ to: 'illusion-tower-4', x: 8, y: 13, label: '四层', direction: 'down' }],
-    warps: [{ x: 8, y: 13, toMapId: 'illusion-tower-4', toX: 8, toY: 1, transition: 'cave', label: '幻境之塔·四层', direction: 'down' }],
-    ambient: '顶层的光门只映出你的队伍。等级铭牌显示：推荐 Lv.45–55。',
-  },
+const TOWER_LEVEL_BANDS: readonly [number, number][] = [
+  [5, 10], [12, 18], [20, 28], [30, 40], [45, 55],
 ];
+const TOWER_FLOOR_LABELS = ['一', '二', '三', '四', '五'] as const;
+const TOWER_RARITY_WEIGHT: Record<Rarity, number> = {
+  common: 12, uncommon: 10, rare: 7, legendary: 3, mythical: 2,
+};
+
+function towerEncounters(floor: number) {
+  const [minLevel, maxLevel] = TOWER_LEVEL_BANDS[floor]!;
+  return SPECIES_LIST
+    .filter((species) => (species.id - 1) % TOWER_LEVEL_BANDS.length === floor)
+    .map((species) => ({
+      speciesId: species.id,
+      weight: TOWER_RARITY_WEIGHT[species.rarity],
+      minLevel,
+      maxLevel,
+      rarity: species.rarity,
+    }));
+}
+
+const illusionTowerMaps: GameMap[] = TOWER_LEVEL_BANDS.map(([minLevel, maxLevel], floor) => {
+  const index = floor + 1;
+  const isSummit = index === TOWER_LEVEL_BANDS.length;
+  return {
+    id: `illusion-tower-${index}`,
+    name: `幻境之塔·${TOWER_FLOOR_LABELS[floor]}层`,
+    description: `完整图鉴训练层 ${index}/5。这里出现 Lv.${minLevel}–${maxLevel} 的投影宝可梦；五层合计覆盖全部151种。`,
+    encounterFloor: true,
+    width: 16,
+    height: 14,
+    tiles: isSummit ? ILLUSION_TOWER_SUMMIT_TILES : ILLUSION_TOWER_TILES,
+    encounters: towerEncounters(floor),
+    connected: [
+      ...(floor > 0 ? [{ to: `illusion-tower-${index - 1}`, x: 8, y: 13, label: `${TOWER_FLOOR_LABELS[floor - 1]}层`, direction: 'down' as const }] : [{ to: 'pallet', x: 8, y: 13, label: '雾湾镇', direction: 'down' as const }]),
+      ...(isSummit ? [] : [{ to: `illusion-tower-${index + 1}`, x: 8, y: 0, label: `${TOWER_FLOOR_LABELS[floor + 1]}层`, direction: 'up' as const }]),
+    ],
+    warps: [
+      floor === 0
+        ? { x: 8, y: 13, toMapId: 'pallet', toX: 7, toY: 5, transition: 'door' as const, label: '雾湾镇', direction: 'down' as const }
+        : { x: 8, y: 13, toMapId: `illusion-tower-${index - 1}`, toX: 8, toY: 1, transition: 'cave' as const, label: `幻境之塔·${TOWER_FLOOR_LABELS[floor - 1]}层`, direction: 'down' as const },
+      ...(isSummit ? [] : [{ x: 8, y: 0, toMapId: `illusion-tower-${index + 1}`, toX: 8, toY: 12, transition: 'cave' as const, label: `幻境之塔·${TOWER_FLOOR_LABELS[floor + 1]}层`, direction: 'up' as const }]),
+    ],
+    ambient: `紫色投影沿着石阶轮换显现，等级铭牌显示：推荐 Lv.${minLevel}–${maxLevel}。`,
+  };
+});
 
 export const MAPS: GameMap[] = [
   {

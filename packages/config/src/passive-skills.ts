@@ -5,6 +5,14 @@ import type { PassiveSkill, TypeName } from '@pokemon-online/shared';
  * multi-skill cap (PASSIVE_SKILL_MAX). They modify stats/elements rather than
  * being actively cast. Tier drives pool selection during breeding.
  */
+/** Chinese display names for internal elemental type ids. Keep player-facing
+ * passive text independent from English configuration ids. */
+const TYPE_DISPLAY_NAME: Record<TypeName, string> = {
+  normal: '一般', fire: '火', water: '水', grass: '草', electric: '电', ice: '冰',
+  fighting: '格斗', poison: '毒', ground: '地面', flying: '飞行', psychic: '超能',
+  bug: '虫', rock: '岩石', ghost: '幽灵', dragon: '龙', dark: '恶', steel: '钢', fairy: '妖精',
+};
+
 const MISSING_ELEMENTAL_PASSIVES: PassiveSkill[] = (
   [
     ['normal', '常之力', '常之抗'], ['ice', '冰之力', '冰之抗'],
@@ -15,10 +23,13 @@ const MISSING_ELEMENTAL_PASSIVES: PassiveSkill[] = (
     ['dragon', '龙之力', '龙之抗'], ['dark', '暗之力', '暗之抗'],
     ['steel', '钢之力', '钢之抗'], ['fairy', '妖精之力', '妖精之抗'],
   ] as const satisfies readonly (readonly [TypeName, string, string])[]
-).flatMap(([type, boostName, resistName]) => [
-  { id: `p-${type}power`, name: boostName, description: `${boostName}：${type}属性招式威力 +15%。`, tier: 2, effect: { kind: 'typeBoost', type, mult: 1.15 } },
-  { id: `p-${type}res`, name: resistName, description: `${resistName}：受到${type}属性伤害 -20%。`, tier: 2, effect: { kind: 'typeResist', type, mult: 0.8 } },
-] satisfies PassiveSkill[]);
+).flatMap(([type, boostName, resistName]) => {
+  const typeName = TYPE_DISPLAY_NAME[type];
+  return [
+    { id: `p-${type}power`, name: boostName, description: `${typeName}属性招式威力 +15%。`, tier: 2, effect: { kind: 'typeBoost', type, mult: 1.15 } },
+    { id: `p-${type}res`, name: resistName, description: `受到${typeName}属性伤害 -20%。`, tier: 2, effect: { kind: 'typeResist', type, mult: 0.8 } },
+  ] satisfies PassiveSkill[];
+});
 
 export const PASSIVE_SKILLS: PassiveSkill[] = [
   // tier 1 - stat passives
@@ -30,7 +41,8 @@ export const PASSIVE_SKILLS: PassiveSkill[] = [
   { id: 'p-firepower', name: '炎之力', description: '火属性招式威力 +15%。', tier: 2, effect: { kind: 'typeBoost', type: 'fire', mult: 1.15 } },
   { id: 'p-aquapower', name: '水之力', description: '水属性招式威力 +15%。', tier: 2, effect: { kind: 'typeBoost', type: 'water', mult: 1.15 } },
   { id: 'p-leafpower', name: '叶之力', description: '草属性招式威力 +15%。', tier: 2, effect: { kind: 'typeBoost', type: 'grass', mult: 1.15 } },
-  { id: 'p-thunderpower', name: '雷之力', description: '电之力：电属性招式威力 +15%。', tier: 2, effect: { kind: 'typeBoost', type: 'electric', mult: 1.15 } },
+  { id: 'p-thunderpower', name: '雷之力', description: '电属性招式威力 +15%。', tier: 2, effect: { kind: 'typeBoost', type: 'electric', mult: 1.15 } },
+  { id: 'p-electricres', name: '电之抗', description: '受到电属性伤害 -20%。', tier: 2, effect: { kind: 'typeResist', type: 'electric', mult: 0.8 } },
   { id: 'p-fireres', name: '炎之抗', description: '受到火属性伤害 -20%。', tier: 2, effect: { kind: 'typeResist', type: 'fire', mult: 0.8 } },
   { id: 'p-waterres', name: '水之抗', description: '受到水属性伤害 -20%。', tier: 2, effect: { kind: 'typeResist', type: 'water', mult: 0.8 } },
   ...MISSING_ELEMENTAL_PASSIVES,

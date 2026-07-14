@@ -91,6 +91,13 @@ export function activeSkillsForLevel(speciesId: number, level: number): string[]
     if (skills.length >= ACTIVE_SKILL_MAX) break;
     if (!skills.includes(e.skill)) skills.push(e.skill);
   }
+  // A species signature is earned at its configured level and always occupies
+  // one learned slot thereafter. Intrinsic moves retain priority and are never
+  // displaced by this rule.
+  if (species.signatureSkill && learned.some((e) => e.skill === species.signatureSkill) && !skills.includes(species.signatureSkill)) {
+    if (skills.length >= ACTIVE_SKILL_MAX) skills.pop();
+    skills.push(species.signatureSkill);
+  }
   // intrinsic guarantees at least one move; the normal attack is always
   // available regardless, so no tackle/struggle fallback is needed.
   return skills;

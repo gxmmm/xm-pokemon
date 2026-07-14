@@ -1,4 +1,4 @@
-import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect } from '@pokemon-online/shared';
+import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
 import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
@@ -97,6 +97,19 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     statStages: { atk: 0, def: 0, spd: 0 },
     shields: 0,
     damageDealt: 0,
+    damageTaken: 0,
+    normalDamage: 0,
+    skillDamage: 0,
+    healingDone: 0,
+    shieldAbsorbed: 0,
+    controlSeconds: 0,
+    interrupts: 0,
+    knockouts: 0,
+    skillCasts: 0,
+    normalAttacks: 0,
+    hits: 0,
+    misses: 0,
+    skillStats: {},
     buffs: [],
     castProgress: null,
     alive: true,
@@ -154,6 +167,7 @@ export class BattleSim {
       mode: opts.mode,
       arena: { cols: BATTLE_GRID.cols, rows: BATTLE_GRID.rows },
       combatants: [...player, ...enemy],
+      teamTactics: {},
       events: [],
       time: 0,
       ended: false,
@@ -307,10 +321,32 @@ export class BattleSim {
    * fighter must retreat. Holding an effective range is intentionally stable:
    * constant strafing in a 3v3 made the field read as jittery rather than tactical. */
   private stepMove(c: BattleCombatant, target: BattleCombatant, desiredRangeCells: number): void {
+    const plan = c.plan;
+    const movementTarget = plan?.movementTargetUid ? this.find(plan.movementTargetUid) ?? target : target;
+    const coverAlly = plan?.coverAllyUid ? this.find(plan.coverAllyUid) : undefined;
+    const protectAlly = plan?.protectAllyUid ? this.find(plan.protectAllyUid) : undefined;
     c.facing = target.position.x >= c.position.x ? 1 : -1;
     if ((c.moveCd ?? 0) > 0) return;
-    const dx = target.position.x - c.position.x;
-    const dy = target.position.y - c.position.y;
+
+    // A frontline protector moves to the segment between a threatened ally and
+    // the hostile caster, while still keeping the action target in front of it.
+    if (plan?.positioning === 'frontline' && protectAlly?.alive) {
+      const blocker = {
+        x: Math.round((protectAlly.position.x + target.position.x) / 2),
+        y: Math.round((protectAlly.position.y + target.position.y) / 2),
+      };
+      if (this.tryStepToward(c, blocker, false)) return;
+    }
+
+    // Backliners use a durable ally as cover: when they drift in front of that
+    // ally, take a step back toward their own deployment side before resuming
+    // normal range logic. This turns protection into readable body-blocking.
+    if (plan?.positioning === 'backline' && coverAlly?.alive && this.isAheadOf(c, coverAlly)) {
+      if (this.tryStepToward(c, { x: c.position.x - c.facing, y: c.position.y }, false)) return;
+    }
+
+    const dx = movementTarget.position.x - c.position.x;
+    const dy = movementTarget.position.y - c.position.y;
     const d = Math.hypot(dx, dy);
     const wantKite = desiredRangeCells >= 3;
     const tooFar = d > desiredRangeCells + MOVE_BUFFER;
@@ -318,9 +354,21 @@ export class BattleSim {
     // In a valid attack band, stand your ground. Skill casts and local VFX are
     // easier to read when the whole squad does not orbit every decision cycle.
     if (!tooFar && !tooClose) return;
+    this.tryStepToward(c, movementTarget.position, tooClose);
+  }
 
-    const bx = tooFar ? Math.sign(dx) : -Math.sign(dx);
-    const by = tooFar ? Math.sign(dy) : -Math.sign(dy);
+  /** Is a combatant closer to the enemy side than its intended cover ally? */
+  private isAheadOf(c: BattleCombatant, cover: BattleCombatant): boolean {
+    return c.side === 'player' ? c.position.x > cover.position.x : c.position.x < cover.position.x;
+  }
+
+  /** Take one deterministic lane-aware step toward a point, or away when retreating. */
+  private tryStepToward(c: BattleCombatant, point: { x: number; y: number }, retreat: boolean): boolean {
+    const dx = point.x - c.position.x;
+    const dy = point.y - c.position.y;
+    const bx = (retreat ? -1 : 1) * Math.sign(dx);
+    const by = (retreat ? -1 : 1) * Math.sign(dy);
+    if (bx === 0 && by === 0) return false;
     // Deterministic per-unit lane preference: direct approach first, then step
     // around a teammate instead of waiting behind it and forming a static pile.
     const lane = (c.uid.charCodeAt(c.uid.length - 1) & 1) === 0 ? 1 : -1;
@@ -338,22 +386,22 @@ export class BattleSim {
       add(c.position.x + bx, c.position.y - lane);
       add(c.position.x, c.position.y + lane);
       add(c.position.x, c.position.y - lane);
-    } else if (by !== 0) {
+    } else {
       add(c.position.x, c.position.y + by);
       add(c.position.x + lane, c.position.y + by);
       add(c.position.x - lane, c.position.y + by);
       add(c.position.x + lane, c.position.y);
       add(c.position.x - lane, c.position.y);
     }
-
     for (const cell of candidates) {
       if (this.isCellFree(cell, c.uid)) {
         c.position.x = cell.x;
         c.position.y = cell.y;
         c.moveCd = this.stepDelay(c);
-        return;
+        return true;
       }
     }
+    return false;
   }
 
   private startCast(c: BattleCombatant, skillId: string): void {
@@ -385,18 +433,21 @@ export class BattleSim {
     this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`);
   }
 
-  private inflictStatus(target: BattleCombatant, status: StatusKind, duration: number): void {
+  private inflictStatus(target: BattleCombatant, status: StatusKind, duration: number, source?: BattleCombatant): boolean {
     // immunities via ability
-    if (status === 'paralyze' && target.ability === 'limber') return;
-    if (status === 'poison' && target.ability === 'immunity') return;
-    if (target.status) return; // one status at a time
+    if (status === 'paralyze' && target.ability === 'limber') return false;
+    if (status === 'poison' && target.ability === 'immunity') return false;
+    if (target.status) return false; // one status at a time
     // All statuses are FINITE now (control nerf): no permanent burn/poison/paralyze.
     // Caller may pass an explicit duration; otherwise use the per-status default.
     const DEFAULT_DUR: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
+    const appliedDuration = duration > 0 ? duration : DEFAULT_DUR[status];
     target.status = status;
-    target.statusTimer = duration > 0 ? duration : DEFAULT_DUR[status];
+    target.statusTimer = appliedDuration;
+    if (source && source.uid !== target.uid && ['paralyze', 'freeze', 'sleep', 'confuse'].includes(status)) source.controlSeconds += appliedDuration;
     const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
-    this.emit('status', undefined, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
+    this.emit('status', source?.uid, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
+    return true;
   }
 
   private addStatStage(c: BattleCombatant, stat: 'atk' | 'def' | 'spd', stages: number): void {
@@ -413,10 +464,12 @@ export class BattleSim {
     switch (e.kind) {
       case 'heal':
         if (self) {
-          const amt = Math.floor(self.maxHp * (e.magnitude ?? 0.5));
-          self.currentHp = Math.min(self.maxHp, self.currentHp + amt);
-          this.emit('heal', self.uid, undefined, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
-          if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2);
+          const requested = Math.floor(self.maxHp * (e.magnitude ?? 0.5));
+          const amt = Math.max(0, Math.min(requested, self.maxHp - self.currentHp));
+          self.currentHp += amt;
+          caster.healingDone += amt;
+          this.emit('heal', caster.uid, self.uid, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
+          if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2, caster);
         }
         break;
       case 'shield':
@@ -433,7 +486,11 @@ export class BattleSim {
         if (self && e.stat) this.addStatStage(self, e.stat as 'atk' | 'def' | 'spd', e.stages ?? -1);
         break;
       case 'status':
-        if (self && e.status) this.inflictStatus(self, e.status, e.duration ?? 0);
+        if (self && e.status) {
+          const wasCasting = !!self.castProgress;
+          const applied = this.inflictStatus(self, e.status, e.duration ?? 0, caster);
+          if (applied && wasCasting && ['sleep', 'freeze'].includes(e.status)) caster.interrupts += 1;
+        }
         break;
       case 'dot':
         if (self && e.magnitude) {
@@ -443,16 +500,20 @@ export class BattleSim {
         break;
       case 'stun':
         if (self) {
+          if (self.castProgress) caster.interrupts += 1;
           self.flinchUntil = this.state.time + (e.duration ?? 1);
           self.plan = null;
           self.nextDecisionAt = this.state.time + (e.duration ?? 1);
+          if (self.uid !== caster.uid) caster.controlSeconds += e.duration ?? 1;
           this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 畏缩了`, { kind: 'status', status: 'paralyze' });
         }
         break;
       case 'lifesteal':
         if (damageDealt > 0 && e.magnitude) {
-          const heal = Math.floor(damageDealt * e.magnitude);
-          caster.currentHp = Math.min(caster.maxHp, caster.currentHp + heal);
+          const requested = Math.floor(damageDealt * e.magnitude);
+          const heal = Math.max(0, Math.min(requested, caster.maxHp - caster.currentHp));
+          caster.currentHp += heal;
+          caster.healingDone += heal;
           this.emit('heal', caster.uid, undefined, undefined, heal, `${caster.name} 吸取了生命`, { kind: 'heal', amount: heal });
         }
         break;
@@ -466,9 +527,9 @@ export class BattleSim {
     const chance = ab.effect.chance ?? 0;
     if (this.rng() > chance) return;
     if (ab.effect.kind === 'custom') {
-      if (defender.ability === 'static') this.inflictStatus(attacker, 'paralyze', -1);
-      else if (defender.ability === 'flame-body') this.inflictStatus(attacker, 'burn', -1);
-      else if (defender.ability === 'poison-point') this.inflictStatus(attacker, 'poison', -1);
+      if (defender.ability === 'static') this.inflictStatus(attacker, 'paralyze', -1, defender);
+      else if (defender.ability === 'flame-body') this.inflictStatus(attacker, 'burn', -1, defender);
+      else if (defender.ability === 'poison-point') this.inflictStatus(attacker, 'poison', -1, defender);
     }
   }
 
@@ -484,6 +545,10 @@ export class BattleSim {
     c.cooldowns[next[0]] = Math.max(0, next[1] - relief);
   }
 
+  private skillRecap(c: BattleCombatant, skillId: string): { casts: number; hits: number; misses: number; damage: number } {
+    return (c.skillStats[skillId] ??= { casts: 0, hits: 0, misses: 0, damage: 0 });
+  }
+
   private dealDamage(
     attacker: BattleCombatant,
     defender: BattleCombatant,
@@ -495,6 +560,8 @@ export class BattleSim {
     const res = computeDamage(attacker, defender, skill, this.rng);
     for (const m of res.log) this.emit('info', attacker.uid, defender.uid, skillId, undefined, m);
     if (res.missed) {
+      attacker.misses += 1;
+      this.skillRecap(attacker, skillId).misses += 1;
       this.emit('damage', attacker.uid, defender.uid, skillId, 0, undefined, {
         kind: 'miss', type: skill.type, missed: true,
         targetUids: spread?.targetUids,
@@ -507,12 +574,16 @@ export class BattleSim {
     }
     if (res.immune) {
       if (res.healed && res.healed > 0) {
-        defender.currentHp = Math.min(defender.maxHp, defender.currentHp + res.healed);
-        this.emit('heal', defender.uid, undefined, undefined, res.healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: res.healed });
+        const healed = Math.max(0, Math.min(res.healed, defender.maxHp - defender.currentHp));
+        defender.currentHp += healed;
+        defender.healingDone += healed;
+        this.emit('heal', defender.uid, undefined, undefined, healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: healed });
       }
       if (defender.ability === 'flash-fire') defender.flashFireBoost = true;
       return { dealt: 0, immune: true };
     }
+    attacker.hits += 1;
+    this.skillRecap(attacker, skillId).hits += 1;
     let dmg = res.damage;
     // Spread moves trade per-target damage for pressure across the opposing
     // formation. The multiplier is applied before shields, so protection still
@@ -528,12 +599,17 @@ export class BattleSim {
     if (defender.shields > 0) {
       const absorbed = Math.min(defender.shields, dmg);
       defender.shields -= absorbed;
+      defender.shieldAbsorbed += absorbed;
       dmg -= absorbed;
     }
     defender.currentHp -= dmg;
     // Track real HP damage on the combatant itself so the post-battle report
     // remains complete even when the presentation event log is trimmed.
     attacker.damageDealt += dmg;
+    this.skillRecap(attacker, skillId).damage += dmg;
+    defender.damageTaken += dmg;
+    if (skillId === NORMAL_ATTACK.id) attacker.normalDamage += dmg;
+    else attacker.skillDamage += dmg;
     const ko = defender.currentHp <= 0;
     if (!ko && dmg > 0) this.recoverCooldownFromHit(defender, dmg);
     this.emit('damage', attacker.uid, defender.uid, skillId, dmg, undefined, {
@@ -546,6 +622,7 @@ export class BattleSim {
       impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
     });
     if (ko) {
+      attacker.knockouts += 1;
       this.faint(defender);
       // moxie
       if (attacker.ability === 'moxie' && attacker.alive) this.addStatStage(attacker, 'atk', 1);
@@ -569,6 +646,8 @@ export class BattleSim {
   private resolveSkill(c: BattleCombatant, skillId: string): void {
     const skill = SKILL_MAP[skillId];
     if (!skill) return;
+    c.skillCasts += 1;
+    this.skillRecap(c, skillId).casts += 1;
     c.cooldowns[skillId] = skill.cooldown * SKILL_COOLDOWN_SCALE;
     const target = this.find(c.currentTargetUid);
     const targets = skill.targetMode === 'all-enemies'
@@ -607,15 +686,23 @@ export class BattleSim {
       if (e?.target === 'enemy' && tgt) {
         const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
         if (this.rng() > acc) {
+          c.misses += 1;
+          this.skillRecap(c, skillId).misses += 1;
           this.emit('info', c.uid, tgt.uid, skillId, undefined, `但是没有命中...`, { kind: 'miss', type: skill.type, missed: true });
           return;
         }
       }
-      if (tgt) this.applyEffect(c, e?.target === 'self' ? c : tgt, skillId, 0);
+      if (tgt) {
+        c.hits += 1;
+        this.skillRecap(c, skillId).hits += 1;
+        this.applyEffect(c, e?.target === 'self' ? c : tgt, skillId, 0);
+      }
     }
   }
 
   private normalAttack(c: BattleCombatant, target: BattleCombatant): void {
+    c.normalAttacks += 1;
+    this.skillRecap(c, NORMAL_ATTACK.id).casts += 1;
     c.normalAttackCd = NORMAL_ATTACK.cooldown;
     const ranged = !!c.normalIsRanged;
     this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: NORMAL_ATTACK.type });
@@ -637,11 +724,59 @@ export class BattleSim {
     }
   }
 
+/** Recompute each side's shared tactical intention before individual decisions.
+   * The intent is deliberately short-lived: hard interrupts and executes override
+   * it per Pokemon, while ordinary turns coordinate around a readable team plan. */
+  private refreshTeamTactics(): void {
+    const now = this.state.time;
+    for (const side of ['player', 'enemy'] as const) {
+      const allies = this.state.combatants.filter((c) => c.side === side && c.alive);
+      const opponents = this.state.combatants.filter((c) => c.side !== side && c.alive);
+      if (allies.length === 0 || opponents.length === 0) {
+        delete this.state.teamTactics[side];
+        continue;
+      }
+      const active = this.state.teamTactics[side];
+      if (active && active.expiresAt > now && (!active.targetUid || opponents.some((c) => c.uid === active.targetUid))) continue;
+
+      const threatenedAlly = allies
+        .filter((ally) => opponents.some((enemy) => enemy.currentTargetUid === ally.uid && enemy.castProgress && (SKILL_MAP[enemy.castProgress.skillId]?.power ?? 0) >= 80))
+        .sort((a, b) => a.currentHp / a.maxHp - b.currentHp / b.maxHp)[0];
+      if (threatenedAlly) {
+        const caster = opponents
+          .filter((enemy) => enemy.currentTargetUid === threatenedAlly.uid && enemy.castProgress && (SKILL_MAP[enemy.castProgress.skillId]?.power ?? 0) >= 80)
+          .sort((a, b) => (SKILL_MAP[b.castProgress!.skillId]?.power ?? 0) - (SKILL_MAP[a.castProgress!.skillId]?.power ?? 0))[0];
+        const tactic: TeamTactic = { kind: 'protect', targetUid: caster?.uid, protectUid: threatenedAlly.uid, expiresAt: now + 0.45 };
+        this.state.teamTactics[side] = tactic;
+        continue;
+      }
+
+      const finishTarget = opponents
+        .filter((enemy) => enemy.currentHp / enemy.maxHp <= 0.3)
+        .sort((a, b) => a.currentHp / a.maxHp - b.currentHp / b.maxHp)[0];
+      if (finishTarget) {
+        this.state.teamTactics[side] = { kind: 'finish', targetUid: finishTarget.uid, expiresAt: now + 0.6 };
+        continue;
+      }
+
+      if (allies.length >= 2 && opponents.length >= 2) {
+        const pressureTarget = opponents.reduce((best, enemy) => {
+          const score = effectiveStat(enemy, 'atk') * (0.7 + enemy.currentHp / enemy.maxHp);
+          const bestScore = effectiveStat(best, 'atk') * (0.7 + best.currentHp / best.maxHp);
+          return score > bestScore ? enemy : best;
+        });
+        this.state.teamTactics[side] = { kind: 'pressure', targetUid: pressureTarget.uid, expiresAt: now + 0.75 };
+      } else {
+        this.state.teamTactics[side] = { kind: 'split', expiresAt: now + 0.75 };
+      }
+    }
+  }
   /** Advance the simulation by dt seconds (already scaled by speed). */
   tick(dt: number): void {
     if (this.ended) return;
     if (dt <= 0) return;
     this.state.time += dt;
+    this.refreshTeamTactics();
     // global cooldown speed-up from passives (灵巧)
     for (const c of this.state.combatants) {
       if (!c.alive) continue;

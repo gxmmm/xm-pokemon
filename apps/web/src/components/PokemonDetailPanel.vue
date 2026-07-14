@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress } from '@pokemon-online/config';
+import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, skillBudgetLabel, COMBAT_ROLE_LABEL } from '@pokemon-online/config';
 import { computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from './PokemonSprite.vue';
 import TypeBadge from './TypeBadge.vue';
@@ -78,7 +78,7 @@ const activeDisplay = computed(() => {
       char: sk?.name?.[0] ?? '?',
       color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A',
       level,
-      tip: skillTip(sk) + (level === 0 ? '\n(天生必带)' : ''),
+      tip: skillTip(sk) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
     });
   };
   for (const id of species.value.intrinsic ?? []) push(id, 0);
@@ -128,7 +128,7 @@ function skillTip(s: Skill | undefined): string {
   const target = s.targetMode === 'all-enemies'
     ? `敌方全体 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
     : '敌方单体';
-  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles} · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}`;
+  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles} · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 </script>
 
@@ -146,6 +146,7 @@ function skillTip(s: Skill | undefined): string {
           <TypeBadge v-for="t in species.types" :key="t" :type="t" size="sm" />
           <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip sm-chip">{{ personality?.name }}型</span></Tip>
           <span class="chip sm-chip">{{ isBred?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
+          <span v-if="species.combatRole" class="chip sm-chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span>
           <span class="chip sm-chip" v-if="game.save!.pveTeam.includes(inst.uid)">PVE</span>
           <span class="chip sm-chip" v-if="game.save!.pvpTeam.includes(inst.uid)">PVP</span>
         </div>
@@ -215,6 +216,7 @@ function skillTip(s: Skill | undefined): string {
 .detail-panel.empty { justify-content:center; align-items:center; min-height:200px; }
 .sect { margin-top:4px; font-size:12px; font-weight:800; color:var(--ink); }
 .chip.faded { opacity:.5; }
+.role-chip { background:rgba(184,134,11,.16); color:#7a5600; }
 
 .apt-list { display:flex; flex-direction:column; gap:3px; }
 .apt-row { display:flex; align-items:center; gap:6px; }

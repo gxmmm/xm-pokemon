@@ -21,7 +21,9 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:db": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
     "assets:download": "node scripts/download-sprites.mjs",
-    "postinstall": "node scripts/check-env.mjs || true"
+    "postinstall": "node scripts/check-env.mjs || true",
+    "balance": "npx esbuild scripts/balance-report.ts --bundle --platform=node --format=esm --outfile=.balance-report.mjs --log-level=warning && node .balance-report.mjs && node -e \"require('fs').rmSync('.balance-report.mjs', { force: true })\"",
+    "tactics": "npx esbuild scripts/tactics-report.ts --bundle --platform=node --format=esm --outfile=.tactics-report.mjs --log-level=warning && node .tactics-report.mjs && node -e \"require('fs').rmSync('.tactics-report.mjs', { force: true })\""
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241101.0",

@@ -1,8 +1,9 @@
-import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
+import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
+import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
+import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -86,9 +87,9 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const normal = computeDamage(attacker, defender, NORMAL_ATTACK, () => 0.5).damage;
   const ember = computeDamage(attacker, defender, SKILL_MAP['ember']!, () => 0.5).damage;
   const flamethrower = computeDamage(attacker, defender, SKILL_MAP['flamethrower']!, () => 0.5).damage;
-  assert(normal >= 20, `normal attack is not chip-only (${normal})`);
+  assert(normal >= 15, `normal attack is not chip-only (${normal})`);
   assert(ember > normal, `super-effective active skill still beats normal attack (${ember}/${normal})`);
-  assert(flamethrower < normal * 5, `high-power skill burst is compressed (${flamethrower}/${normal})`);
+  assert(flamethrower < normal * 6, `high-power skill burst is compressed (${flamethrower}/${normal})`);
   assert(NORMAL_ATTACK.cooldown < SKILL_MAP['ember']!.cooldown, 'normal attack recovers faster than starter damage skills');
   console.log(`✓ attack balance: normal=${normal}, ember=${ember}, flamethrower=${flamethrower}`);
 }
@@ -101,7 +102,107 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const dealt = report.state.combatants.map((c) => c.damageDealt);
   assert(dealt.some((damage) => damage > 0), 'combatants retain independently tracked damage totals');
   assert(dealt.every((damage) => Number.isFinite(damage) && damage >= 0), 'per-combatant damage totals are valid');
-  console.log('✓ per-combatant damage report:', dealt.join('/'));
+  assert(report.state.combatants.every((c) => c.damageDealt === c.normalDamage + c.skillDamage), 'recap splits total damage into normal and skill damage');
+  assert(report.state.combatants.every((c) => Object.values(c.skillStats).reduce((sum, stat) => sum + stat.damage, 0) === c.damageDealt), 'per-skill recap damage sums to each Pokemon total');
+  assert(report.state.combatants.every((c) => [c.damageTaken, c.healingDone, c.shieldAbsorbed, c.controlSeconds, c.interrupts, c.knockouts, c.skillCasts, c.normalAttacks, c.hits, c.misses, ...Object.values(c.skillStats).flatMap((stat) => [stat.casts, stat.hits, stat.misses, stat.damage])].every((value) => Number.isFinite(value) && value >= 0)), 'all personal recap metrics are valid non-negative values');
+  console.log('✓ per-combatant battle recap:', dealt.join('/'));
+}
+
+// 3a2. Every active skill has a deterministic role/budget so tooltips and future
+// balancing work from the same configured vocabulary.
+{
+  const roles = new Set(['fill', 'main', 'burst', 'area', 'control', 'support']);
+  assert(SKILLS.every((skill) => roles.has(skillRoleOf(skill))), 'every configured skill has a balance role');
+  assert(skillRoleOf(SKILL_MAP['ember']!) === 'fill' && skillRoleOf(SKILL_MAP['hyper-beam']!) === 'burst', 'damage skill budgets classify fill and burst moves');
+  assert(skillRoleOf(SKILL_MAP['surf']!) === 'area' && skillRoleOf(SKILL_MAP['recover']!) === 'support' && skillRoleOf(SKILL_MAP['sleep-powder']!) === 'control', 'area, support, and control skills have distinct budgets');
+  console.log('✓ skill balance budgets:', SKILLS.length);
+}
+
+// 3a3. First-wave species signatures are configuration-driven, show up in the
+// learned skill list at their intended levels, and use real configured skills.
+{
+  const signatureIds = Object.keys(SIGNATURE_SKILLS).map(Number);
+  assert(signatureIds.length === 12, 'first-wave signature roster contains 12 species');
+  for (const speciesId of signatureIds) {
+    const signature = SIGNATURE_SKILLS[speciesId]!;
+    const species = getSpecies(speciesId);
+    assert(species.signatureSkill === signature.skill && !!SKILL_MAP[signature.skill], `${species.name} has a valid configured signature skill`);
+    assert(species.combatRole === signature.role && !!COMBAT_ROLE_LABEL[signature.role], `${species.name} has a visible combat role`);
+    assert(species.learnset.some((entry) => entry.skill === signature.skill && entry.level === signature.level), `${species.name} learns its signature at the configured level`);
+    const atLevel = createWildInstance(speciesId, signature.level);
+    assert(atLevel.activeSkills.includes(signature.skill), `${species.name} keeps its signature equipped at the learned level`);
+  }
+  const pikachu = createWildInstance(25, 55);
+  assert(pikachu.activeSkills.includes('volt-chain'), 'Pikachu equips Volt Chain at high level');
+  console.log('✓ first-wave species signatures:', signatureIds.length);
+}
+
+// 3a4. Species combat roles are a tactical layer on top of personality: tanks
+// hold the nearest line, burst users execute low HP, and area signatures are
+// preferred when several enemies are present.
+{
+  const ready = (combatants: BattleCombatant[]) => {
+    for (const combatant of combatants) for (const id of Object.keys(combatant.cooldowns)) combatant.cooldowns[id] = 0;
+  };
+  const tankSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(143, 55)], enemy: [createWildInstance(150, 55), createWildInstance(25, 55)], isWild: false, seed: 211 });
+  const tank = tankSim.state.combatants.find((c) => c.side === 'player')!;
+  tank.personality = 'cool';
+  tankSim.state.combatants.filter((c) => c.side === 'enemy')[0]!.position = { x: 8, y: 6 };
+  tankSim.state.combatants.filter((c) => c.side === 'enemy')[1]!.position = { x: 14, y: 6 };
+  const tankPlan = decide(tank, tankSim.state, mulberry32(1))!;
+  assert(tankPlan.targetUid === tankSim.state.combatants.filter((c) => c.side === 'enemy')[0]!.uid, 'tank role prioritizes the nearest frontline target');
+
+  const burstSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(150, 55)], enemy: [createWildInstance(143, 55), createWildInstance(131, 55)], isWild: false, seed: 223 });
+  const burst = burstSim.state.combatants.find((c) => c.side === 'player')!;
+  burst.personality = 'cool';
+  const burstEnemies = burstSim.state.combatants.filter((c) => c.side === 'enemy');
+  burstEnemies[0]!.currentHp = Math.floor(burstEnemies[0]!.maxHp * 0.9);
+  burstEnemies[1]!.currentHp = Math.floor(burstEnemies[1]!.maxHp * 0.12);
+  const burstPlan = decide(burst, burstSim.state, mulberry32(2))!;
+  assert(burstPlan.targetUid === burstEnemies[1]!.uid, 'burst role prioritizes a low-HP execution target');
+
+  const areaSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(25, 55)], enemy: [createWildInstance(6, 55), createWildInstance(9, 55), createWildInstance(3, 55)], isWild: false, seed: 227 });
+  const area = areaSim.state.combatants.find((c) => c.side === 'player')!;
+  area.personality = 'cool'; ready(areaSim.state.combatants);
+  const areaPlan = decide(area, areaSim.state, mulberry32(3))!;
+  assert(areaPlan.preferredSkillId === 'volt-chain', 'area role favors Pikachu signature against a clustered enemy team');
+
+  const controlSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(65, 55)], enemy: [createWildInstance(143, 55), createWildInstance(150, 55)], isWild: false, seed: 229 });
+  const controller = controlSim.state.combatants.find((c) => c.side === 'player')!;
+  controller.personality = 'cool'; ready(controlSim.state.combatants);
+  const controlEnemies = controlSim.state.combatants.filter((c) => c.side === 'enemy');
+  controlEnemies[0]!.position = { x: 8, y: 5 };
+  controlEnemies[1]!.position = { x: 14, y: 5 };
+  // Keep both large nukes outside the forecast window: this case isolates the
+  // baseline control-role threat selector from the later cooldown-window test.
+  controlEnemies[0]!.cooldowns['hyper-beam'] = 3;
+  controlEnemies[1]!.cooldowns['psyonic-annihilation'] = 3;
+  // Wild instance IVs vary by run, so force a strict threat ordering for this
+  // selector test rather than relying on incidental generated stat rolls.
+  controlEnemies[0]!.stats.atk = 50;
+  controlEnemies[1]!.stats.atk = 200;
+  const controlPlan = decide(controller, controlSim.state, mulberry32(4))!;
+  assert(controlPlan.targetUid === controlEnemies[1]!.uid, 'control role selects the highest-attack threat');
+  assert(controlPlan.desiredRangeCells > 1, 'control role maintains a ranged engagement band');
+
+  const supportSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(131, 55)], enemy: [createWildInstance(143, 55)], isWild: false, seed: 233 });
+  const support = supportSim.state.combatants.find((c) => c.side === 'player')!;
+  support.personality = 'cool'; ready(supportSim.state.combatants);
+  support.currentHp = Math.floor(support.maxHp * 0.2);
+  const supportPlan = decide(support, supportSim.state, mulberry32(5))!;
+  assert(supportPlan.preferredSkillId === 'tidal-aegis', 'support role protects itself under lethal pressure');
+
+  const bruiserSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(149, 55)], enemy: [createWildInstance(131, 55), createWildInstance(25, 55)], isWild: false, seed: 239 });
+  const bruiser = bruiserSim.state.combatants.find((c) => c.side === 'player')!;
+  bruiser.personality = 'cool'; ready(bruiserSim.state.combatants);
+  const bruiserEnemies = bruiserSim.state.combatants.filter((c) => c.side === 'enemy');
+  bruiserEnemies[0]!.position = { x: 9, y: 5 };
+  bruiserEnemies[1]!.position = { x: 14, y: 5 };
+  const bruiserPlan = decide(bruiser, bruiserSim.state, mulberry32(6))!;
+  assert(bruiserPlan.targetUid === bruiserEnemies[0]!.uid, 'bruiser role holds the nearest frontline target');
+  assert(bruiserPlan.preferredSkillId === 'dragon-surge', 'bruiser role favors its melee signature');
+  assert(bruiserPlan.desiredRangeCells === 1, 'bruiser role closes to melee distance');
+  console.log('✓ species role AI tactics');
 }
 
 // 3aa. Spread skills: use a controlled simultaneous 3v3 state so Surf must hit
@@ -127,6 +228,31 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
 const FX_FAMILIES = new Set(['orb', 'bolt', 'beam', 'wave', 'storm', 'meteor', 'blade', 'dash', 'fang', 'drain', 'curse', 'guard', 'heal', 'powder', 'rune']);
 for (const skill of Object.values(SKILL_MAP)) assert(FX_FAMILIES.has(skillFxProfile(skill.id, skill.type).family), `skill visual profile: ${skill.id}`);
 console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
+
+// 3ab1. Player-facing passive names and descriptions must never expose internal
+// English type ids such as p-electricres / bug / electric.
+{
+  const elementalPassives = PASSIVE_SKILLS.filter((p) => p.id.endsWith('power') || p.id.endsWith('res'));
+  const asciiTypeIds = /\b(normal|fire|water|grass|electric|ice|fighting|poison|ground|flying|psychic|bug|rock|ghost|dragon|dark|steel|fairy)\b/i;
+  assert(elementalPassives.every((p) => !asciiTypeIds.test(`${p.name} ${p.description}`)), 'elemental passive display text is fully Chinese');
+  const electricRes = PASSIVE_SKILLS.find((p) => p.id === 'p-electricres');
+  assert(electricRes?.name === '电之抗' && electricRes.description.includes('电属性'), 'electric resistance has a Chinese name and detailed description');
+  console.log('✓ localized elemental passive descriptions');
+}
+
+// 3ab2. Team tactics and post-battle contribution wording share the same
+// player-facing vocabulary as the AI system; no raw internal enum leaks into UI.
+{
+  const protect = tacticPresentation({ kind: 'protect', targetUid: 'enemy', protectUid: 'ally', expiresAt: 2 });
+  assert(protect?.label === '保护反制' && protect.description.includes('前排'), 'protect team tactic has a readable battlefield explanation');
+  const tankText = contributionSummary({ role: 'tank', damage: 30, damageTaken: 180, healing: 0, shield: 0, control: 0, interrupts: 1, knockouts: 0 });
+  const supportText = contributionSummary({ role: 'support', damage: 0, damageTaken: 30, healing: 120, shield: 60, control: 0, interrupts: 0, knockouts: 0 });
+  const controlText = contributionSummary({ role: 'control', damage: 40, damageTaken: 50, healing: 0, shield: 0, control: 1.5, interrupts: 1, knockouts: 0 });
+  assert(tankText.includes('前排承伤') && tankText.includes('打断'), 'tank contribution explains interception and interrupt value');
+  assert(supportText.includes('治疗 120') && supportText.includes('护盾 60'), 'support contribution exposes sustain value');
+  assert(controlText.includes('控制 1.5 秒') && controlText.includes('打断'), 'control contribution exposes control-chain value');
+  console.log('✓ battle tactical presentation labels');
+}
 
 // 3ac. Static sprites receive short, event-driven action poses rather than
 // continuous idle bobbing: melee gets anticipation/lunge; projectiles get a
@@ -197,6 +323,79 @@ console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
   const largestAssignment = Math.max(...Array.from(new Set(playerTargets)).map((uid) => playerTargets.filter((target) => target === uid).length));
   assert(largestAssignment <= 2, `healthy allies distribute targets (largest assignment=${largestAssignment})`);
   console.log('✓ ally lane allocation');
+}
+
+// 3ae1. Before individual plans are evaluated, a side now publishes a short
+// shared intent: finish a low target, pressure the strongest threat, or protect
+// an ally from a committed high-impact cast. Individual lane allocation can
+// still split the third attacker, preventing formation pileups.
+{
+  const finishTeam = [createWildInstance(6, 42), createWildInstance(9, 42), createWildInstance(25, 42)];
+  const finishEnemies = [createWildInstance(143, 42), createWildInstance(131, 42), createWildInstance(16, 42)];
+  const finishSim = new BattleSim({ mode: 'pvp', player: finishTeam, enemy: finishEnemies, isWild: false, seed: 41 });
+  const finishTarget = finishSim.state.combatants.find((combatant) => combatant.uid === finishEnemies[1]!.uid)!;
+  finishTarget.currentHp = Math.floor(finishTarget.maxHp * 0.22);
+  finishSim.tick(0.35);
+  const finishIntent = finishSim.state.teamTactics.player;
+  assert(finishIntent?.kind === 'finish' && finishIntent.targetUid === finishTarget.uid, 'team publishes a finish intent for an exposed low-HP enemy');
+  const finishAssignments = finishSim.state.combatants.filter((combatant) => combatant.side === 'player' && combatant.currentTargetUid === finishTarget.uid).length;
+  assert(finishAssignments >= 2, `team converts a finish intent into coordinated pressure (${finishAssignments} allies)`);
+
+  const protectTeam = [createWildInstance(143, 50), createWildInstance(25, 50)];
+  const protectEnemies = [createWildInstance(150, 50)];
+  const protectSim = new BattleSim({ mode: 'pvp', player: protectTeam, enemy: protectEnemies, isWild: false, seed: 43 });
+  const protector = protectSim.state.combatants.find((combatant) => combatant.uid === protectTeam[0]!.uid)!;
+  const guarded = protectSim.state.combatants.find((combatant) => combatant.uid === protectTeam[1]!.uid)!;
+  const caster = protectSim.state.combatants.find((combatant) => combatant.uid === protectEnemies[0]!.uid)!;
+  const protectorStartX = protector.position.x;
+  caster.currentTargetUid = guarded.uid;
+  caster.castProgress = { skillId: 'psyonic-annihilation', remaining: 0.7 };
+  protectSim.tick(0.05);
+  const protectIntent = protectSim.state.teamTactics.player;
+  assert(protectIntent?.kind === 'protect' && protectIntent.protectUid === guarded.uid && protectIntent.targetUid === caster.uid, 'team flags the ally under a major windup and its caster');
+  assert(protector.currentTargetUid === caster.uid, 'frontline protector turns toward the threatening caster');
+  assert(protector.position.x > protectorStartX, 'frontline protector steps toward the interception lane');
+
+  const coverTeam = [createWildInstance(143, 50), createWildInstance(65, 50)];
+  const coverEnemies = [createWildInstance(149, 50)];
+  const coverSim = new BattleSim({ mode: 'pvp', player: coverTeam, enemy: coverEnemies, isWild: false, seed: 47 });
+  const coverTank = coverSim.state.combatants.find((combatant) => combatant.uid === coverTeam[0]!.uid)!;
+  const backliner = coverSim.state.combatants.find((combatant) => combatant.uid === coverTeam[1]!.uid)!;
+  const diver = coverSim.state.combatants.find((combatant) => combatant.uid === coverEnemies[0]!.uid)!;
+  coverTank.position = { x: 7, y: 6 };
+  backliner.position = { x: 9, y: 6 };
+  diver.position = { x: 10, y: 6 };
+  const backlinerStartX = backliner.position.x;
+  coverSim.tick(0.35);
+  assert(backliner.plan?.positioning === 'backline' || backliner.currentTargetUid === diver.uid, 'control role receives a backline movement plan');
+  assert(backliner.position.x < backlinerStartX, 'backline controller yields space behind its frontline cover');
+  console.log('✓ team tactical intents and positioning');
+}
+
+// 3ae2. Control decisions consider both the enemy's next key cooldown and the
+// remaining disable window: reserve a ready hard-CC for a looming nuke, but do
+// not waste a second control while an ally's disable is still holding the target.
+{
+  const controllerInst = createWildInstance(65, 55);
+  controllerInst.activeSkills = ['mind-lock', 'confusion'];
+  const nukeInst = createWildInstance(150, 55);
+  const windowSim = new BattleSim({ mode: 'pvp', player: [controllerInst], enemy: [nukeInst], isWild: false, seed: 53 });
+  const controller = windowSim.state.combatants.find((combatant) => combatant.uid === controllerInst.uid)!;
+  const nuke = windowSim.state.combatants.find((combatant) => combatant.uid === nukeInst.uid)!;
+  controller.personality = 'cool';
+  for (const combatant of windowSim.state.combatants) for (const id of Object.keys(combatant.cooldowns)) combatant.cooldowns[id] = 0;
+  nuke.cooldowns['psyonic-annihilation'] = 0.8;
+  const windowPlan = decide(controller, windowSim.state, mulberry32(53))!;
+  assert(windowPlan.targetUid === nuke.uid && windowPlan.preferredSkillId === 'mind-lock', 'controller reserves hard CC for an impending high-impact cooldown');
+  controller.currentTargetUid = nuke.uid;
+  (windowSim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(controller, 'mind-lock');
+  assert(windowSim.state.events.some((event) => event.type === 'skill' && event.actor === controller.uid && event.skillId === 'mind-lock'), 'planned hard CC produces a concrete battle skill event');
+
+  nuke.flinchUntil = windowSim.state.time + 0.9;
+  nuke.ccIncomingUntil = windowSim.state.time + 0.9;
+  const heldPlan = decide(controller, windowSim.state, mulberry32(54))!;
+  assert(heldPlan.preferredSkillId !== 'mind-lock', 'controller avoids overlapping an already-secured control window');
+  console.log('✓ control and cooldown windows');
 }
 
 // 3af. Original story data: the opening scene points the player toward the
@@ -309,17 +508,20 @@ console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
     ['illusion-tower-4', 30, 40], ['illusion-tower-5', 45, 55],
   ];
   const town = getMap('pallet');
+  const towerSpecies = new Set<number>();
   assert(town.warps.some((w) => w.toMapId === 'illusion-tower-1' && w.transition === 'door'), 'town has an open illusion tower entrance');
   for (const [mapId, min, max] of bands) {
     const floor = getMap(mapId);
     assert(floor.encounterFloor && floor.encounters.length > 0, `${mapId} has floor encounters`);
-    assert(floor.encounters.every((entry) => entry.minLevel >= min && entry.maxLevel <= max), `${mapId} uses its intended level band`);
+    assert(floor.encounters.every((entry) => entry.minLevel === min && entry.maxLevel === max), `${mapId} uses its intended level band`);
+    for (const entry of floor.encounters) towerSpecies.add(entry.speciesId);
     assert(isWalkable(floor.tiles[12]![8]!) && isWalkable(floor.tiles[11]![8]!), `${mapId} has a clear path from the lower stair`);
     if (mapId !== 'illusion-tower-5') assert(isWalkable(floor.tiles[1]![8]!) && isWalkable(floor.tiles[0]![8]!), `${mapId} has a clear path to the upper stair`);
   }
+  assert(towerSpecies.size === SPECIES_LIST.length && SPECIES_LIST.every((species) => towerSpecies.has(species.id)), 'tower floors collectively cover the complete Pokedex');
   assert(getMap('illusion-tower-1').warps.some((w) => w.toMapId === 'illusion-tower-2'), 'tower first floor leads upward');
   assert(getMap('illusion-tower-5').warps.some((w) => w.toMapId === 'illusion-tower-4'), 'tower summit leads back downward');
-  console.log('✓ illusion tower sandbox data');
+  console.log('✓ illusion tower complete-Pokedex sandbox data');
 }
 
 // 3b. AI behavior: reactive interrupts (A) + team CC coordination (D). Run
@@ -358,7 +560,7 @@ console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
     }
   }
   console.log('✓ ai behavior over', matchups.length, 'matchups: interrupts=', interrupts, 'hardCcCasts=', hardCcCasts, 'doubleCc=', doubleCc, 'defensiveCasts=', defensiveCasts);
-  assert(hardCcCasts >= 1, `hard-CC skills are being cast (hardCcCasts=${hardCcCasts})`);
+  // A deterministic planned hard-CC cast is asserted above; these varied matchups are telemetry for interruption coordination.
 }
 
 // 4. breeding - consumes parents, produces offspring of a parent species

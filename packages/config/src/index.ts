@@ -4,6 +4,7 @@ export * from './personalities.ts';
 export * from './abilities.ts';
 export * from './passive-skills.ts';
 export * from './skills.ts';
+export * from './skill-budget.ts';
 export * from './pokemon.ts';
 export * from './maps.ts';
 export * from './story.ts';

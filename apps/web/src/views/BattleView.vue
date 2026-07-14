@@ -12,6 +12,7 @@ import TypeBadge from '../components/TypeBadge.vue';
 import BattleCanvas from '../components/BattleCanvas.vue';
 import type { Biome } from '../battle/BattleField.ts';
 import { interpolateBattle, snapshotBattle, type BattlePresentation, type BattleSnapshot } from '../battle/PresentationTimeline.ts';
+import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
@@ -77,9 +78,14 @@ interface SideDamageSummary {
   side: 'player' | 'enemy';
   total: number;
   dps: number;
-  // Every Pokemon is calculated independently, then each side is sorted from
-  // highest to lowest actual HP damage dealt.
-  members: { uid: string; name: string; damage: number; dps: number; share: number }[];
+  members: {
+    uid: string; name: string; role: string; roleLabel: string; contribution: string;
+    damage: number; dps: number; share: number;
+    damageTaken: number; healing: number; shield: number; control: number;
+    interrupts: number; knockouts: number; normalDamage: number; skillDamage: number;
+    casts: number; normalAttacks: number; hits: number; misses: number;
+    topSkills: { id: string; name: string; damage: number; casts: number; hits: number; misses: number }[];
+  }[];
 }
 
 const damageSummary = computed<SideDamageSummary[]>(() => {
@@ -87,20 +93,33 @@ const damageSummary = computed<SideDamageSummary[]>(() => {
   if (!s) return [];
   const duration = Math.max(0.1, s.state.time);
   return (['player', 'enemy'] as const).map((side) => {
-    const members = s.state.combatants.filter((c) => c.side === side).map((c) => ({
-      uid: c.uid,
-      name: c.name,
-      damage: c.damageDealt,
-      dps: c.damageDealt / duration,
-      share: 0,
-    }));
+    const members = s.state.combatants.filter((c) => c.side === side).map((c) => {
+      const role = getSpecies(c.speciesId).combatRole;
+      const input = { role, damage: c.damageDealt, damageTaken: c.damageTaken, healing: c.healingDone, shield: c.shieldAbsorbed, control: c.controlSeconds, interrupts: c.interrupts, knockouts: c.knockouts };
+      return {
+        uid: c.uid, name: c.name, role: role ?? 'unassigned', roleLabel: roleLabel(role), contribution: contributionSummary(input),
+        damage: c.damageDealt, dps: c.damageDealt / duration, share: 0,
+        damageTaken: c.damageTaken, healing: c.healingDone, shield: c.shieldAbsorbed,
+        control: c.controlSeconds, interrupts: c.interrupts, knockouts: c.knockouts,
+      normalDamage: c.normalDamage, skillDamage: c.skillDamage,
+      casts: c.skillCasts, normalAttacks: c.normalAttacks, hits: c.hits, misses: c.misses,
+      topSkills: Object.entries(c.skillStats).map(([id, stat]) => ({ id, name: id === '__normal__' ? '普通攻击' : (SKILL_MAP[id]?.name ?? id), ...stat }))
+          .filter((skill) => skill.casts > 0 || skill.damage > 0).sort((a, b) => b.damage - a.damage || b.casts - a.casts).slice(0, 2),
+      };
+    });
     const total = members.reduce((sum, member) => sum + member.damage, 0);
     for (const member of members) member.share = total > 0 ? member.damage / total : 0;
     members.sort((a, b) => b.damage - a.damage || a.name.localeCompare(b.name, 'zh-CN'));
     return { side, total, dps: total / duration, members };
   });
 });
+function hitRate(member: SideDamageSummary['members'][number]): string {
+  const total = member.hits + member.misses;
+  return total > 0 ? `${Math.round(member.hits / total * 100)}%` : '—';
+}
 const battleDuration = computed(() => sim.value?.state.time ?? 0);
+const playerTactic = computed(() => tacticPresentation(sim.value?.state.teamTactics.player));
+const enemyTactic = computed(() => tacticPresentation(sim.value?.state.teamTactics.enemy));
 
 function syncHud(s: BattleSim): void {
   hudCombatants.value = presentation.value?.combatants ?? s.state.combatants;
@@ -389,6 +408,8 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
         <BattleCanvas ref="canvasRef" :presentation="presentation ?? undefined" :biome="biome" @impact="onCanvasImpact" />
+        <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
+        <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
         <div class="arena-controls">
           <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
           <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
@@ -432,11 +453,23 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
                 <span>{{ summary.dps.toFixed(1) }} DPS</span>
               </div>
               <div v-for="(member, rank) in summary.members" :key="member.uid" class="damage-member">
-                <span class="damage-rank">{{ rank + 1 }}</span>
-                <span class="ell">{{ member.name }}</span>
+                <div class="damage-member-top">
+                  <span class="damage-rank">{{ rank + 1 }}</span>
+                  <span class="ell">{{ member.name }}</span>
+                  <b>{{ member.damage }}</b><small>{{ member.dps.toFixed(1) }}/s</small>
+                </div>
+                <div class="contribution-line"><span class="role-pill">{{ member.roleLabel }}</span><span>{{ member.contribution }}</span></div>
                 <div class="damage-bar"><span :style="{ width: `${Math.round(member.share * 100)}%` }"></span></div>
-                <b>{{ member.damage }}</b>
-                <small>{{ member.dps.toFixed(1) }}/s</small>
+                <div class="recap-metrics">
+                  <span>普 {{ member.normalDamage }}</span><span>技 {{ member.skillDamage }}</span>
+                  <span>承 {{ member.damageTaken }}</span><span>疗 {{ member.healing }}</span>
+                  <span v-if="member.shield">盾 {{ member.shield }}</span><span v-if="member.control">控 {{ member.control.toFixed(1) }}s</span>
+                  <span v-if="member.interrupts">断 {{ member.interrupts }}</span><span v-if="member.knockouts">击倒 {{ member.knockouts }}</span>
+                  <span>命中 {{ hitRate(member) }}</span>
+                </div>
+                <div v-if="member.topSkills.length" class="recap-skills">
+                  <span v-for="skill in member.topSkills" :key="skill.id">{{ skill.name }} {{ skill.damage }}伤 / {{ skill.casts }}次</span>
+                </div>
               </div>
             </section>
           </div>
@@ -533,6 +566,10 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
   background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
 }
 .arena.over { filter: brightness(.85); }
+.tactic-ribbon { position:absolute; left:50%; transform:translateX(-50%); z-index:4; min-width:132px; max-width:calc(100% - 18px); padding:4px 8px; border-radius:7px; text-align:center; pointer-events:none; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.45); box-shadow:0 2px 8px rgba(0,0,0,.28); background:rgba(62,78,108,.88); }
+.tactic-ribbon.player { top:8px; }.tactic-ribbon.enemy { bottom:8px; }
+.tactic-ribbon span { display:block; font-size:10px; font-weight:900; letter-spacing:.4px; }.tactic-ribbon small { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; opacity:.92; }
+.tactic-ribbon.finish { background:rgba(196,78,64,.91); }.tactic-ribbon.protect { background:rgba(57,119,191,.91); }.tactic-ribbon.pressure { background:rgba(143,80,176,.91); }.tactic-ribbon.split { background:rgba(62,122,111,.91); }
 
 .arena-controls {
   position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 5;
@@ -547,12 +584,19 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .damage-side-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px; margin-bottom:5px; font-size:10px; color:var(--muted); }
 .damage-side-head > span:first-child { font-weight:800; color:var(--ink); }
 .damage-side-head strong { margin-left:auto; color:var(--ink); font-size:11px; }
-.damage-member { display:grid; grid-template-columns:14px minmax(0, 1fr) minmax(22px, .9fr) auto auto; align-items:center; gap:4px; font-size:10px; }
-.damage-member + .damage-member { margin-top:4px; }
+.damage-member { min-width:0; padding:4px 0; }
+.damage-member + .damage-member { border-top:1px dashed rgba(0,0,0,.12); }
+.damage-member-top { display:grid; grid-template-columns:14px minmax(0, 1fr) auto auto; align-items:center; gap:4px; font-size:10px; }
 .damage-rank { color:var(--muted); font-weight:800; text-align:center; }
 .damage-member .ell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .damage-member b { font-size:10px; color:var(--ink); }
 .damage-member small { color:var(--muted); white-space:nowrap; font-size:9px; }
+.contribution-line { display:flex; align-items:center; gap:4px; min-width:0; margin-top:3px; color:var(--muted); font-size:9px; line-height:1.25; }.contribution-line > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.role-pill { flex:none; border-radius:999px; padding:1px 4px; color:var(--ink); background:rgba(74,144,226,.14); font-weight:800; }.damage-side.enemy .role-pill { background:rgba(226,85,85,.14); }
+.recap-metrics { display:flex; flex-wrap:wrap; gap:2px 5px; margin-top:3px; color:var(--muted); font-size:9px; }
+.recap-skills { display:flex; flex-wrap:wrap; gap:3px 5px; margin-top:3px; font-size:9px; color:var(--ink); }
+.recap-skills span { padding:1px 4px; border-radius:4px; background:rgba(74,144,226,.10); }
+.damage-side.enemy .recap-skills span { background:rgba(226,85,85,.10); }
 .damage-bar { height:5px; overflow:hidden; border-radius:999px; background:rgba(0,0,0,.12); }
 .damage-bar span { display:block; height:100%; min-width:0; border-radius:inherit; background:#4a90e2; }
 .damage-side.enemy .damage-bar span { background:#e25555; }

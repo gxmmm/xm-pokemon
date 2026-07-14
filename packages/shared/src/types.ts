@@ -64,6 +64,10 @@ export interface Species {
   abilities: string[]; // ability ids, [0] = default
   hiddenAbility?: string;
   learnset: LearnsetEntry[]; // active skills learned by level
+  /** Optional species-exclusive active skill, learned through the normal level path. */
+  signatureSkill?: string;
+  /** Broad battlefield identity; purely static species configuration. */
+  combatRole?: CombatRole;
   intrinsic: string[]; // 天生必带 active skills (always known, role-based signature, 1~2)
   passivePool: string[]; // passives this species may roll (梦幻式 pool)
   intrinsicPassives: string[]; // 天生必带 passives (always held by wild / 100% retained when bred, 1~2)
@@ -76,6 +80,9 @@ export interface Species {
 }
 
 export type SkillCategory = 'physical' | 'special' | 'status';
+
+/** Broad battlefield identity used for player-facing species guidance and future AI. */
+export type CombatRole = 'burst' | 'bruiser' | 'tank' | 'control' | 'support' | 'kite' | 'area';
 
 export interface SkillEffect {
   kind: 'dot' | 'heal' | 'buff' | 'debuff' | 'stun' | 'lifesteal' | 'shield' | 'status';
@@ -433,9 +440,23 @@ export interface BattleCombatant {
   statusTimer: number;
   statStages: { atk: number; def: number; spd: number };
   shields: number;
-  /** Actual HP damage dealt to opponents during this battle; used by the
-   * post-battle per-Pokemon damage/DPS report. */
+  /** Per-Pokemon combat recap counters. They are battle-local runtime state,
+   * never persisted in a PokemonInstance save. */
   damageDealt: number;
+  damageTaken: number;
+  normalDamage: number;
+  skillDamage: number;
+  healingDone: number;
+  shieldAbsorbed: number;
+  controlSeconds: number;
+  interrupts: number;
+  knockouts: number;
+  skillCasts: number;
+  normalAttacks: number;
+  hits: number;
+  misses: number;
+  /** Per-skill recap keyed by skill id (includes __normal__). */
+  skillStats: Record<string, { casts: number; hits: number; misses: number; damage: number }>;
   buffs: TimedEffect[];
   castProgress: { skillId: string; remaining: number } | null;
   alive: boolean;
@@ -489,11 +510,27 @@ export interface BattleEvent {
   vfx?: BattleVfx;
 }
 
+/** A brief, battle-local intent shared by one side's AI. It is recalculated by
+ * the engine and is not persisted in player save data. */
+export type TeamTacticKind = 'finish' | 'protect' | 'pressure' | 'split';
+
+export interface TeamTactic {
+  kind: TeamTacticKind;
+  /** Opponent the side should finish, interrupt, or pressure. */
+  targetUid?: string;
+  /** Ally being protected from a committed high-impact cast, when applicable. */
+  protectUid?: string;
+  /** Simulation time at which this intent must be recalculated. */
+  expiresAt: number;
+}
+
 export interface BattleState {
   mode: 'pve' | 'pvp';
   /** Grid dimensions (cells). Combatants move cell-by-cell on this grid. */
   arena: { cols: number; rows: number };
   combatants: BattleCombatant[];
+  /** Short-lived team coordination intents, one per active side. */
+  teamTactics: Partial<Record<'player' | 'enemy', TeamTactic>>;
   events: BattleEvent[];
   time: number;
   ended: boolean;
