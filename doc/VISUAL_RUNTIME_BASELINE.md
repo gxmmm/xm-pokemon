@@ -211,10 +211,33 @@ CharacterView 首次人工验收中地点行为不够可读；已增强为高对
 
 迁移决策：`ILLUSION_TOWER_ENABLED=true` 时的五个训练塔 map ID 必须共用一个由 tower floor index / map ID 参数化生成的 Scene Pack；不得为任一层新增 renderer `mapId` 分支。
 
-## 阶段 9.1-d-b：星陨高径认证 WorldView 行为观测（2026-07-15，自动通过、待人工确认）
+## 阶段 9.1-d-b：星陨高径认证 WorldView 行为观测（2026-07-15，已人工验收）
 
 认证 `renderer-observation` 以显式 `world-gpu-diagnostic=route3` 建立仅该标签页有效的 pending-map 诊断，并由 Vue bridge 将已经由 WorldView / story 计算的 player、洛岩与星痕 DTO 传给 `WorldStage`。为使诊断会话可从已批准地图跨越至目标图，bridge 只保留该显式目标的 visual handoff capability；它不扩大 `GPU_WORLD_MAP_IDS`、不写入存档，也不让 renderer-pixi 读取 Pinia / engine。
 
 `npm run visuals:playable` 已走真实注册 / 建档 / 白夜战 / 岚巡员 / 三枚孢子 / 织羽试炼 / 异相核 / 澜博士 chapter-one 完成，再经既有 warp 到达星陨高径。观测验证 `starfall-ridge` scene、洛岩与三枚坠星刻痕的有序 DTO 可见性、中央石阶岩壁碰撞、洛岩交互、真实草丛野外 GPU World → GPU Battle → GPU World 往返，以及满足既有 `star_3` 条件后的 north warp 至已批准的星陨观测所。未伪造 battle 胜利、story flag、坐标或存档。
 
-结果为 336 个 renderer-local samples、强制 GC heap delta `0 bytes`、sampled heap delta `3,357,185 bytes`（低于 32 MiB）、最大 WorldStage / BattleStage child `49 / 87`、最大累计 draw-call `16,857`。该记录仍需人工确认正式页面行为；在确认前 `route3` 继续不在 GPU migration gate。
+结果为 336 个 renderer-local samples、强制 GC heap delta `0 bytes`、sampled heap delta `3,357,185 bytes`（低于 32 MiB）、最大 WorldStage / BattleStage child `49 / 87`、最大累计 draw-call `16,857`。人工确认正式页面行为正常，已获批准进入显式 config gate 工作包。
+
+## 阶段 9.1-d-c：星陨高径显式 GPU migration gate（2026-07-15）
+
+`GPU_WORLD_MAP_IDS` 现为 `['pallet', 'route1', 'viridian-forest', 'route3', 'mt-moon', 'deep-space', 'dragon-den']`。本工作包仅改变 config gate 并同步 smoke 资格断言；Canvas、`WorldCanvas.vue`、`packages/engine`、地图、碰撞、warp、NPC 坐标、遭遇、剧情和存档均未修改。
+
+`npm run visuals:playable` 已从登录和世界 URL 移除 `world-gpu-diagnostic=route3`，仅保留 `renderer-observation=1` 的 renderer-local 指标采样。真实认证路径重走 chapter-one、星陨高径星痕、洛岩、野外 GPU World → GPU Battle → GPU World 与 north warp；`route3` 由正常 config gate 呈现。最终复测结果为 330 个 samples、强制 GC heap delta `0 bytes`、sampled heap delta `2,795,329 bytes`（低于 32 MiB）、最大 WorldStage / BattleStage child `49 / 103`、最大累计 draw-call `24,336`。
+
+`npm run visuals:report`、`npm run visuals:browser`（七图 × 三质量档、21 次 scene switch、heap delta `0 bytes`）、`npm run smoke`、`npm run typecheck`、`npm run build:web` 与 Pixi bundle 均通过。Canvas 继续保留；下一张候选地图为 `rock-tunnel`，训练塔五层仍必须共用一个参数化 Scene Pack。
+
+## 阶段 9.1-e：赤砾裂谷直接 GPU 实装（2026-07-15，正式页面人工验收通过）
+
+按后续“单图直接实装、正式页面人工验证”的迁移节奏，`rock-tunnel` 已新增 `red-rift-canyon` Scene Pack 并直接加入 `GPU_WORLD_MAP_IDS`。它使用通用 `canyon-wall` / `mineral-vein` / `rock-shelf` / `cave-shadow` landmark grammar，描绘赤色岩壁、矿脉、落石台、低光岩檐和风沙；renderer-pixi 不读取 Pinia / engine，也不决定任何规则事实。
+
+`encounterFloor`、碰撞、上下洞窟 warp、地图坐标、剧情门槛和存档均保持既有 map/story/runtime 权威。`npm run visuals:report` 的 config fingerprint 为 `90cfb219`；浏览器 baseline 已扩为八图 × 三档质量共 24 张 PNG，常规比对与 24 次 scene switch 通过、强制 GC heap delta `0 bytes`。
+
+正式页面人工验收已通过：普通用户可见的 GPU 切换、低光遮挡、自然地面 encounter、岩壁阻挡以及与星陨观测所 / 静潮群岛之间的洞窟 warp 均正常。Canvas 继续保留；下一张直接实装候选为 `sea-route`。
+
+
+## 阶段 9.1-f：静潮群岛 sandbox-first 单图实装（2026-07-15，待正式页面人工验证）
+
+`sea-route` 新增 `stilltide-isles` Scene Pack，以通用 `reef-islet` / `tide-channel` / `shipwreck` / `tide-cave-mouth` landmark grammar 呈现低潮礁石、浅潮水道、沉船、潮洞入口和前景海雾；`tide-gauge` / `ship-log` 仅为既有故事对象 DTO 的外观映射。renderer-pixi 不读取 Pinia / engine，不决定潮位、对象可见性、坐标、碰撞、`encounterFloor`、船只 / 洞窟 warp、剧情或存档。
+
+海路本轮**尚未加入** `GPU_WORLD_MAP_IDS`；这保持迁移 gate 不变。`npm run visuals:report` 的候选 config fingerprint 为 `15c1084d`；浏览器基线矩阵现为九图 × 三档质量共 27 张 PNG，常规比对与 27 次 scene switch 通过、强制 GC heap delta `0 bytes`。请在 sandbox 中完成三档视觉人工验收，并在正式页面验证后才可单独调整显式 config gate。Canvas 继续保留；幻境之塔五层仍必须使用一个参数化 Scene Pack。

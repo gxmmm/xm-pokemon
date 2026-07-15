@@ -38,8 +38,8 @@
         "totalChildCount": 30,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 21,
-        "drawCallsSinceLastSample": 21,
+        "drawCallTotal": 12,
+        "drawCallsSinceLastSample": 12,
         "motionEnabled": false
       }
     },
@@ -58,8 +58,8 @@
         "totalChildCount": 20,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 15,
-        "drawCallsSinceLastSample": 15,
+        "drawCallTotal": 9,
+        "drawCallsSinceLastSample": 9,
         "motionEnabled": false
       }
     },
@@ -118,8 +118,8 @@
         "totalChildCount": 31,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 56,
-        "drawCallsSinceLastSample": 56,
+        "drawCallTotal": 42,
+        "drawCallsSinceLastSample": 42,
         "motionEnabled": false
       }
     },
@@ -158,8 +158,8 @@
         "totalChildCount": 53,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 85,
-        "drawCallsSinceLastSample": 85,
+        "drawCallTotal": 51,
+        "drawCallsSinceLastSample": 51,
         "motionEnabled": false
       }
     },
@@ -198,8 +198,8 @@
         "totalChildCount": 53,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 42,
-        "drawCallsSinceLastSample": 42,
+        "drawCallTotal": 21,
+        "drawCallsSinceLastSample": 21,
         "motionEnabled": false
       }
     },
@@ -258,8 +258,8 @@
         "totalChildCount": 57,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 27,
-        "drawCallsSinceLastSample": 27,
+        "drawCallTotal": 36,
+        "drawCallsSinceLastSample": 36,
         "motionEnabled": false
       }
     },
@@ -296,6 +296,126 @@
         "entityCount": 3,
         "staticChildCount": 22,
         "totalChildCount": 26,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 36,
+        "drawCallsSinceLastSample": 36,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "rock-tunnel",
+      "quality": "cinematic",
+      "file": "rock-tunnel-cinematic.png",
+      "sha256": "513de37e24cb4a61f5d68e0157a5fe7cdfdc841ea7e3f9e948cbffddd4e02f66",
+      "diagnostics": {
+        "sceneId": "red-rift-canyon",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 37,
+        "entityCount": 1,
+        "staticChildCount": 53,
+        "totalChildCount": 55,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 24,
+        "drawCallsSinceLastSample": 24,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "rock-tunnel",
+      "quality": "standard",
+      "file": "rock-tunnel-standard.png",
+      "sha256": "4c956aefd1dce0562dc296d39a32e9375e03398b2cd636720157577f1afd1336",
+      "diagnostics": {
+        "sceneId": "red-rift-canyon",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 21,
+        "entityCount": 1,
+        "staticChildCount": 37,
+        "totalChildCount": 39,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 9,
+        "drawCallsSinceLastSample": 9,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "rock-tunnel",
+      "quality": "compatibility",
+      "file": "rock-tunnel-compatibility.png",
+      "sha256": "424815126c92969d2816d51aa60f63a41e814eca5c8169aaac89cb5bdab678bf",
+      "diagnostics": {
+        "sceneId": "red-rift-canyon",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 9,
+        "entityCount": 1,
+        "staticChildCount": 25,
+        "totalChildCount": 27,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 9,
+        "drawCallsSinceLastSample": 9,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "sea-route",
+      "quality": "cinematic",
+      "file": "sea-route-cinematic.png",
+      "sha256": "e7ccadb33761ebc4d461fb5ce9303c3ab707557446fdfe098b807b9c851eae3d",
+      "diagnostics": {
+        "sceneId": "stilltide-isles",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 46,
+        "entityCount": 5,
+        "staticChildCount": 61,
+        "totalChildCount": 67,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "sea-route",
+      "quality": "standard",
+      "file": "sea-route-standard.png",
+      "sha256": "470d2baf48472931260154ee663ad7ca0dda6a28ba62553ad61ac5e135c99978",
+      "diagnostics": {
+        "sceneId": "stilltide-isles",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 26,
+        "entityCount": 5,
+        "staticChildCount": 41,
+        "totalChildCount": 47,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 36,
+        "drawCallsSinceLastSample": 36,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "sea-route",
+      "quality": "compatibility",
+      "file": "sea-route-compatibility.png",
+      "sha256": "ed29665314ce6e31c16ab52050913c29ccc441f867ca6cad10165ecf323512f4",
+      "diagnostics": {
+        "sceneId": "stilltide-isles",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 11,
+        "entityCount": 5,
+        "staticChildCount": 26,
+        "totalChildCount": 32,
         "canvasCount": 1,
         "canvasPixels": 649904,
         "drawCallTotal": 27,
@@ -378,8 +498,8 @@
         "totalChildCount": 66,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 36,
-        "drawCallsSinceLastSample": 36,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
         "motionEnabled": false
       }
     },
@@ -418,8 +538,8 @@
         "totalChildCount": 30,
         "canvasCount": 1,
         "canvasPixels": 649904,
-        "drawCallTotal": 36,
-        "drawCallsSinceLastSample": 36,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
         "motionEnabled": false
       }
     }

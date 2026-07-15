@@ -49,7 +49,7 @@ export interface WorldScenePalette {
 
 export interface WorldLandmarkSpec {
   id: string;
-  kind: 'lighthouse' | 'building' | 'dock' | 'tree-cluster' | 'tree-wall' | 'canopy' | 'root-cluster' | 'boulder' | 'path' | 'grass-patch' | 'roof' | 'fog-bank' | 'observatory-dome' | 'meteor-spire' | 'star-chart' | 'crystal-cluster' | 'rift-mist' | 'gravity-platform' | 'rift-arch' | 'void-debris' | 'tide-cavern-wall' | 'crystal-tide-pool' | 'anchor-dais' | 'cave-veil' | 'spore-ring' | 'ridge-wall' | 'stone-terrace' | 'starfall-scar' | 'ridge-overhang';
+  kind: 'lighthouse' | 'building' | 'dock' | 'tree-cluster' | 'tree-wall' | 'canopy' | 'root-cluster' | 'boulder' | 'path' | 'grass-patch' | 'roof' | 'fog-bank' | 'observatory-dome' | 'meteor-spire' | 'star-chart' | 'crystal-cluster' | 'rift-mist' | 'gravity-platform' | 'rift-arch' | 'void-debris' | 'tide-cavern-wall' | 'crystal-tide-pool' | 'anchor-dais' | 'cave-veil' | 'spore-ring' | 'ridge-wall' | 'stone-terrace' | 'starfall-scar' | 'ridge-overhang' | 'canyon-wall' | 'mineral-vein' | 'rock-shelf' | 'cave-shadow' | 'reef-islet' | 'tide-channel' | 'shipwreck' | 'tide-cave-mouth';
   x: number; y: number; width?: number; height?: number; depth: 'terrain' | 'scenery' | 'occlusion' | 'foreground';
 }
 
@@ -64,7 +64,7 @@ export interface WorldCharacterSpec {
   y?: number;
 }
 
-export type WorldSceneObjectKind = 'default' | 'signal-spore' | 'anomaly-core' | 'gravity-node' | 'ruin-terminal' | 'rift-core' | 'legend-echo' | 'tide-anchor' | 'rift-gate' | 'star-scar';
+export type WorldSceneObjectKind = 'default' | 'signal-spore' | 'anomaly-core' | 'gravity-node' | 'ruin-terminal' | 'rift-core' | 'legend-echo' | 'tide-anchor' | 'rift-gate' | 'star-scar' | 'tide-gauge' | 'ship-log';
 
 /** Optional config-owned appearance for authoritative object DTOs. Object visibility
  * and positions still come from the application snapshot, never this scene pack. */
@@ -360,6 +360,69 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
     resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 14, staticContainerLimit: 34, ambientParticleLimit: 44, entityLimit: 10 },
   },
   {
+    id: 'red-rift-canyon', mapId: 'rock-tunnel', biome: 'moon-cavern',
+    terrain: [{ id: 'rift-stone-floor', depth: 2 }, { id: 'broken-canyon-path', depth: 2 }],
+    scenery: [{ id: 'red-canyon-walls', depth: 3 }, { id: 'exposed-mineral-veins', depth: 3 }, { id: 'fallen-rock-shelves', depth: 3 }],
+    occlusion: [{ id: 'near-rift-ceiling', depth: 5 }],
+    foreground: [{ id: 'canyon-dust-curtain', depth: 6, parallax: 1.08 }],
+    ambience: { preset: 'dust', density: 0.52 },
+    palette: { backdrop: '#2a2534', ground: '#4e4038', path: '#80705e', shadow: '#201a24', accent: '#f0a46c', fog: '#d8b79a' },
+    characters: [{ id: 'player', appearance: 'hero', behavior: 'idle' }],
+    /** Decorative canyon grammar only. The encounterFloor, collision cells, cave
+     * warps and every progression gate remain authoritative map/story inputs. */
+    landmarks: [
+      { id: 'far-rift-ceiling', kind: 'canyon-wall', x: 0, y: 0.2, width: 16, height: 2.9, depth: 'scenery' },
+      { id: 'west-rift-wall', kind: 'canyon-wall', x: 0.1, y: 2.0, width: 3.1, height: 9.4, depth: 'scenery' },
+      { id: 'east-rift-wall', kind: 'canyon-wall', x: 12.7, y: 1.6, width: 3.2, height: 9.9, depth: 'scenery' },
+      { id: 'central-rift-path', kind: 'path', x: 6.3, y: 0.8, width: 3.4, height: 12.1, depth: 'terrain' },
+      { id: 'west-mineral-face', kind: 'mineral-vein', x: 2.3, y: 2.6, width: 3.0, height: 3.3, depth: 'scenery' },
+      { id: 'east-mineral-face', kind: 'mineral-vein', x: 10.4, y: 2.9, width: 2.6, height: 3.2, depth: 'scenery' },
+      { id: 'lower-rift-vein', kind: 'mineral-vein', x: 9.7, y: 8.6, width: 2.8, height: 2.0, depth: 'scenery' },
+      { id: 'central-fallen-shelf', kind: 'rock-shelf', x: 5.4, y: 5.5, width: 5.2, height: 3.2, depth: 'scenery' },
+      { id: 'south-rift-shelf', kind: 'rock-shelf', x: 3.4, y: 9.0, width: 3.0, height: 1.8, depth: 'scenery' },
+      { id: 'weathered-canyon-boulders', kind: 'boulder', x: 10.1, y: 10.2, width: 2.4, height: 1.4, depth: 'scenery' },
+      { id: 'north-ceiling-shadow', kind: 'cave-shadow', x: 0, y: 0, width: 6.2, height: 2.4, depth: 'occlusion' },
+      { id: 'east-ceiling-shadow', kind: 'cave-shadow', x: 12.3, y: 5.2, width: 3.7, height: 5.0, depth: 'occlusion' },
+      { id: 'south-canyon-dust', kind: 'cave-veil', x: 0.8, y: 10.5, width: 14.0, height: 2.5, depth: 'foreground' },
+    ],
+    resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 18, staticContainerLimit: 38, ambientParticleLimit: 38, entityLimit: 10 },
+  },
+  {
+    id: 'stilltide-isles', mapId: 'sea-route', biome: 'tide-sea',
+    terrain: [{ id: 'shallow-tide', depth: 2 }, { id: 'reef-walkways', depth: 2 }],
+    scenery: [{ id: 'exposed-reef-islets', depth: 3 }, { id: 'low-tide-wreck', depth: 3 }, { id: 'tide-cave-mouth', depth: 3 }],
+    occlusion: [{ id: 'near-reef-shelf', depth: 5 }],
+    foreground: [{ id: 'sea-spray-curtain', depth: 6, parallax: 1.08 }],
+    ambience: { preset: 'spray', density: 0.64 },
+    palette: { backdrop: '#183f58', ground: '#3f7b82', path: '#b5b08a', shadow: '#143448', accent: '#80dce3', fog: '#d8f5ee' },
+    characters: [
+      { id: 'player', appearance: 'hero', behavior: 'idle' },
+      { id: 'tide-captain', appearance: 'villager', behavior: 'look-out' },
+      { id: 'chart-apprentice', appearance: 'researcher', behavior: 'study-tide' },
+    ],
+    /** Reefs, the wreck and cave mouth are decorative. Tide state, boat/cave
+     * warps, encounterFloor, collision and story visibility remain map/story DTO facts. */
+    landmarks: [
+      { id: 'far-stilltide-reef', kind: 'reef-islet', x: 0, y: 0.2, width: 16, height: 2.7, depth: 'scenery' },
+      { id: 'west-exposed-reef', kind: 'reef-islet', x: 0.2, y: 3.0, width: 4.4, height: 8.1, depth: 'scenery' },
+      { id: 'east-exposed-reef', kind: 'reef-islet', x: 11.8, y: 2.8, width: 4.0, height: 8.5, depth: 'scenery' },
+      { id: 'central-reef-crossing', kind: 'path', x: 6.3, y: 0.7, width: 3.4, height: 12.3, depth: 'terrain' },
+      { id: 'west-shallow-channel', kind: 'tide-channel', x: 3.1, y: 3.5, width: 3.3, height: 4.5, depth: 'terrain' },
+      { id: 'east-shallow-channel', kind: 'tide-channel', x: 9.7, y: 4.1, width: 3.0, height: 4.0, depth: 'terrain' },
+      { id: 'low-tide-wreck', kind: 'shipwreck', x: 10.0, y: 2.6, width: 3.6, height: 2.7, depth: 'scenery' },
+      { id: 'south-reef-boulders', kind: 'boulder', x: 2.7, y: 9.1, width: 3.2, height: 1.9, depth: 'scenery' },
+      { id: 'north-tide-cave', kind: 'tide-cave-mouth', x: 5.5, y: 0.1, width: 5.1, height: 2.4, depth: 'scenery' },
+      { id: 'west-reef-shelf', kind: 'reef-islet', x: 0, y: 6.8, width: 3.3, height: 4.5, depth: 'occlusion' },
+      { id: 'east-reef-shelf', kind: 'reef-islet', x: 13.0, y: 6.1, width: 3.0, height: 4.9, depth: 'occlusion' },
+      { id: 'south-sea-spray', kind: 'cave-veil', x: 0.6, y: 10.4, width: 14.8, height: 2.2, depth: 'foreground' },
+    ],
+    objectVisuals: [
+      { id: 'tide-gauge', kind: 'tide-gauge' },
+      { id: 'ship-log', kind: 'ship-log' },
+    ],
+    resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 18, staticContainerLimit: 38, ambientParticleLimit: 48, entityLimit: 12 },
+  },
+  {
     id: 'tide-dragon-den', mapId: 'dragon-den', biome: 'dragon-grotto',
     terrain: [{ id: 'saltstone-floor', depth: 2 }, { id: 'tide-runoff', depth: 2 }],
     scenery: [{ id: 'cavern-walls', depth: 3 }, { id: 'crystal-pools', depth: 3 }, { id: 'anchor-chamber', depth: 3 }],
@@ -421,7 +484,7 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
 
 /** Explicit migration gate for formal WorldView GPU rendering. Scene packs can
  * exist for sandbox/prototyping without being eligible for the live world path. */
-export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'viridian-forest', 'mt-moon', 'deep-space', 'dragon-den'] as const;
+export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'deep-space', 'dragon-den'] as const;
 export function isGpuWorldMapId(mapId: string): mapId is typeof GPU_WORLD_MAP_IDS[number] {
   return (GPU_WORLD_MAP_IDS as readonly string[]).includes(mapId);
 }
@@ -465,6 +528,8 @@ export const WORLD_SCENE_VISUAL_BASELINES: Readonly<Record<string, string>> = {
   'viridian-forest': '796ba47b',
   route3: '0711a01b',
   'mt-moon': '05366b70',
+  'rock-tunnel': '90cfb219',
+  'sea-route': '15c1084d',
   'dragon-den': 'fa843cf7',
   'deep-space': '9ebe7f67',
 };

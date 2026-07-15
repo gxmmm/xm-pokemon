@@ -215,7 +215,7 @@ function assert(cond: boolean, msg: string): void {
 // Formal GPU-world eligibility is an explicit config-owned migration gate;
 // scene-pack existence alone must not enable the live WorldView GPU path.
 {
-  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,viridian-forest,mt-moon,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, Mistwood Trial, Starfall Observatory, Deep-space Ruins, and Tide Dragon Den');
+  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,viridian-forest,route3,mt-moon,rock-tunnel,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('route3') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('rock-tunnel') && !isGpuWorldMapId('sea-route') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, Mistwood Trial, Starfall Ridge, Starfall Observatory, Red Rift Canyon, Deep-space Ruins, and Tide Dragon Den');
   assert(GPU_WORLD_MAP_IDS.every((mapId) => !!WORLD_SCENE_BY_MAP_ID[mapId]), 'every controlled GPU world map has a scene pack');
   console.log('✓ controlled GPU world eligibility');
 }
@@ -247,9 +247,37 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ Lumen Trail WorldSceneSpec forest contract');
 }
 
-// Stage 9.1-draft keeps Starfall Ridge sandbox-first. The route's ancient-road
-// collision, grass encounters, warp and ordered story stars remain authoritative
-// map/story inputs; this scene pack must not widen the formal GPU migration gate.
+// Direct-map rollout: Red Rift Canyon enters the explicit config gate with only
+// renderer-generic canyon grammar. Its natural encounterFloor, collision cells,
+// cave warps and story gates remain authoritative map/story inputs.
+{
+  const canyon = WORLD_SCENE_BY_MAP_ID['rock-tunnel'];
+  assert(canyon?.biome === 'moon-cavern' && canyon.palette.accent === '#f0a46c', 'Red Rift Canyon WorldSceneSpec has low-light canyon palette');
+  const canyonLandmarks = canyon?.landmarks ?? [];
+  assert(canyonLandmarks.filter((landmark) => landmark.kind === 'canyon-wall').length === 3 && canyonLandmarks.filter((landmark) => landmark.kind === 'mineral-vein').length >= 3 && canyonLandmarks.some((landmark) => landmark.kind === 'rock-shelf'), 'Red Rift Canyon uses reusable canyon, mineral, and shelf landmark grammar');
+  assert(canyonLandmarks.some((landmark) => landmark.kind === 'cave-shadow' && landmark.depth === 'occlusion') && canyonLandmarks.some((landmark) => landmark.kind === 'cave-veil' && landmark.depth === 'foreground'), 'Red Rift Canyon has low-light occlusion and foreground dust');
+  assert(isGpuWorldMapId('rock-tunnel') && GPU_WORLD_MAP_IDS.includes('rock-tunnel') && WORLD_SCENE_VISUAL_BASELINES['rock-tunnel'] === worldSceneFingerprintHash(canyon!), 'Red Rift Canyon is approved through the explicit GPU gate with its reviewed config baseline');
+  console.log('✓ Red Rift Canyon direct GPU WorldSceneSpec contract');
+}
+
+// Sandbox-first Stilltide Isles uses only renderer-generic reef, channel, wreck
+// and cave-mouth grammar. Tide state, encounterFloor, boat/cave warps and story
+// visibility remain authoritative inputs; formal GPU eligibility remains unchanged.
+{
+  const isles = WORLD_SCENE_BY_MAP_ID['sea-route'];
+  assert(isles?.biome === 'tide-sea' && isles.palette.accent === '#80dce3', 'Stilltide Isles WorldSceneSpec has a distinct tide-sea palette');
+  const isleLandmarks = isles?.landmarks ?? [];
+  assert(isleLandmarks.filter((landmark) => landmark.kind === 'reef-islet').length >= 4 && isleLandmarks.filter((landmark) => landmark.kind === 'tide-channel').length === 2 && isleLandmarks.some((landmark) => landmark.kind === 'shipwreck') && isleLandmarks.some((landmark) => landmark.kind === 'tide-cave-mouth'), 'Stilltide Isles uses reusable reef, channel, wreck, and cave-mouth landmark grammar');
+  assert(isleLandmarks.some((landmark) => landmark.kind === 'reef-islet' && landmark.depth === 'occlusion') && isleLandmarks.some((landmark) => landmark.kind === 'cave-veil' && landmark.depth === 'foreground'), 'Stilltide Isles has readable reef occlusion and foreground spray');
+  const isleObjects = isles?.objectVisuals ?? [];
+  assert(isleObjects.map((object) => object.id).join(',') === 'tide-gauge,ship-log' && isleObjects.map((object) => object.kind).join(',') === 'tide-gauge,ship-log', 'Stilltide Isles maps tide story object DTO appearances without owning visibility or positions');
+  assert(!isGpuWorldMapId('sea-route') && !GPU_WORLD_MAP_IDS.includes('sea-route') && WORLD_SCENE_VISUAL_BASELINES['sea-route'] === worldSceneFingerprintHash(isles!), 'Stilltide Isles remains sandbox-first with a reviewed config baseline candidate');
+  console.log('✓ Stilltide Isles sandbox-first WorldSceneSpec contract');
+}
+
+// Stage 9.1-d-c promotes the accepted Starfall Ridge through the explicit
+// config-owned GPU gate. Its ancient-road collision, grass encounters, warp and
+// ordered story stars remain authoritative map/story inputs.
 {
   const ridge = WORLD_SCENE_BY_MAP_ID.route3;
   assert(ridge?.biome === 'sunlit-route' && ridge.palette.accent === '#ffe485', 'Starfall Ridge WorldSceneSpec has a distinct highland palette');
@@ -258,7 +286,7 @@ function assert(cond: boolean, msg: string): void {
   assert(ridgeLandmarks.some((landmark) => landmark.kind === 'ridge-overhang' && landmark.depth === 'occlusion') && ridgeLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Starfall Ridge has readable ridge occlusion and foreground haze');
   const ridgeObjects = ridge?.objectVisuals ?? [];
   assert(ridgeObjects.map((object) => object.id).join(',') === 'star-1,star-2,star-3' && ridgeObjects.every((object) => object.kind === 'star-scar'), 'Starfall Ridge maps ordered story star DTO appearances without owning visibility or positions');
-  assert(!isGpuWorldMapId('route3') && WORLD_SCENE_VISUAL_BASELINES.route3 === worldSceneFingerprintHash(ridge!), 'Starfall Ridge remains sandbox-first with a reviewed config baseline candidate');
+  assert(isGpuWorldMapId('route3') && GPU_WORLD_MAP_IDS.includes('route3') && WORLD_SCENE_VISUAL_BASELINES.route3 === worldSceneFingerprintHash(ridge!), 'Starfall Ridge is approved through the explicit GPU gate with its reviewed config baseline');
   console.log('✓ Starfall Ridge sandbox-first WorldSceneSpec contract');
 }
 

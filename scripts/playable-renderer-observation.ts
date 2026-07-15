@@ -171,12 +171,10 @@ async function requireMistwood(page: Page, label: string): Promise<WorldBehavior
 }
 async function requireStarfallRidge(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '星陨高径', label);
-    const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'route3' && diagnostics.sceneId === 'starfall-ridge' && diagnostics.diagnosticWorldScene, `${label}: pending ridge scene lost its explicit observation diagnostic (${JSON.stringify(diagnostics)})`);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
-    const bridged = await worldBehavior(page);
-    assert(bridged.renderer === 'pixi', `${label}: pending ridge scene did not mount the GPU observation bridge (${JSON.stringify(bridged)})`);
-    return bridged;
+    const diagnostics = await worldBehavior(page);
+    assert(diagnostics.mapId === 'route3' && diagnostics.sceneId === 'starfall-ridge' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: formally gated ridge scene did not use the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    return diagnostics;
 }
 async function advanceDialog(page: Page): Promise<void> {
     await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })));
@@ -439,7 +437,7 @@ async function main(): Promise<void> {
         const password = 'renderer-observation';
         // This deliberately uses the production login/new-game UI; it does not set    
         // auth storage, invoke Pinia, or call APIs directly.
-        await page.goto(`${BASE_URL}/login?renderer-observation=1&world-gpu-diagnostic=route3`, { waitUntil: 'networkidle' });
+        await page.goto(`${BASE_URL}/login?renderer-observation=1`, { waitUntil: 'networkidle' });
         await page.getByRole('button', { name: '注册' }).click();
         await page.locator('input').nth(0).fill(username);
         await page.locator('input[type="password"]').fill(password);
@@ -451,8 +449,9 @@ async function main(): Promise<void> {
         await dismissDialog(page);
         // Enter the renderer observation URL only after normal login/new-game routing    
         // is complete. It records metrics only and does not bypass the route guard or    
-        // enable the recorded pending route3 diagnostic only.
-        await page.goto(`${BASE_URL}/world?renderer-observation=1&world-gpu-diagnostic=route3`, { waitUntil: 'networkidle' });
+        // enable a renderer-local observation only; route3 now relies on its
+        // formal config gate rather than a pending-map diagnostic.
+        await page.goto(`${BASE_URL}/world?renderer-observation=1`, { waitUntil: 'networkidle' });
         await page.getByRole('heading', { name: '雾湾镇' }).waitFor({ timeout: 10000 });
         await dismissDialog(page);
         // First complete the normal gated opening using the default compatibility    
@@ -471,7 +470,7 @@ async function main(): Promise<void> {
         const heapDeltaBytes = afterHeap - beforeHeap;
         assert(heapDeltaBytes < 32 * 1024 * 1024, `playable World → Battle → World heap growth exceeded 32 MiB (${heapDeltaBytes})`);
         await writeFile(REPORT_PATH, `${JSON.stringify({ username, beforeHeap, afterHeap, heapDeltaBytes, summary, report }, null, 2)}\n`);
-        console.log(`✓ playable authenticated Starfall Ridge WorldView behavior observation: GPU World → Battle → World coverage, ${summary.sampleCount} samples, heap delta ${heapDeltaBytes} bytes, max draw calls ${summary.maxDrawCallTotal}`);
+        console.log(`✓ playable authenticated formally gated Starfall Ridge WorldView observation: GPU World → Battle → World coverage, ${summary.sampleCount} samples, heap delta ${heapDeltaBytes} bytes, max draw calls ${summary.maxDrawCallTotal}`);
     }
     finally {
         await browser?.close();

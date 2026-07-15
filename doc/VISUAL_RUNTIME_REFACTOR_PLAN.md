@@ -621,7 +621,7 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 验收：
 
 - [ ] 所有当前启用的可玩地图（含开发训练塔开关启用时的塔层）均具有 `WorldSceneSpec`、sandbox 和受控正式 GPU 验收记录。
-- [ ] 主线核心地图均使用新 WorldStage；剩余 `viridian-forest`、`route3`、`rock-tunnel`、`sea-route` 及按开关启用的训练塔地图必须逐张迁移，不允许用 `WorldCanvas.vue` 地图分支补齐。
+- [ ] 主线核心地图均使用新 WorldStage；剩余 `rock-tunnel`、`sea-route` 及按开关启用的训练塔地图必须逐张迁移，不允许用 `WorldCanvas.vue` 地图分支补齐。
 - [ ] 旧 Canvas 世界 renderer 仅在全量迁移完成前作为临时 fallback；其最终删除条件见“阶段 9”。
 - [x] 星陨观测所、深空遗迹与潮洞受控正式 GPU 接入未改变剧情、碰撞、遇敌、NPC 交互和存档兼容性；Canvas 仍为默认与失败 fallback。
 
@@ -714,8 +714,23 @@ WorldSceneSpec / 通用 landmark grammar
 - [x] `WorldStage` 仅扩展 renderer-generic 的 `ridge-wall` / `stone-terrace` / `starfall-scar` / `ridge-overhang` landmark grammar 与 `star-scar` object DTO 外观；不读取 Pinia / engine，也不拥有星痕的故事可见性或位置。
 - [x] `/world-stage-sandbox` 默认预览星陨高径，并以既有 story 配置的洛岩 `(6, 8)`、三枚坠星刻痕 `(3, 4)` / `(12, 6)` / `(5, 11)` 作为纯 renderer 输入；浏览器矩阵已扩为七图 × 三档质量的 21 张候选 PNG。
 - [x] config fingerprint `0711a01b`、scene budget、smoke 与浏览器自动比对通过；cinematic / standard / compatibility 三档人工视觉验收已通过。
-- [x] 认证 `renderer-observation` 已使用受记录的 `world-gpu-diagnostic=route3` 走完真实 chapter-one 开放路径、`route3` DTO / 碰撞 / 星痕顺序 / 洛岩 / 野外战斗往返及 north warp；自动观测通过，等待人工正式行为验收。
-- [ ] `GPU_WORLD_MAP_IDS` 不含 `route3`；Canvas 继续保留。只有人工确认正式行为回归后，才可讨论显式 migration gate。
+- [x] 认证 `renderer-observation` 曾使用受记录的 `world-gpu-diagnostic=route3` 走完真实 chapter-one 开放路径、`route3` DTO / 碰撞 / 星痕顺序 / 洛岩 / 野外战斗往返及 north warp；自动与人工正式行为验收均通过。
+- [x] 9.1-d-c（2026-07-15）：仅将 `route3` 加入显式 `GPU_WORLD_MAP_IDS` migration gate；认证 `visuals:playable` 已移除 `world-gpu-diagnostic`，确认该图通过正常 config gate 重跑真实 World → Battle → World。Canvas、`WorldCanvas.vue`、engine、地图、故事与存档均未修改。
+
+##### 9.1-e `rock-tunnel` 直接实装（2026-07-15，正式页面人工验收通过）
+
+- [x] 按单图直接实装流程新增 `rock-tunnel` `red-rift-canyon` Scene Pack：赤色裂谷岩壁 / 暴露矿脉 / 落石台 / 低光岩檐 / 风沙 ambience；自然 `encounterFloor`、碰撞、洞窟 warp 与剧情门槛保持原有 map/story 权威。
+- [x] `WorldStage` 仅扩展通用 `canyon-wall` / `mineral-vein` / `rock-shelf` / `cave-shadow` landmark grammar；不读取 Pinia / engine，也不新增地图 ID 分支。
+- [x] 已直接将 `rock-tunnel` 加入显式 `GPU_WORLD_MAP_IDS`，浏览器矩阵扩为八图 × 三质量档的 24 张 baseline；自动检查通过。
+- [x] 正式页面人工验收通过：GPU 切换、低光遮挡、`encounterFloor` 自然遇敌、岩壁碰撞及上下洞窟 warp 均正常；Canvas 继续保留。
+
+##### 9.1-f `sea-route` sandbox-first（2026-07-15，待正式页面人工验证）
+
+- [x] 新增 `sea-route` `stilltide-isles` Scene Pack：低潮礁石 / 浅潮水道 / 沉船 / 潮洞入口 / 海雾，以及船长赛岚、海图学徒宁墨、潮位仪和沉船航海日志的 DTO 外观。
+- [x] `WorldStage` 仅扩展通用 `reef-islet` / `tide-channel` / `shipwreck` / `tide-cave-mouth` landmark grammar 与 `tide-gauge` / `ship-log` object DTO 外观；不读取 Pinia / engine，也不拥有潮位、对象可见性、坐标或交互。
+- [x] config fingerprint 为 `15c1084d`，浏览器矩阵扩为九图 × 三质量档的 27 张 baseline；scene budget、自动截图比对和生命周期观测通过。
+- [x] `sea-route` 未加入 `GPU_WORLD_MAP_IDS`，因此 migration gate、`WorldCanvas.vue`、地图规则、碰撞、`encounterFloor`、船只 / 洞窟 warp、剧情和存档均未改变。
+- [ ] 请在 sandbox 三档视觉与正式页面人工验证通过后，才可单独把 `sea-route` 加入显式 GPU gate。Canvas 继续保留；幻境之塔五层必须共用一个参数化 Scene Pack。
 
 #### 9.2 GPU 默认化（仍保留删除前的安全窗口）
 

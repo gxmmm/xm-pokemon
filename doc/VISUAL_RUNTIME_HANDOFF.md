@@ -1,7 +1,7 @@
 # Visual Runtime 重构交接清单
 
 > **交接日期：2026-07-15**
-> **当前状态：阶段 0 / 1 / 2 已完成；阶段 3 / 4 已人工验收；阶段 5 / 6 已完成；阶段 7 的五张 GPU 世界地图已受控接入；阶段 8 的资源预算、配置级 / 浏览器截图基线与 WorldStage 生命周期回归已完成；阶段 9.1-a 的 `viridian-forest` 已完成人工视觉验收；阶段 9.1-b 的认证正式 WorldView 行为回归已通过人工验收；阶段 9.1-c 已将该图纳入显式 GPU migration gate，并以无 `world-gpu-diagnostic` 的真实认证 World → Battle → World 复测通过。Canvas 继续保留。阶段 9.1-d 的 `route3` sandbox-first 已完成并通过 cinematic / standard / compatibility 人工视觉验收；未扩大 GPU gate。幻境之塔五层已确定共用一个参数化 Scene Pack。`route3` 认证正式 WorldView 自动行为观测已通过，等待人工确认；未扩大 GPU gate。**
+> **当前状态：阶段 0 / 1 / 2 已完成；阶段 3 / 4 已人工验收；阶段 5 / 6 已完成；阶段 7 的五张 GPU 世界地图已受控接入；阶段 8 的资源预算、配置级 / 浏览器截图基线与 WorldStage 生命周期回归已完成；阶段 9.1-a 的 `viridian-forest` 已完成人工视觉验收；阶段 9.1-b 的认证正式 WorldView 行为回归已通过人工验收；阶段 9.1-c 已将该图纳入显式 GPU migration gate，并以无 `world-gpu-diagnostic` 的真实认证 World → Battle → World 复测通过。Canvas 继续保留。阶段 9.1-d 的 `route3` sandbox-first 已完成并通过 cinematic / standard / compatibility 人工视觉验收；未扩大 GPU gate。幻境之塔五层已确定共用一个参数化 Scene Pack。`route3` 认证正式 WorldView 自动与人工行为验收均通过，并已通过显式 GPU migration gate 接入；Canvas 继续保留。**
 > **唯一导航文档：** `doc/VISUAL_RUNTIME_REFACTOR_PLAN.md`。本文件记录当前工作区、架构边界、验收基线和下一单次工作包。
 
 ---
@@ -361,7 +361,7 @@ Vue 仅把 `VisualRuntimeSettings` 这个 renderer-neutral DTO 低频传入 `Pix
 
 | 类别 | 已验收 GPU | 待迁移 / 待补齐 |
 |---|---|---|
-| 世界地图 | `pallet`、`route1`、`viridian-forest`、`mt-moon`、`deep-space`、`dragon-den`；`route3` 已完成 sandbox 三档人工验收 | `route3` 正式行为人工确认与 gate、`rock-tunnel`、`sea-route`，以及 `ILLUSION_TOWER_ENABLED=true` 时的训练塔五层（共用一个参数化 Scene Pack）；实际范围须从 `MAPS` 自动审计，不能靠手写列表。 |
+| 世界地图 | `pallet`、`route1`、`viridian-forest`、`route3`、`mt-moon`、`rock-tunnel`、`deep-space`、`dragon-den` | `rock-tunnel` 正式页面人工验证、`sea-route`，以及 `ILLUSION_TOWER_ENABLED=true` 时的训练塔五层（共用一个参数化 Scene Pack）；实际范围须从 `MAPS` 自动审计，不能靠手写列表。 |
 | 战斗路径 | GPU BattleStage 已可走受控 World → Battle → World，并完成正式认证三轮观测 | PVE 野外、剧情战、PVP 必须都切为 GPU 默认，并覆盖 capture / result / return / 错误恢复。 |
 | 可访问性 | 质量自动 / 手动、减少闪烁、镜头强度 | WebGL 不可用、mount / preload 失败的非 Canvas 恢复 UX。 |
 | 回归 | 五图 × 三质量截图、sandbox 生命周期、真实认证三轮观测 | 覆盖 manifest 扩展至全部启用地图、三类战斗和全量删除后的无旧引用检查。 |
@@ -416,7 +416,7 @@ git diff --check
 ```text
 请继续执行 `doc/VISUAL_RUNTIME_REFACTOR_PLAN.md`。
 当前阶段：阶段 9（全量 GPU 迁移与旧 Canvas 退役）。
-当前工作包：`route3` 认证正式 WorldView 自动观测已通过；仅在认证 `renderer-observation` 诊断会话内使用 `world-gpu-diagnostic=route3` 镜像既有 WorldView / story DTO，已验证 chapter-one 的真实开放路径、石阶/岩壁碰撞、三枚坠星刻痕顺序、洛岩、野外 GPU World → GPU Battle → GPU World 与 north warp。下一步是人工确认该正式行为回归；在确认前不得扩大 GPU migration gate。幻境之塔五层后续必须共用一个参数化 Scene Pack。
+当前工作包：`rock-tunnel` 已按单图直接实装并通过显式 GPU gate 接入；请在正式页面人工验证 GPU 切换、低光遮挡、`encounterFloor`、岩壁碰撞与洞窟 warp。验证后直接推进 `sea-route` 单图实装；不得改 engine、WorldCanvas、地图规则、剧情或存档。幻境之塔五层后续必须共用一个参数化 Scene Pack。
 
 请先阅读：
 - PROJECT_RULES.md
@@ -435,3 +435,16 @@ git diff --check
 - 完成后运行 npm run typecheck、npm run smoke、npm run visuals:report、npm run visuals:browser、npm run visuals:playable、npm run build:web、Pixi esbuild bundle、git diff --check；
 - 报告修改文件、配置 / renderer 边界、验收结果和下一步。
 ```
+
+
+## 阶段 9.1-e：赤砾裂谷正式页面人工验收（2026-07-15）
+
+赤砾裂谷的普通用户 GPU 切换、低光遮挡、自然地面 `encounterFloor`、岩壁碰撞，以及与星陨观测所 / 静潮群岛之间的洞窟 warp 已在正式页面人工验收通过。该结论仅完成已存在 `rock-tunnel` migration gate 的人工门槛；Canvas 继续保留，地图规则、剧情与存档均未改动。
+
+## 阶段 9.1-f：静潮群岛 sandbox-first 单图实装（2026-07-15，待人工验收）
+
+`sea-route` 已新增配置化 `stilltide-isles` Scene Pack。它以通用 `reef-islet`、`tide-channel`、`shipwreck`、`tide-cave-mouth` landmark grammar，加上 `spray` ambience / `tide-sea` palette，表现低潮礁石、水道、沉船、潮洞入口和海雾；`tide-gauge`、`ship-log` 是输入 World DTO 的外观映射，绝不拥有潮位、可见性、坐标或交互。
+
+海路没有加入 `GPU_WORLD_MAP_IDS`，因此没有改变 GPU migration gate；`WorldCanvas.vue`、`packages/engine`、地图、碰撞、`encounterFloor`、船只 / 洞窟 warp、NPC 坐标、剧情和存档都未修改。`visuals:report` 候选 fingerprint 为 `15c1084d`；`visuals:browser` 已扩展为九图 × 三质量档共 27 张截图，27 次 scene switch、强制 GC heap delta `0 bytes` 均通过。
+
+下一步：先人工检查 `/world-stage-sandbox?visual-scene=sea-route` 的 cinematic / standard / compatibility 视觉；随后按正式页面路径验证 GPU 切换、潮位对象可见性、自然地面 encounter、礁石碰撞、船只 / 洞窟 warp，人工通过后才能单独把 `sea-route` 加入显式 GPU gate。幻境之塔五层仍必须共用一个参数化 Scene Pack。

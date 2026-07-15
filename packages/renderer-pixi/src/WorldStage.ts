@@ -13,14 +13,14 @@ interface ScenePalette {
 }
 interface Landmark {
   id: string;
-  kind: 'lighthouse' | 'building' | 'dock' | 'tree-cluster' | 'tree-wall' | 'canopy' | 'root-cluster' | 'boulder' | 'path' | 'grass-patch' | 'roof' | 'fog-bank' | 'observatory-dome' | 'meteor-spire' | 'star-chart' | 'crystal-cluster' | 'rift-mist' | 'gravity-platform' | 'rift-arch' | 'void-debris' | 'tide-cavern-wall' | 'crystal-tide-pool' | 'anchor-dais' | 'cave-veil' | 'spore-ring' | 'ridge-wall' | 'stone-terrace' | 'starfall-scar' | 'ridge-overhang';
+  kind: 'lighthouse' | 'building' | 'dock' | 'tree-cluster' | 'tree-wall' | 'canopy' | 'root-cluster' | 'boulder' | 'path' | 'grass-patch' | 'roof' | 'fog-bank' | 'observatory-dome' | 'meteor-spire' | 'star-chart' | 'crystal-cluster' | 'rift-mist' | 'gravity-platform' | 'rift-arch' | 'void-debris' | 'tide-cavern-wall' | 'crystal-tide-pool' | 'anchor-dais' | 'cave-veil' | 'spore-ring' | 'ridge-wall' | 'stone-terrace' | 'starfall-scar' | 'ridge-overhang' | 'canyon-wall' | 'mineral-vein' | 'rock-shelf' | 'cave-shadow' | 'reef-islet' | 'tide-channel' | 'shipwreck' | 'tide-cave-mouth';
   x: number;
   y: number;
   width?: number;
   height?: number;
   depth: 'terrain' | 'scenery' | 'occlusion' | 'foreground';
 }
-type SceneObjectKind = 'default' | 'signal-spore' | 'anomaly-core' | 'gravity-node' | 'ruin-terminal' | 'rift-core' | 'legend-echo' | 'tide-anchor' | 'rift-gate' | 'star-scar';
+type SceneObjectKind = 'default' | 'signal-spore' | 'anomaly-core' | 'gravity-node' | 'ruin-terminal' | 'rift-core' | 'legend-echo' | 'tide-anchor' | 'rift-gate' | 'star-scar' | 'tide-gauge' | 'ship-log';
 interface SceneObjectVisual {
   id: string;
   kind: SceneObjectKind;
@@ -340,6 +340,14 @@ export class WorldStage implements WorldRenderer {
       case 'stone-terrace': this.drawStoneTerrace(graphic, x, y, width, height, palette); break;
       case 'starfall-scar': this.drawStarfallScar(graphic, x, y, width, height, palette); break;
       case 'ridge-overhang': this.drawRidgeOverhang(graphic, x, y, width, height, palette); break;
+      case 'canyon-wall': this.drawCanyonWall(graphic, x, y, width, height, palette); break;
+      case 'mineral-vein': this.drawMineralVein(graphic, x, y, width, height, palette); break;
+      case 'rock-shelf': this.drawRockShelf(graphic, x, y, width, height, palette); break;
+      case 'cave-shadow': this.drawCaveShadow(graphic, x, y, width, height, palette); break;
+      case 'reef-islet': this.drawReefIslet(graphic, x, y, width, height, palette); break;
+      case 'tide-channel': this.drawTideChannel(graphic, x, y, width, height, palette); break;
+      case 'shipwreck': this.drawShipwreck(graphic, x, y, width, height, palette); break;
+      case 'tide-cave-mouth': this.drawTideCaveMouth(graphic, x, y, width, height, palette); break;
     }
   }
 
@@ -595,6 +603,81 @@ export class WorldStage implements WorldRenderer {
     for (let index = 0; index < 4; index++) graphic.circle(x + width * (0.18 + index * 0.2), y + height * (0.3 + index % 2 * 0.18), 3).fill({ color: palette.accent, alpha: 0.26 });
   }
 
+  private drawCanyonWall(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.rect(x, y, width, height).fill({ color: 0x44332f, alpha: 0.96 });
+    const faces = Math.max(3, Math.round(width / 68));
+    for (let index = 0; index < faces; index++) {
+      const left = x + width * index / faces;
+      const right = x + width * (index + 1) / faces;
+      const ridgeY = y + height * (0.08 + index % 3 * 0.09);
+      graphic.poly([left, y + height, left + (right - left) * 0.2, ridgeY, right - (right - left) * 0.1, y + height * 0.18, right, y + height])
+        .fill({ color: index % 2 ? 0x68463b : 0x583b35, alpha: 0.98 })
+        .moveTo(left + (right - left) * 0.3, ridgeY + 6).lineTo(right - (right - left) * 0.18, y + height * 0.9).stroke({ color: palette.fog, alpha: 0.16, width: 1.5 });
+    }
+  }
+
+  private drawMineralVein(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.poly([x, y + height * 0.16, x + width * 0.84, y, x + width, y + height * 0.28, x + width * 0.78, y + height, x + width * 0.1, y + height, x, y + height * 0.72])
+      .fill({ color: 0x5d443c, alpha: 0.92 });
+    const veins = Math.max(3, Math.round(width / 45));
+    for (let index = 0; index < veins; index++) {
+      const vx = x + width * (0.12 + index / veins * 0.78);
+      graphic.moveTo(vx - 8, y + height * 0.82).lineTo(vx + 9, y + height * 0.15).stroke({ color: index % 2 ? palette.accent : palette.fog, alpha: 0.48, width: 2 })
+        .circle(vx + 5, y + height * (0.36 + index % 2 * 0.2), 3).fill({ color: palette.accent, alpha: 0.66 });
+    }
+  }
+
+  private drawRockShelf(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    const top = y + height * 0.24;
+    const bottom = y + height * 0.78;
+    graphic.poly([x, top, x + width * 0.8, y, x + width, top, x + width * 0.72, bottom, x + width * 0.16, y + height, x, bottom])
+      .fill({ color: 0x695049, alpha: 0.96 })
+      .poly([x, top, x + width * 0.8, y, x + width * 0.72, bottom, x + width * 0.16, y + height]).fill({ color: 0x80645a, alpha: 0.9 })
+      .moveTo(x + width * 0.14, top + 5).lineTo(x + width * 0.76, y + height * 0.16).stroke({ color: palette.accent, alpha: 0.24, width: 2 });
+  }
+
+  private drawCaveShadow(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.poly([x, y, x + width, y, x + width * 0.9, y + height * 0.74, x + width * 0.55, y + height, x + width * 0.14, y + height * 0.82])
+      .fill({ color: 0x1b1721, alpha: 0.92 })
+      .poly([x + width * 0.12, y + height * 0.08, x + width * 0.84, y + height * 0.06, x + width * 0.7, y + height * 0.36, x + width * 0.24, y + height * 0.46])
+      .fill({ color: palette.shadow, alpha: 0.42 });
+  }
+
+  private drawReefIslet(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.ellipse(x + width * 0.5, y + height * 0.78, width * 0.52, height * 0.26).fill({ color: palette.shadow, alpha: 0.4 })
+      .poly([x, y + height * 0.72, x + width * 0.12, y + height * 0.22, x + width * 0.48, y, x + width * 0.88, y + height * 0.18, x + width, y + height * 0.72, x + width * 0.74, y + height, x + width * 0.18, y + height])
+      .fill({ color: 0x4a716c, alpha: 0.96 });
+    const ridges = Math.max(3, Math.round(width / 68));
+    for (let index = 0; index < ridges; index++) {
+      const rx = x + width * (0.14 + index / ridges * 0.72);
+      graphic.moveTo(rx - 8, y + height * 0.72).lineTo(rx + 9, y + height * 0.2).stroke({ color: index % 2 ? palette.fog : palette.accent, alpha: 0.24, width: 2 });
+    }
+  }
+
+  private drawTideChannel(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.ellipse(x + width * 0.5, y + height * 0.5, width * 0.5, height * 0.46).fill({ color: 0x225f77, alpha: 0.78 })
+      .ellipse(x + width * 0.48, y + height * 0.42, width * 0.36, height * 0.16).fill({ color: palette.accent, alpha: 0.28 });
+    for (let index = 0; index < 3; index++) {
+      const yy = y + height * (0.28 + index * 0.2);
+      graphic.moveTo(x + width * 0.2, yy).lineTo(x + width * 0.75, yy - height * 0.04).stroke({ color: palette.fog, alpha: 0.3, width: 1.5 });
+    }
+  }
+
+  private drawShipwreck(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    const hullY = y + height * 0.65;
+    graphic.ellipse(x + width * 0.5, y + height * 0.82, width * 0.48, height * 0.16).fill({ color: palette.shadow, alpha: 0.38 })
+      .poly([x + width * 0.08, hullY, x + width * 0.92, hullY, x + width * 0.72, y + height * 0.94, x + width * 0.22, y + height * 0.92]).fill({ color: 0x6d4c38, alpha: 0.98 })
+      .rect(x + width * 0.47, y + height * 0.14, width * 0.08, height * 0.54).fill({ color: 0x4f382f });
+    graphic.poly([x + width * 0.54, y + height * 0.18, x + width * 0.82, y + height * 0.48, x + width * 0.54, y + height * 0.52]).fill({ color: palette.fog, alpha: 0.46 })
+      .moveTo(x + width * 0.18, hullY + height * 0.08).lineTo(x + width * 0.76, hullY + height * 0.04).stroke({ color: palette.accent, alpha: 0.42, width: 2 });
+  }
+
+  private drawTideCaveMouth(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
+    graphic.ellipse(x + width * 0.5, y + height * 0.68, width * 0.48, height * 0.46).fill({ color: 0x102d42, alpha: 0.94 })
+      .arc(x + width * 0.5, y + height * 0.68, Math.min(width, height) * 0.36, Math.PI, 0).stroke({ color: 0x547d81, alpha: 0.92, width: Math.max(6, width * 0.12) })
+      .ellipse(x + width * 0.5, y + height * 0.9, width * 0.32, height * 0.1).fill({ color: palette.accent, alpha: 0.24 });
+  }
+
   private drawSporeRing(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
     const cx = x + width / 2;
     const cy = y + height * 0.72;
@@ -709,6 +792,22 @@ export class WorldStage implements WorldRenderer {
         .circle(0, 0, 18).stroke({ color: 0xc6a9ff, alpha: 0.72, width: 2 })
         .poly([0, -14, 14, 0, 0, 14, -14, 0]).fill({ color: 0x7d5ad3, alpha: 0.92 })
         .circle(0, 0, 5).fill({ color: 0x86efff, alpha: 0.96 });
+      return;
+    }
+    if (kind === 'tide-gauge') {
+      graphic.ellipse(0, 16, 19, 5).fill({ color: 0x143448, alpha: 0.4 })
+        .rect(-4, -14, 8, 28).fill({ color: 0x5d756f })
+        .circle(0, -14, 8).fill({ color: 0x80dce3, alpha: 0.84 })
+        .circle(0, -14, 4).stroke({ color: 0xe8fff4, alpha: 0.88, width: 1.5 })
+        .moveTo(0, -14).lineTo(3, -18).stroke({ color: 0x173b4c, alpha: 0.9, width: 1.5 });
+      return;
+    }
+    if (kind === 'ship-log') {
+      graphic.ellipse(0, 14, 20, 5).fill({ color: 0x143448, alpha: 0.38 })
+        .rect(-12, -7, 24, 15).fill({ color: 0x80573d })
+        .rect(-9, -5, 18, 11).fill({ color: 0xd5b57d })
+        .moveTo(-5, -1).lineTo(6, -1).stroke({ color: 0x4b382d, alpha: 0.82, width: 1.5 })
+        .moveTo(-5, 3).lineTo(4, 3).stroke({ color: 0x4b382d, alpha: 0.72, width: 1.2 });
       return;
     }
     if (kind === 'tide-anchor') {
