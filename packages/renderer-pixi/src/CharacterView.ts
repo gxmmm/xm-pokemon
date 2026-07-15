@@ -1,8 +1,8 @@
 import type { Container, Graphics } from 'pixi.js';
 import { Graphics as PixiGraphics, Container as PixiContainer } from 'pixi.js';
 
-export type CharacterAppearance = 'hero' | 'researcher' | 'villager' | 'fisher';
-export type CharacterBehavior = 'idle' | 'study-tide' | 'look-out' | 'sort-nets';
+export type CharacterAppearance = 'hero' | 'researcher' | 'villager' | 'fisher' | 'scout';
+export type CharacterBehavior = 'idle' | 'study-tide' | 'look-out' | 'sort-nets' | 'tend-lantern' | 'trace-stars';
 
 interface Palette { skin: number; hair: number; shirt: number; trim: number; pants: number; }
 const PALETTES: Record<CharacterAppearance, Palette> = {
@@ -10,6 +10,7 @@ const PALETTES: Record<CharacterAppearance, Palette> = {
   researcher: { skin: 0xf0c59b, hair: 0xd9e9f7, shirt: 0xf4f5ea, trim: 0x91b7d1, pants: 0x33415c },
   villager: { skin: 0xe7b987, hair: 0x6e4a2a, shirt: 0xd5a15d, trim: 0x9b7041, pants: 0x4d4a5b },
   fisher: { skin: 0xc98f68, hair: 0x4e3324, shirt: 0x5a8d62, trim: 0x365d43, pants: 0x2e3c37 },
+  scout: { skin: 0xd7aa7d, hair: 0x304c48, shirt: 0x607f5b, trim: 0xa8cc72, pants: 0x293b36 },
 };
 
 /** Renderer-local procedural character. It intentionally shares the palette and
@@ -64,6 +65,8 @@ export class CharacterView {
     if (this.behavior === 'study-tide') this.arm.rotation = Math.sin(this.phase * 1.4) * 0.22 - 0.28;
     else if (this.behavior === 'sort-nets') this.arm.rotation = Math.sin(this.phase * 1.7) * 0.62;
     else if (this.behavior === 'look-out') this.arm.rotation = -0.32 + Math.sin(this.phase * 0.75) * 0.14;
+    else if (this.behavior === 'tend-lantern') this.arm.rotation = -0.14 + Math.sin(this.phase * 1.25) * 0.16;
+    else if (this.behavior === 'trace-stars') this.arm.rotation = -0.52 + Math.sin(this.phase * 1.1) * 0.26;
     else this.arm.rotation = 0;
     this.body.rotation = this.behavior === 'look-out' ? Math.sin(this.phase * 0.45) * 0.055 : 0;
     this.drawBehaviorFx();
@@ -85,6 +88,17 @@ export class CharacterView {
         .circle(30, -9, 5).stroke({ color: 0x2d3749, width: 3 })
         .moveTo(34, -10).lineTo(58, -16 + scan).stroke({ color: 0xffe29a, alpha: 0.58, width: 3 })
         .moveTo(34, -10).lineTo(58, -4 + scan).stroke({ color: 0xffe29a, alpha: 0.22, width: 1 });
+    } else if (this.behavior === 'tend-lantern') {
+      const pulse = (Math.sin(this.phase * 1.5) + 1) / 2;
+      this.behaviorFx.circle(22, -2, 10 + pulse * 5).fill({ color: 0xd7ee7b, alpha: 0.1 + pulse * 0.09 })
+        .circle(22, -2, 3 + pulse * 1.5).fill({ color: 0xeaffad, alpha: 0.82 })
+        .circle(10 + Math.sin(this.phase * 1.1) * 12, -14, 2).fill({ color: 0xb9f7d1, alpha: 0.72 })
+        .circle(29 + Math.cos(this.phase * 0.9) * 11, 9, 1.6).fill({ color: 0xb9f7d1, alpha: 0.58 });
+    } else if (this.behavior === 'trace-stars') {
+      const pulse = (Math.sin(this.phase * 1.1) + 1) / 2;
+      this.behaviorFx.circle(20, -8, 12 + pulse * 9).stroke({ color: 0xd7e5ff, alpha: 0.48, width: 1.5 })
+        .star(28, -20, 4, 4 + pulse * 3, 1.6).fill({ color: 0xeaf4ff, alpha: 0.78 })
+        .moveTo(9, -5).lineTo(28, -20).stroke({ color: 0xaec9ff, alpha: 0.54, width: 1.5 });
     } else if (this.behavior === 'sort-nets') {
       const swing = Math.sin(this.phase * 1.7) * 6;
       this.behaviorFx.ellipse(20, 8 + swing, 17, 12).stroke({ color: 0xf4dda0, alpha: 0.88, width: 3 })
@@ -113,5 +127,7 @@ export class CharacterView {
     if (this.behavior === 'study-tide') this.prop.rect(15, 3, 12, 8).fill({ color: 0xaad6df }).rect(17, 5, 8, 4).fill({ color: 0xeaf8f4 });
     if (this.behavior === 'sort-nets') this.prop.circle(18, 8, 8).stroke({ color: 0xd7c28f, alpha: 0.9, width: 2 }).moveTo(12, 2).lineTo(24, 14).stroke({ color: 0xd7c28f, alpha: 0.7, width: 1 });
     if (this.behavior === 'look-out') this.prop.moveTo(14, -3).lineTo(26, -7).stroke({ color: 0x6c4e31, width: 3 });
+    if (this.behavior === 'tend-lantern') this.prop.moveTo(15, -4).lineTo(22, -9).stroke({ color: 0x5c4a31, width: 2 }).rect(19, -13, 7, 9).fill({ color: 0x9aa65c }).circle(22.5, -8.5, 2.4).fill({ color: 0xeaffad });
+    if (this.behavior === 'trace-stars') this.prop.moveTo(13, -3).lineTo(28, -18).stroke({ color: 0x6d829d, width: 2 }).circle(30, -20, 4).stroke({ color: 0xd7e5ff, width: 1.5 });
   }
 }

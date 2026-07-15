@@ -23,15 +23,19 @@
     "assets:download": "node scripts/download-sprites.mjs",
     "postinstall": "node scripts/check-env.mjs || true",
     "balance": "npx esbuild scripts/balance-report.ts --bundle --platform=node --format=esm --outfile=.balance-report.mjs --log-level=warning && node .balance-report.mjs && node -e \"require('fs').rmSync('.balance-report.mjs', { force: true })\"",
-    "tactics": "npx esbuild scripts/tactics-report.ts --bundle --platform=node --format=esm --outfile=.tactics-report.mjs --log-level=warning && node .tactics-report.mjs && node -e \"require('fs').rmSync('.tactics-report.mjs', { force: true })\""
+    "tactics": "npx esbuild scripts/tactics-report.ts --bundle --platform=node --format=esm --outfile=.tactics-report.mjs --log-level=warning && node .tactics-report.mjs && node -e \"require('fs').rmSync('.tactics-report.mjs', { force: true })\"",
+    "visuals:report": "npx esbuild scripts/visual-report.ts --bundle --platform=node --format=esm --outfile=.visual-report.mjs --log-level=warning && node .visual-report.mjs && node -e \"require('fs').rmSync('.visual-report.mjs', { force: true })\"",
+    "visuals:browser": "npx esbuild scripts/visual-browser-report.ts --bundle --platform=node --format=esm --packages=external --outfile=.visual-browser-report.mjs --log-level=warning && node .visual-browser-report.mjs && node -e \"require('fs').rmSync('.visual-browser-report.mjs', { force: true })\"",
+    "visuals:playable": "npx esbuild scripts/playable-renderer-observation.ts --bundle --platform=node --format=esm --packages=external --outfile=.playable-renderer-observation.mjs --log-level=warning && node .playable-renderer-observation.mjs && node -e \"require('fs').rmSync('.playable-renderer-observation.mjs', { force: true })\""
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241101.0",
     "@types/node": "^22.9.0",
+    "@vitejs/plugin-vue": "^5.1.4",
     "concurrently": "^9.1.0",
+    "playwright-core": "^1.61.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
-    "@vitejs/plugin-vue": "^5.1.4",
     "vue-tsc": "^2.1.10",
     "wrangler": "^3.86.0"
   },

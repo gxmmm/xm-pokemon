@@ -25,6 +25,9 @@ export const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+  const visualRegressionMode = to.query['visual-regression'] === '1'
+    && (to.name === 'world-stage-sandbox' || to.name === 'battle-stage-sandbox');
+  if (visualRegressionMode) return true;
   const auth = useAuthStore();
   if (!auth.ready) await auth.restore();
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { name: 'login' };

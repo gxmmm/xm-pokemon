@@ -1,0 +1,427 @@
+{
+  "version": 1,
+  "viewport": "1280x800",
+  "browser": "Chrome + SwiftShader",
+  "entries": [
+    {
+      "mapId": "pallet",
+      "quality": "cinematic",
+      "file": "pallet-cinematic.png",
+      "sha256": "d2f7d6bffcf1746a90eeac7f60f416c475a05465b0bf98c662c843705f5a74d4",
+      "diagnostics": {
+        "sceneId": "mist-bay-town",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 30,
+        "entityCount": 4,
+        "staticChildCount": 38,
+        "totalChildCount": 43,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 9,
+        "drawCallsSinceLastSample": 9,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "pallet",
+      "quality": "standard",
+      "file": "pallet-standard.png",
+      "sha256": "645bcc727b87c47c8645c8225978a842fa831b9014ae9012e12d189743668fab",
+      "diagnostics": {
+        "sceneId": "mist-bay-town",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 17,
+        "entityCount": 4,
+        "staticChildCount": 25,
+        "totalChildCount": 30,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 21,
+        "drawCallsSinceLastSample": 21,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "pallet",
+      "quality": "compatibility",
+      "file": "pallet-compatibility.png",
+      "sha256": "fe3187c64aaa2bad16db9c3b3392baed9afcfc9681c1553c0e87174b8709a729",
+      "diagnostics": {
+        "sceneId": "mist-bay-town",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 7,
+        "entityCount": 4,
+        "staticChildCount": 15,
+        "totalChildCount": 20,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 15,
+        "drawCallsSinceLastSample": 15,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route1",
+      "quality": "cinematic",
+      "file": "route1-cinematic.png",
+      "sha256": "78fc79472e486045bdad0bba7496199200abbc756563c5145c49bd983f07954e",
+      "diagnostics": {
+        "sceneId": "lumen-trail",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 44,
+        "entityCount": 3,
+        "staticChildCount": 61,
+        "totalChildCount": 65,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 42,
+        "drawCallsSinceLastSample": 42,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route1",
+      "quality": "standard",
+      "file": "route1-standard.png",
+      "sha256": "fec61131a865786c9a8d8a387496ab348c647bf66f9d09ff907293c3606089c3",
+      "diagnostics": {
+        "sceneId": "lumen-trail",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 25,
+        "entityCount": 3,
+        "staticChildCount": 42,
+        "totalChildCount": 46,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 42,
+        "drawCallsSinceLastSample": 42,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route1",
+      "quality": "compatibility",
+      "file": "route1-compatibility.png",
+      "sha256": "53be2729173704b833b11a81b9ea2545ca8f22226ddb5d82118703305e6e6898",
+      "diagnostics": {
+        "sceneId": "lumen-trail",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 10,
+        "entityCount": 3,
+        "staticChildCount": 27,
+        "totalChildCount": 31,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 56,
+        "drawCallsSinceLastSample": 56,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "viridian-forest",
+      "quality": "cinematic",
+      "file": "viridian-forest-cinematic.png",
+      "sha256": "2a2aed71312b0adc84f2aef49489751a3fe79eaed7b9c1096121fe1fa72df108",
+      "diagnostics": {
+        "sceneId": "mistwood-trial",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 49,
+        "entityCount": 6,
+        "staticChildCount": 67,
+        "totalChildCount": 74,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 51,
+        "drawCallsSinceLastSample": 51,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "viridian-forest",
+      "quality": "standard",
+      "file": "viridian-forest-standard.png",
+      "sha256": "65315255959a33454babcecd48aee6be35315b17bb715111b2e2c41b6b04d5d2",
+      "diagnostics": {
+        "sceneId": "mistwood-trial",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 28,
+        "entityCount": 6,
+        "staticChildCount": 46,
+        "totalChildCount": 53,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 85,
+        "drawCallsSinceLastSample": 85,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "viridian-forest",
+      "quality": "compatibility",
+      "file": "viridian-forest-compatibility.png",
+      "sha256": "4d43f5b98ead4741731355355321ff1576b45d196f188607f11e5e8a231bb7ae",
+      "diagnostics": {
+        "sceneId": "mistwood-trial",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 11,
+        "entityCount": 6,
+        "staticChildCount": 29,
+        "totalChildCount": 36,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 68,
+        "drawCallsSinceLastSample": 68,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route3",
+      "quality": "cinematic",
+      "file": "route3-cinematic.png",
+      "sha256": "de24a153647c2c85e07e899beacb1eb4f03533faf1940e87b05faa959a24434d",
+      "diagnostics": {
+        "sceneId": "starfall-ridge",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 30,
+        "entityCount": 5,
+        "staticChildCount": 47,
+        "totalChildCount": 53,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 42,
+        "drawCallsSinceLastSample": 42,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route3",
+      "quality": "standard",
+      "file": "route3-standard.png",
+      "sha256": "b0195663923c21e4441162a44c7a89ea59f7c8c19e521123e04cc2f694229c4e",
+      "diagnostics": {
+        "sceneId": "starfall-ridge",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 17,
+        "entityCount": 5,
+        "staticChildCount": 34,
+        "totalChildCount": 40,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 21,
+        "drawCallsSinceLastSample": 21,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "route3",
+      "quality": "compatibility",
+      "file": "route3-compatibility.png",
+      "sha256": "13a1a5ca4694db900ec9026847b9a3c2bae2e3ef86b892b9c7b522948611a9d4",
+      "diagnostics": {
+        "sceneId": "starfall-ridge",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 7,
+        "entityCount": 5,
+        "staticChildCount": 24,
+        "totalChildCount": 30,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 21,
+        "drawCallsSinceLastSample": 21,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "mt-moon",
+      "quality": "cinematic",
+      "file": "mt-moon-cinematic.png",
+      "sha256": "05edb9bb81e3ce47955fdaca464e446094146bf0608fa991f4dbdd367ee20594",
+      "diagnostics": {
+        "sceneId": "starfall-observatory",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 41,
+        "entityCount": 3,
+        "staticChildCount": 53,
+        "totalChildCount": 57,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "mt-moon",
+      "quality": "standard",
+      "file": "mt-moon-standard.png",
+      "sha256": "cf9fae8942547f354b2c2674d0cb126df7f85ab878305f57911a42381118ce97",
+      "diagnostics": {
+        "sceneId": "starfall-observatory",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 23,
+        "entityCount": 3,
+        "staticChildCount": 35,
+        "totalChildCount": 39,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "mt-moon",
+      "quality": "compatibility",
+      "file": "mt-moon-compatibility.png",
+      "sha256": "580c3ccba73940a4ef30f8d28b1b9b7fdb6749297b1fe8024c168c34e02a83dd",
+      "diagnostics": {
+        "sceneId": "starfall-observatory",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 10,
+        "entityCount": 3,
+        "staticChildCount": 22,
+        "totalChildCount": 26,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "dragon-den",
+      "quality": "cinematic",
+      "file": "dragon-den-cinematic.png",
+      "sha256": "aa5615c0abad57a5a49d6ac8e94743c0a09001a9cbc7d15f2467646845f0c4c2",
+      "diagnostics": {
+        "sceneId": "tide-dragon-den",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 39,
+        "entityCount": 4,
+        "staticChildCount": 49,
+        "totalChildCount": 54,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 30,
+        "drawCallsSinceLastSample": 30,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "dragon-den",
+      "quality": "standard",
+      "file": "dragon-den-standard.png",
+      "sha256": "6cc30c4328e5f65fd044ed58c1e2b5c6a911ead2ecc64b4864c048ac13116fd6",
+      "diagnostics": {
+        "sceneId": "tide-dragon-den",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 22,
+        "entityCount": 4,
+        "staticChildCount": 32,
+        "totalChildCount": 37,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 30,
+        "drawCallsSinceLastSample": 30,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "dragon-den",
+      "quality": "compatibility",
+      "file": "dragon-den-compatibility.png",
+      "sha256": "04b8857c5e8543e3b34e02b3fbd89870bceef44ff76e7023086748ce132f9834",
+      "diagnostics": {
+        "sceneId": "tide-dragon-den",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 9,
+        "entityCount": 4,
+        "staticChildCount": 19,
+        "totalChildCount": 24,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 30,
+        "drawCallsSinceLastSample": 30,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "deep-space",
+      "quality": "cinematic",
+      "file": "deep-space-cinematic.png",
+      "sha256": "a4686026257bad65ca6d72ee4edd9c50a70afab2bec04a2219989e95e7ade48c",
+      "diagnostics": {
+        "sceneId": "deep-space-ruins",
+        "quality": "cinematic",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 47,
+        "entityCount": 7,
+        "staticChildCount": 58,
+        "totalChildCount": 66,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 36,
+        "drawCallsSinceLastSample": 36,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "deep-space",
+      "quality": "standard",
+      "file": "deep-space-standard.png",
+      "sha256": "460ffa534a928167ebe3960fe3d96033a6affbcd097471bf69f982f22d1bc276",
+      "diagnostics": {
+        "sceneId": "deep-space-ruins",
+        "quality": "standard",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 27,
+        "entityCount": 7,
+        "staticChildCount": 38,
+        "totalChildCount": 46,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 27,
+        "drawCallsSinceLastSample": 27,
+        "motionEnabled": false
+      }
+    },
+    {
+      "mapId": "deep-space",
+      "quality": "compatibility",
+      "file": "deep-space-compatibility.png",
+      "sha256": "46c9fdbc2827f9456c74346e581865e18c116db6ca132d571aeef7b3eb421e2e",
+      "diagnostics": {
+        "sceneId": "deep-space-ruins",
+        "quality": "compatibility",
+        "preloadKeyCount": 1,
+        "ambientParticleCount": 11,
+        "entityCount": 7,
+        "staticChildCount": 22,
+        "totalChildCount": 30,
+        "canvasCount": 1,
+        "canvasPixels": 649904,
+        "drawCallTotal": 36,
+        "drawCallsSinceLastSample": 36,
+        "motionEnabled": false
+      }
+    }
+  ]
+}

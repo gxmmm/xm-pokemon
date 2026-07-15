@@ -1,5 +1,6 @@
 import type { BattleCue } from '@pokemon-online/renderer';
 import type { TypeName } from '@pokemon-online/shared';
+import type { SkillRecipeVariant } from '@pokemon-online/config';
 
 export type BattleStagePrimitive = 'projectile' | 'impact' | 'beam' | 'burst' | 'ring' | 'environment';
 
@@ -10,6 +11,8 @@ export interface BattleStageVfxPlan {
   actorId?: string;
   targetIds: readonly string[];
   reaction?: string;
+  variant?: SkillRecipeVariant;
+  particleBudget?: number;
 }
 
 /** Pure cue-to-primitive policy. The Pixi implementation only draws this plan;
@@ -27,6 +30,8 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     intensity: Math.max(0.15, Math.min(1, cue.intensity)),
     actorId: cue.anchors.actorId,
     targetIds,
+    variant: cue.recipe.variant as SkillRecipeVariant | undefined,
+    particleBudget: cue.recipe.particleBudget,
   };
   if (delivery === 'projectile') return [{ ...base, primitive: 'projectile' }];
   if (delivery === 'beam') return [{ ...base, primitive: 'beam' }];

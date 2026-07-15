@@ -10,7 +10,8 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "@pokemon-online/renderer": "*"
+    "@pokemon-online/renderer": "*",
+    "@pokemon-online/config": "*"
   },
   "peerDependencies": {
     "pixi.js": "^8.0.0"

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS, isGpuWorldMapId } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
 import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
@@ -12,16 +12,21 @@ import TypeBadge from '../components/TypeBadge.vue';
 import BattleCanvas from '../components/BattleCanvas.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { Biome } from '../battle/BattleField.ts';
-import { selectQualityProfile, type QualityProfile } from '@pokemon-online/renderer';
+import type { QualityProfile } from '@pokemon-online/renderer';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { consumeBattleVisualTransition, requestWorldReturnVisualTransition } from '../game/SceneVisualTransition.ts';
+import { visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
+import { hasRendererObservationWorldScene } from '../visuals/runtime-observation.ts';
 import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
 const router = useRouter();
 const enteredFromGpuWorld = consumeBattleVisualTransition();
+function canBridgeGpuWorld(mapId: string): boolean {
+  return isGpuWorldMapId(mapId) || hasRendererObservationWorldScene(mapId);
+}
 
 const speed = ref(1);
 const running = ref(true);
@@ -34,26 +39,24 @@ const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
 type BattleRendererMode = 'canvas' | 'pixi';
 // Canvas remains the default compatibility renderer until the full Stage-3
 // vertical slice is accepted. GPU mode is a user-controlled parallel path.
-const rendererMode = ref<BattleRendererMode>(enteredFromGpuWorld?.mapId === 'pallet' ? 'pixi' : 'canvas');
-const pixiQuality = ref<QualityProfile>(enteredFromGpuWorld?.quality ?? 'standard');
-const pixiStatus = ref(enteredFromGpuWorld ? 'GPU harbor-to-battle transition' : 'Canvas compatibility renderer');
+const rendererMode = ref<BattleRendererMode>(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'pixi' : 'canvas');
+const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
+const pixiStatus = ref(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : 'Canvas compatibility renderer');
 const returningToWorld = ref(false);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
-function browserRendererQuality(): QualityProfile {
-  const probe = document.createElement('canvas');
-  const webgl = !!probe.getContext('webgl');
-  const webgl2 = !!probe.getContext('webgl2');
-  return selectQualityProfile({ webgl, webgl2, devicePixelRatio: window.devicePixelRatio }).quality;
-}
+watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
+  pixiQuality.value = quality;
+  if (rendererMode.value === 'pixi') pixiStatus.value = `GPU ${quality} renderer`;
+});
 function toggleRenderer(): void {
   if (rendererMode.value === 'pixi') {
     rendererMode.value = 'canvas';
     pixiStatus.value = 'Canvas compatibility renderer';
     return;
   }
-  pixiQuality.value = browserRendererQuality();
+  pixiQuality.value = visualRuntimeCapabilities.value.quality;
   rendererMode.value = 'pixi';
   pixiStatus.value = '正在初始化 GPU renderer…';
 }
@@ -344,9 +347,9 @@ function releaseAll(): void {
 async function returnToWorld(): Promise<void> {
   if (returningToWorld.value) return;
   returningToWorld.value = true;
-  if (rendererMode.value === 'pixi' && battle.mapId === 'pallet') {
+  if (rendererMode.value === 'pixi' && battle.mapId && canBridgeGpuWorld(battle.mapId)) {
     await pixiRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
-    requestWorldReturnVisualTransition({ mapId: 'pallet', quality: pixiQuality.value });
+    requestWorldReturnVisualTransition({ mapId: battle.mapId, quality: pixiQuality.value });
   }
   battle.clear();
   await router.replace({ name: 'world' });
@@ -420,7 +423,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
         <BattleCanvas v-if="rendererMode === 'canvas'" ref="canvasRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" @impact="onCanvasImpact" />
-        <PixiBattleViewport v-else ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :intro-transition="enteredFromGpuWorld?.mapId === 'pallet'" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport v-else ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
         <div class="arena-controls">

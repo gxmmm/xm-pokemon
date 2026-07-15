@@ -1,19 +1,35 @@
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
+import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { BIOME_VISUALS, SKILL_VISUAL_RECIPES, WORLD_SCENE_BY_MAP_ID } from '@pokemon-online/config';
+import { BATTLE_ENVIRONMENTS, BIOME_VISUALS, SKILL_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
-import { selectQualityProfile } from '@pokemon-online/renderer';
+import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
 import { planBattleCue } from '@pokemon-online/renderer-pixi';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
+}
+
+// Long-run renderer observation stays outside rules: route handoffs retain
+// only visual map/quality DTOs, never counters, heap data, or save facts.
+{
+  const observation = { stage: 'world' as const, heapUsedBytes: 1024, diagnostics: { canvasCount: 1, totalChildCount: 12, drawCallTotal: 7 } };
+  assert(observation.stage === 'world' && observation.heapUsedBytes === 1024 && observation.diagnostics.canvasCount === 1 && observation.diagnostics.drawCallTotal === 7 && Object.keys(observation).length === 3, 'renderer observation samples remain presentation-only');
+  console.log('✓ Stage 8 playable renderer observation contract');
+}
+
+// Stage 8 visual preferences are renderer-neutral and deliberately cannot
+// carry player/save/simulation data across the Vue-to-renderer boundary.
+{
+  const settings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, qualityPreference: 'standard' as const, reduceFlicker: true, cameraIntensity: 'reduced' as const };
+  assert(settings.qualityPreference === 'standard' && settings.reduceFlicker && settings.cameraIntensity === 'reduced' && Object.keys(settings).length === 3, 'visual runtime preferences remain presentation-only');
+  console.log('✓ Stage 8 presentation-only visual settings contract');
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
@@ -76,6 +92,9 @@ function assert(cond: boolean, msg: string): void {
   assert(selectQualityProfile({ webgl: false }).quality === 'compatibility', 'renderer quality falls back without WebGL');
   assert(selectQualityProfile({ webgl: true, webgl2: false }).quality === 'standard', 'renderer quality selects standard WebGL');
   assert(selectQualityProfile({ webgl: true, webgl2: true }).quality === 'cinematic', 'renderer quality selects cinematic WebGL2');
+  assert(selectQualityProfile({ webgl: true, webgl2: true, devicePixelRatio: 3 }).reason === 'high-device-pixel-ratio', 'renderer quality protects high-DPR devices in auto mode');
+  assert(selectQualityProfile({ webgl: true, webgl2: true, preferredQuality: 'standard' }).quality === 'standard', 'renderer quality honors manual standard preference');
+  assert(selectQualityProfile({ webgl: true, webgl2: true, preferredQuality: 'compatibility' }).quality === 'compatibility', 'renderer quality honors manual compatibility preference');
   console.log('✓ renderer quality policy');
 }
 
@@ -112,6 +131,79 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ White Night repeatable sparring contract');
 }
 
+// Stage 7 adds a sandbox-first strong-landmark scene pack. It must remain
+// outside the formal GPU WorldView gate until its own visual acceptance pass.
+{
+  const observatory = WORLD_SCENE_BY_MAP_ID['mt-moon'];
+  const observatoryLandmarks = observatory?.landmarks ?? [];
+  assert(observatory?.biome === 'moon-cavern' && observatory?.ambience.preset === 'starlight', 'Starfall Observatory scene config has moon-cavern starlight ambience');
+  assert(observatoryLandmarks.some((landmark) => landmark.kind === 'observatory-dome') && observatoryLandmarks.some((landmark) => landmark.kind === 'meteor-spire') && observatoryLandmarks.some((landmark) => landmark.kind === 'star-chart'), 'Starfall Observatory config has strong landmark vocabulary');
+  const domeRim = observatoryLandmarks.find((landmark) => landmark.id === 'dome-upper-rim' && landmark.depth === 'occlusion');
+  assert(!!domeRim && domeRim.x <= 7.7 && domeRim.x + (domeRim.width ?? 1) >= 7.7 && domeRim.y <= 9.7 && domeRim.y + (domeRim.height ?? 1) >= 9.7, 'Starfall Observatory dome occlusion covers sandbox player route');
+  assert(observatory?.characters?.some((character) => character.id === 'sky-cartographer' && character.behavior === 'trace-stars'), 'Starfall Observatory reserves cartographer star-tracing behavior');
+  assert(isGpuWorldMapId('mt-moon'), 'Starfall Observatory is approved for controlled GPU WorldView');
+  console.log('✓ Starfall Observatory WorldSceneSpec sandbox contract');
+}
+
+// Tide Dragon Den passed sandbox acceptance and is now approved for the
+// existing config-owned GPU WorldView bridge. The scene pack remains decorative
+// and must not become a second source for collision, encounter, warp or story facts.
+{
+  const dragonDen = WORLD_SCENE_BY_MAP_ID['dragon-den'];
+  const denLandmarks = dragonDen?.landmarks ?? [];
+  assert(dragonDen?.biome === 'dragon-grotto' && dragonDen?.ambience.preset === 'rune', 'Tide Dragon Den scene config has dragon-grotto rune ambience');
+  assert(denLandmarks.some((landmark) => landmark.kind === 'tide-cavern-wall') && denLandmarks.some((landmark) => landmark.kind === 'crystal-tide-pool') && denLandmarks.some((landmark) => landmark.kind === 'anchor-dais'), 'Tide Dragon Den config has reusable tide-cavern landmark vocabulary');
+  const caveVeil = denLandmarks.find((landmark) => landmark.id === 'south-brine-veil' && landmark.depth === 'foreground');
+  assert(!!caveVeil && caveVeil.x <= 7.8 && caveVeil.x + (caveVeil.width ?? 1) >= 7.8 && caveVeil.y <= 10.7 && caveVeil.y + (caveVeil.height ?? 1) >= 10.7, 'Tide Dragon Den foreground veil covers sandbox player route');
+  const denStoryObjectIds = STORY_OBJECTS.filter((object) => object.mapId === 'dragon-den').map((object) => object.id).sort();
+  const denVisualObjectIds = dragonDen?.objectVisuals?.map((object) => object.id).sort() ?? [];
+  assert(JSON.stringify(denVisualObjectIds) === JSON.stringify(denStoryObjectIds), 'Tide Dragon Den object visual recipes map exactly the existing story object identifiers');
+  assert(dragonDen?.characters?.some((character) => character.id === 'reef-keeper' && character.appearance === 'scout'), 'Tide Dragon Den reserves Reef Keeper renderer character styling');
+  assert(isGpuWorldMapId('dragon-den') && GPU_WORLD_MAP_IDS.includes('dragon-den'), 'Tide Dragon Den is approved for the controlled GPU WorldView gate after sandbox acceptance');
+  console.log('✓ Tide Dragon Den WorldSceneSpec sandbox contract');
+}
+
+// Deep-space passed sandbox acceptance and is now approved for the existing
+// config-owned GPU WorldView bridge. The scene pack remains decorative only and
+// must not become a second source for collision, encounter, warp or story facts.
+{
+  const deepSpace = WORLD_SCENE_BY_MAP_ID['deep-space'];
+  const deepLandmarks = deepSpace?.landmarks ?? [];
+  assert(deepSpace?.biome === 'deep-ruin' && deepSpace?.ambience.preset === 'rune', 'Deep-space scene config has deep-ruin rune ambience');
+  assert(deepLandmarks.some((landmark) => landmark.kind === 'gravity-platform') && deepLandmarks.some((landmark) => landmark.kind === 'rift-arch') && deepLandmarks.some((landmark) => landmark.kind === 'void-debris'), 'Deep-space config has reusable anomaly-ruin landmark vocabulary');
+  const nearShelf = deepLandmarks.find((landmark) => landmark.id === 'near-floating-shelf' && landmark.depth === 'occlusion');
+  assert(!!nearShelf && nearShelf.x <= 7.8 && nearShelf.x + (nearShelf.width ?? 1) >= 7.8 && nearShelf.y <= 10.8 && nearShelf.y + (nearShelf.height ?? 1) >= 10.8, 'Deep-space occlusion covers sandbox player route');
+  const deepStoryObjectIds = STORY_OBJECTS.filter((object) => object.mapId === 'deep-space').map((object) => object.id).sort();
+  const deepVisualObjectIds = deepSpace?.objectVisuals?.map((object) => object.id).sort() ?? [];
+  assert(JSON.stringify(deepVisualObjectIds) === JSON.stringify(deepStoryObjectIds), 'Deep-space object visual recipes map exactly the existing story object identifiers');
+  assert(isGpuWorldMapId('deep-space') && GPU_WORLD_MAP_IDS.includes('deep-space'), 'Deep-space is approved for the controlled GPU WorldView gate after sandbox acceptance');
+  console.log('✓ Deep-space WorldSceneSpec sandbox contract');
+}
+
+// Stage 8 scene-pack stability: each approved map stays under a config-owned
+// budget, keeps its preload boundary local, and matches its reviewed baseline.
+{
+  const worldBudgetReport = validateWorldSceneBudgets();
+  assert(worldBudgetReport.duplicateSceneIds.length === 0 && worldBudgetReport.duplicateMapIds.length === 0 && worldBudgetReport.missingGpuSceneMapIds.length === 0 && worldBudgetReport.unknownPreloadKeys.length === 0 && worldBudgetReport.overBudgetSceneIds.length === 0 && worldBudgetReport.mismatchedBaselineMapIds.length === 0, 'world scene budgets and visual regression baselines validate');
+  for (const mapId of GPU_WORLD_MAP_IDS) {
+    const scene = WORLD_SCENE_BY_MAP_ID[mapId]!;
+    const budget = worldSceneBudgetReport(scene);
+    assert(scene.resources.preloadKeys.join(',') === 'procedural-primitives' && budget.preloadKeyCount === 1, `${mapId} has scene-local procedural preload boundary`);
+    assert(WORLD_SCENE_VISUAL_BASELINES[mapId] === worldSceneFingerprintHash(scene), `${mapId} matches reviewed world visual baseline`);
+  }
+  console.log(`✓ Stage 8 world scene budgets and visual baselines: ${GPU_WORLD_MAP_IDS.length}`);
+}
+
+// Stage 6 keeps all playable skills on a config-owned visual recipe path and
+// gives each supported BattleStage biome a renderer-ready environment grammar.
+{
+  const recipeReport = validateSkillVisualRecipes();
+  assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0, 'skill visual recipe coverage and budget validation');
+  assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune', 'BattleStage biome environment grammar configured');
+  assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor', 'signature skills select config variants without renderer skill branches');
+  console.log('✓ Stage 6 visual recipe and battle biome contract');
+}
+
 // Route renderer handoffs are intentionally visual-only DTOs so a world/battle
 // transition cannot carry simulation, collision, or save state across routes.
 {
@@ -120,11 +212,11 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ GPU world-battle visual handoff contract');
 }
 
-// Formal GPU-world eligibility remains narrow during migration: only the
-// configured Mist Bay sample may enter the controlled WorldView renderer path.
+// Formal GPU-world eligibility is an explicit config-owned migration gate;
+// scene-pack existence alone must not enable the live WorldView GPU path.
 {
-  const gpuWorldMapIds = Object.keys(WORLD_SCENE_BY_MAP_ID).filter((mapId) => mapId === 'pallet');
-  assert(gpuWorldMapIds.length === 1 && gpuWorldMapIds[0] === 'pallet', 'controlled GPU world path is limited to Mist Bay');
+  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,viridian-forest,mt-moon,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, Mistwood Trial, Starfall Observatory, Deep-space Ruins, and Tide Dragon Den');
+  assert(GPU_WORLD_MAP_IDS.every((mapId) => !!WORLD_SCENE_BY_MAP_ID[mapId]), 'every controlled GPU world map has a scene pack');
   console.log('✓ controlled GPU world eligibility');
 }
 
@@ -140,6 +232,48 @@ function assert(cond: boolean, msg: string): void {
   assert(characters.filter((character) => character.behavior !== 'idle').length >= 3, 'Mist Bay scene config reserves three readable NPC behaviors');
   assert(characters.some((character) => character.id === 'professor-lan' && character.behavior === 'study-tide') && characters.some((character) => character.id === 'harbor-villager' && character.behavior === 'look-out') && characters.some((character) => character.id === 'dock-fisher' && character.behavior === 'sort-nets'), 'Mist Bay scene config defines representative NPC behaviors');
   console.log('✓ Mist Bay WorldSceneSpec landmark contract');
+}
+
+// Stage 5 keeps route1 as an independent forest scene pack. It exposes visual
+// layers only, so formal WorldView GPU eligibility remains limited to Mist Bay.
+{
+  const lumenTrail = WORLD_SCENE_BY_MAP_ID.route1;
+  assert(lumenTrail?.biome === 'lumen-forest' && lumenTrail.palette.accent === '#d7ee7b', 'Lumen Trail WorldSceneSpec has forest palette');
+  const routeLandmarks = lumenTrail?.landmarks ?? [];
+  assert(routeLandmarks.some((landmark) => landmark.kind === 'tree-wall') && routeLandmarks.filter((landmark) => landmark.kind === 'tree-cluster').length >= 3, 'Lumen Trail has layered non-tile forest structure');
+  assert(routeLandmarks.some((landmark) => landmark.kind === 'canopy' && landmark.depth === 'occlusion') && routeLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Lumen Trail has readable canopy occlusion and foreground fog');
+  assert(lumenTrail?.ambience.preset === 'pollen' && (lumenTrail.ambience.density ?? 0) >= 0.6, 'Lumen Trail config reserves firefly pollen ambience');
+  assert(lumenTrail?.characters?.some((character) => character.id === 'lantern-scout' && character.behavior === 'tend-lantern'), 'Lumen Trail config reserves Lantern Scout environmental behavior');
+  console.log('✓ Lumen Trail WorldSceneSpec forest contract');
+}
+
+// Stage 9.1-draft keeps Starfall Ridge sandbox-first. The route's ancient-road
+// collision, grass encounters, warp and ordered story stars remain authoritative
+// map/story inputs; this scene pack must not widen the formal GPU migration gate.
+{
+  const ridge = WORLD_SCENE_BY_MAP_ID.route3;
+  assert(ridge?.biome === 'sunlit-route' && ridge.palette.accent === '#ffe485', 'Starfall Ridge WorldSceneSpec has a distinct highland palette');
+  const ridgeLandmarks = ridge?.landmarks ?? [];
+  assert(ridgeLandmarks.filter((landmark) => landmark.kind === 'ridge-wall').length === 3 && ridgeLandmarks.some((landmark) => landmark.kind === 'stone-terrace') && ridgeLandmarks.filter((landmark) => landmark.kind === 'starfall-scar').length === 3, 'Starfall Ridge uses reusable ridge, terrace, and meteor-scar landmark grammar');
+  assert(ridgeLandmarks.some((landmark) => landmark.kind === 'ridge-overhang' && landmark.depth === 'occlusion') && ridgeLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Starfall Ridge has readable ridge occlusion and foreground haze');
+  const ridgeObjects = ridge?.objectVisuals ?? [];
+  assert(ridgeObjects.map((object) => object.id).join(',') === 'star-1,star-2,star-3' && ridgeObjects.every((object) => object.kind === 'star-scar'), 'Starfall Ridge maps ordered story star DTO appearances without owning visibility or positions');
+  assert(!isGpuWorldMapId('route3') && WORLD_SCENE_VISUAL_BASELINES.route3 === worldSceneFingerprintHash(ridge!), 'Starfall Ridge remains sandbox-first with a reviewed config baseline candidate');
+  console.log('✓ Starfall Ridge sandbox-first WorldSceneSpec contract');
+}
+
+// Stage 9.1-c promotes the already accepted Mistwood trial through the explicit
+// config-owned GPU gate. Its story coordinates and visibility remain incoming DTOs,
+// not renderer-owned gameplay facts.
+{
+  const mistwood = WORLD_SCENE_BY_MAP_ID['viridian-forest'];
+  assert(mistwood?.biome === 'mist-forest' && mistwood.palette.accent === '#91e7d5', 'Mistwood trial WorldSceneSpec has a distinct mist forest palette');
+  const mistwoodLandmarks = mistwood?.landmarks ?? [];
+  assert(mistwoodLandmarks.some((landmark) => landmark.kind === 'spore-ring') && mistwoodLandmarks.some((landmark) => landmark.kind === 'canopy' && landmark.depth === 'occlusion') && mistwoodLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Mistwood trial uses generic spore, occlusion, and foreground grammar');
+  const mistwoodObjects = mistwood?.objectVisuals ?? [];
+  assert(mistwoodObjects.filter((object) => object.kind === 'signal-spore').length === 3 && mistwoodObjects.some((object) => object.id === 'anomaly-core' && object.kind === 'anomaly-core'), 'Mistwood trial maps story object DTO appearances without owning visibility or positions');
+  assert(isGpuWorldMapId('viridian-forest') && GPU_WORLD_MAP_IDS.includes('viridian-forest') && WORLD_SCENE_VISUAL_BASELINES['viridian-forest'] === worldSceneFingerprintHash(mistwood!), 'Mistwood trial is approved through the explicit GPU gate with its reviewed config baseline');
+  console.log('✓ Mistwood trial sandbox-first WorldSceneSpec contract');
 }
 
 // Stage 3 primitive selection remains a pure renderer policy: renderer input

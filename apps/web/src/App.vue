@@ -14,6 +14,13 @@ const route = useRoute();
 const showNav = computed(() => auth.isAuthenticated && game.hasSave);
 // battle manages its own controls + result modal; hide the global menu/back there
 const showChrome = computed(() => showNav.value && route.path !== '/battle');
+// Use the immutable initial URL rather than reactive router timing: this mode is
+// available only for standalone sandbox paths and cannot unlock playable routes.
+const visualRegressionMode = computed(() => {
+  const path = window.location.pathname;
+  return new URLSearchParams(window.location.search).get('visual-regression') === '1'
+    && (path.endsWith('/world-stage-sandbox') || path.endsWith('/battle-stage-sandbox'));
+});
 
 /** Scale the fixed 1280x800 design stage to fit the viewport (proportional,
  *  letterboxed). Bigger screen -> bigger game. Pure visual; battle/world logic
@@ -26,6 +33,9 @@ function updateScale(): void {
 onMounted(async () => {
   updateScale();
   window.addEventListener('resize', updateScale);
+  // Browser visual regression opens only standalone sandbox routes. It never
+  // bypasses authentication for the playable world or application pages.
+  if (visualRegressionMode.value) return;
   await auth.restore();
   if (auth.isAuthenticated) {
     await game.load();
@@ -38,7 +48,7 @@ onUnmounted(() => window.removeEventListener('resize', updateScale));
 
 // if save disappears (logout), go to login
 watch(() => auth.isAuthenticated, (v) => {
-  if (!v) router.replace({ name: 'login' });
+  if (!v && !visualRegressionMode.value) router.replace({ name: 'login' });
 });
 </script>
 

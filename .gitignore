@@ -9,3 +9,5 @@ _extracted
 .codex
 .vscode
 CLAUDE.md
+# Generated browser visual-regression artifacts; reviewed baseline PNGs stay versioned.
+doc/visual-baselines/artifacts/

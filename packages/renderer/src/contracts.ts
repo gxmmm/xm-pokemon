@@ -1,6 +1,22 @@
 import type { BattleCombatant, TypeName } from '@pokemon-online/shared';
 
 export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
+export type QualityPreference = 'auto' | QualityProfile;
+export type CameraIntensity = 'full' | 'reduced' | 'off';
+
+/** Low-frequency presentation preferences. They contain no game, save, or
+ * simulation state and cross the Vue-to-renderer bridge as a renderer-neutral DTO. */
+export interface VisualRuntimeSettings {
+  qualityPreference: QualityPreference;
+  reduceFlicker: boolean;
+  cameraIntensity: CameraIntensity;
+}
+
+export const DEFAULT_VISUAL_RUNTIME_SETTINGS: Readonly<VisualRuntimeSettings> = {
+  qualityPreference: 'auto',
+  reduceFlicker: false,
+  cameraIntensity: 'full',
+};
 export type AssetKey = string & { readonly __assetKey: unique symbol };
 
 export interface SceneTransitionRequest {
@@ -53,7 +69,7 @@ export interface BattleRenderSnapshot {
  * import a director implementation. Presentation is structurally compatible. */
 export type BattleCue =
   | { type: 'camera'; plan: { style: string; focusIds: readonly string[]; durationMs: number; zoom?: number; shake?: number } }
-  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string }; anchors: { actorId?: string; targetIds?: readonly string[] }; intensity: number }
+  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; particleBudget?: number }; anchors: { actorId?: string; targetIds?: readonly string[] }; intensity: number }
   | { type: 'animation'; subjectId: string; animation: string }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }

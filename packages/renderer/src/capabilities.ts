@@ -5,7 +5,7 @@ export interface RendererCapabilities {
   webgl2: boolean;
   devicePixelRatio: number;
   quality: QualityProfile;
-  reason?: 'webgl-unavailable' | 'webgl2-unavailable' | 'reduced-device-memory' | 'manual';
+  reason?: 'webgl-unavailable' | 'webgl2-unavailable' | 'reduced-device-memory' | 'high-device-pixel-ratio' | 'manual';
 }
 
 export interface CapabilityDetectionOptions {
@@ -27,8 +27,20 @@ export function selectQualityProfile(options: CapabilityDetectionOptions = {}): 
   if (options.preferredQuality === 'compatibility' || !webgl) {
     return { webgl, webgl2, devicePixelRatio, quality: 'compatibility', reason: options.preferredQuality === 'compatibility' ? 'manual' : 'webgl-unavailable' };
   }
-  if (options.preferredQuality === 'standard' || !webgl2 || (deviceMemoryGb !== undefined && deviceMemoryGb < 4)) {
-    return { webgl, webgl2, devicePixelRatio, quality: 'standard', reason: options.preferredQuality === 'standard' ? 'manual' : !webgl2 ? 'webgl2-unavailable' : 'reduced-device-memory' };
+  if (options.preferredQuality === 'standard' || !webgl2 || (deviceMemoryGb !== undefined && deviceMemoryGb < 4) || devicePixelRatio > 2.5) {
+    return {
+      webgl,
+      webgl2,
+      devicePixelRatio,
+      quality: 'standard',
+      reason: options.preferredQuality === 'standard'
+        ? 'manual'
+        : !webgl2
+          ? 'webgl2-unavailable'
+          : deviceMemoryGb !== undefined && deviceMemoryGb < 4
+            ? 'reduced-device-memory'
+            : 'high-device-pixel-ratio',
+    };
   }
   return { webgl, webgl2, devicePixelRatio, quality: 'cinematic', reason: options.preferredQuality === 'cinematic' ? 'manual' : undefined };
 }

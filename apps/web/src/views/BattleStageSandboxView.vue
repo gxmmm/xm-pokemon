@@ -9,6 +9,7 @@ const viewport = ref<HTMLElement | null>(null);
 const running = ref(false);
 const speed = ref(1);
 const requestedQuality = ref<QualityProfile>('cinematic');
+const biomeId = ref<'grass' | 'cave' | 'water' | 'dragon' | 'arena'>('grass');
 const status = ref('准备中');
 const simulationTime = ref(0);
 const stage = new BattleStage(requestedQuality.value);
@@ -32,10 +33,10 @@ function makeSimulation(): BattleSim {
 async function resetBattle(): Promise<void> {
   sim = makeSimulation();
   const presentation = bridge.reset(sim)!;
-  await stage.enterBattle({ biomeId: 'grass', combatants: presentation.combatants });
+  await stage.enterBattle({ biomeId: biomeId.value, combatants: presentation.combatants });
   stage.applyBattleSnapshot(presentation);
   simulationTime.value = 0;
-  status.value = '草地样板就绪：3v1 自动战斗，Pixi 仅消费 presentation snapshot 与 directed cues。';
+  status.value = `${biomeId.value} 环境样板就绪：3v1 自动战斗，Pixi 仅消费 presentation snapshot 与 directed cues。`;
 }
 
 function toggle(): void { running.value = !running.value; }
@@ -63,6 +64,7 @@ function frame(now: number): void {
 }
 
 watch(requestedQuality, setQuality);
+watch(biomeId, () => { void resetBattle(); });
 onMounted(async () => {
   if (!viewport.value) return;
   await stage.mount(viewport.value);
@@ -88,6 +90,7 @@ onUnmounted(() => {
       <button type="button" @click="toggle">{{ running ? '暂停' : '开始' }}</button>
       <button type="button" @click="resetBattle">重置 3v1</button>
       <label>速度 <select v-model.number="speed"><option :value="1">1x</option><option :value="2">2x</option><option :value="3">3x</option></select></label>
+      <label>环境 <select v-model="biomeId"><option value="grass">grass</option><option value="cave">cave</option><option value="water">water</option><option value="dragon">dragon</option><option value="arena">arena</option></select></label>
       <label>质量 <select v-model="requestedQuality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label>
       <span>模拟时间 {{ simulationTime.toFixed(1) }}s · {{ qualityLabel }}</span>
     </div>
@@ -95,8 +98,8 @@ onUnmounted(() => {
     <div ref="viewport" class="viewport" aria-label="Pixi BattleStage vertical slice"></div>
     <p class="status">{{ status }}</p>
     <ul>
-      <li>已实现：grass biome、CombatantView、camera rig、presentation-only hit-stop。</li>
-      <li>程序化 primitives：projectile/trail、impact、beam、burst、ring、环境 scorch/spark。</li>
+      <li>已实现：grass / cave / water / dragon / arena 配置化 biome、CombatantView、camera rig、presentation-only hit-stop。</li>
+      <li>程序化 primitives：projectile/trail、impact、beam、burst、ring，以及 config-gated scorch / frost / spark / splash / spore / debris / rune-pulse。</li>
       <li>现有 Canvas 主路径保持不变；这是下一步替换前的并行验证入口。</li>
     </ul>
   </section>

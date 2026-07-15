@@ -1,7 +1,7 @@
 # 视觉运行时与战斗演出底座重构计划
 
-> **状态：进行中（阶段 0 / 1 / 2 已完成；阶段 3、4 的雾湾镇 ↔ GPU 战斗垂直切片已人工验收；进入阶段 5 萤火林道）**  
-> **最后更新：2026-07-14**  
+> **状态：进行中（阶段 0 / 1 / 2 已完成；阶段 3 / 4 已人工验收；阶段 5 已完成；阶段 7 已完成星陨观测所、深空遗迹与潮洞的受控正式 GPU 接入）**
+> **最后更新：2026-07-15**
 > **适用范围：世界场景、城镇、人物 / NPC、地图表现、世界与战斗转场、战斗渲染与程序化技能演出。**
 
 本文件是后续新上下文开发时的**唯一重构导航文档**。开始任何相关任务前必须阅读：
@@ -562,17 +562,19 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 
 任务：
 
-- [ ] 建立森林 scene pack：树冠遮挡、根须、林间小径、草地、岩石、远景树墙。
-- [ ] 建立萤火、薄雾、色调、昼夜 / 黄昏（按现有系统能力）环境模块。
-- [ ] 把 encounter 区域以自然表达呈现，不改变 encounterFloor / 草丛等既有规则。
-- [ ] 验证玩家移动、NPC、对象、可交互物和镜头边界。
-- [ ] 复用 `BiomeVisualSpec` 进入对应战斗场，确保世界与战斗统一色彩语言。
+- [x] 建立森林 scene pack：树冠遮挡、根须、林间小径、草地、岩石、远景树墙。
+- [x] 建立萤火、薄雾、色调环境模块；当前项目昼夜状态继续由旧世界 UI 表达。
+- [x] 把 encounter 区域以自然表达呈现，不改变 encounterFloor / 草丛等既有规则。
+- [x] 验证玩家移动、NPC、对象、可交互物和镜头边界。
+- [x] 复用 `BiomeVisualSpec` 的 `lumen-forest → forest` 语义进入既有 grass battle 场，确保世界与战斗统一色彩语言。
+- [x] sandbox 人工验收后，将 `route1` 通过配置化 `GPU_WORLD_MAP_IDS` 受控接入正式 WorldView，并保持 Canvas fallback。
 
 验收：
 
-- [ ] 树木不再主要由重复单格 tile 表达。
-- [ ] 前景、遮挡、雾和小型环境粒子不会影响可读性和交互。
-- [ ] 场景与同 biome 战斗在色调、地面语义、环境反应上统一。
+- [x] 树木不再主要由重复单格 tile 表达。
+- [x] 前景、遮挡、雾和小型环境粒子不会影响可读性和交互。
+- [x] 场景与同 biome 战斗在色调、地面语义、环境反应上统一。
+- [x] `route1` 的正式 GPU eligibility 是显式 migration gate；`pallet` / `route1` 之外的地图继续 Canvas compatibility。
 
 ### 阶段 6：技能视觉配方体系与 battle biome 扩展
 
@@ -580,20 +582,20 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 
 任务：
 
-- [ ] 在 `packages/config` 创建 `skill-visuals.ts` 和 `battle-environments.ts`。
-- [ ] 按属性定义基础 visual grammar。
-- [ ] 按技能形态定义 delivery / impact archetype。
-- [ ] 为每个技能分配 recipe；普通技能优先复用 archetype，标志性技能允许 recipe plugin。
-- [ ] 逐步覆盖现有 141 个技能；不要求每个技能独有特效，但必须避免“同属性全都同一招式”。
-- [ ] 扩展 cave / water / dragon / arena 等 biome 的场景、地面反应与 ambience。
-- [ ] 添加配置校验与报告脚本：无 recipe 的技能、引用不存在 recipe 的技能、粒子预算过高的 recipe 必须被检测。
+- [x] 在 `packages/config` 创建 `skill-visuals.ts` 和 `battle-environments.ts`。
+- [x] 按属性定义基础 visual grammar。
+- [x] 按技能形态定义 delivery / impact archetype。
+- [x] 为每个技能分配 recipe；普通技能复用 archetype，标志性技能选择 renderer-neutral variant。
+- [x] 覆盖现有 141 个技能；同属性可通过 delivery / impact / tier / variant 区分。
+- [x] 扩展 grass / cave / water / dragon / arena biome 的场景、地面反应与 ambience。
+- [x] 添加配置校验与 `npm run visuals:report`：无 recipe、重复、无效 signature 引用、粒子预算超限均会失败。
 
 验收：
 
-- [ ] 全部可用技能都有视觉 recipe 或明确 fallback。
-- [ ] 所有 recipe 可在配置校验中通过。
-- [ ] 大范围技能不会因粒子 / shader 失控导致帧率崩溃。
-- [ ] 标志性技能的差异来自配置化组合 / plugin，而不是 renderer 内不断增长的硬编码 if 分支。
+- [x] 全部可用技能都有视觉 recipe 或明确 fallback。
+- [x] 所有 recipe 可在配置校验中通过。
+- [x] 大范围技能通过 `particleBudget` 与 cinematic / standard / compatibility cap 约束粒子数量。
+- [x] 标志性技能的差异来自配置化 variant，而不是 renderer 内不断增长的技能 ID 分支。
 
 ### 阶段 7：世界系统化迁移
 
@@ -609,16 +611,19 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 
 任务：
 
-- [ ] 每张地图先完成 Scene Pack，再接入 renderer；禁止边画边把专用逻辑塞入 renderer。
-- [ ] 每种新 NPC 外观 / 行为先抽成可复用 archetype。
-- [ ] 建立资源预算与预加载边界，避免一次加载全世界资产。
-- [ ] 为每张关键地图做截图 / 视觉回归基线（可在后续引入自动化）。
+- [x] 第一张阶段 7 地图（星陨观测所）完成 Scene Pack、sandbox、人工验收，并通过显式 GPU gate 受控接入正式 renderer。
+- [x] 新增可复用 `trace-stars` 角色行为与观测穹顶 / 陨石尖塔 / 星图 / 晶簇 / 裂隙雾 landmark grammar。
+- [x] `deep-space` 完成 sandbox-first Scene Pack 与可复用异常遗迹 landmark grammar；人工验收后已通过显式 GPU migration gate 受控接入。
+- [x] `dragon-den` 完成潮蚀洞窟 Scene Pack、通用 landmark / object grammar 与独立 sandbox；人工验收后已通过显式 GPU migration gate 受控接入。
+- [x] 建立 Scene Pack 资源预算与预加载边界：每图声明 landmark / container / particle / entity cap，且当前程序化 packs 仅加载本图 `procedural-primitives`。
+- [x] 为五张受控 GPU 地图建立确定性配置级视觉回归 baseline hash；后续可叠加浏览器截图自动化。
 
 验收：
 
-- [ ] 主线核心地图均使用新 WorldStage。
-- [ ] 旧 Canvas 世界 renderer 仅作为 compatibility / 未迁移地图 fallback。
-- [ ] 地图迁移未改变剧情、碰撞、遇敌、NPC 交互和存档兼容性。
+- [ ] 所有当前启用的可玩地图（含开发训练塔开关启用时的塔层）均具有 `WorldSceneSpec`、sandbox 和受控正式 GPU 验收记录。
+- [ ] 主线核心地图均使用新 WorldStage；剩余 `viridian-forest`、`route3`、`rock-tunnel`、`sea-route` 及按开关启用的训练塔地图必须逐张迁移，不允许用 `WorldCanvas.vue` 地图分支补齐。
+- [ ] 旧 Canvas 世界 renderer 仅在全量迁移完成前作为临时 fallback；其最终删除条件见“阶段 9”。
+- [x] 星陨观测所、深空遗迹与潮洞受控正式 GPU 接入未改变剧情、碰撞、遇敌、NPC 交互和存档兼容性；Canvas 仍为默认与失败 fallback。
 
 ### 阶段 8：稳定化、性能与旧实现处置
 
@@ -626,20 +631,138 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 
 任务：
 
-- [ ] 设备 capability detection、质量自动选择与设置页手动切换。
-- [ ] 性能预算：粒子上限、draw call / container 预算、纹理缓存、场景销毁、内存回收。
-- [ ] 可访问性与兼容：减少闪烁选项、镜头强度选项、兼容 renderer。
-- [ ] 断网 / 资源加载失败策略。
-- [ ] 检查世界 → 战斗 → 世界的资源释放与重复进入稳定性。
-- [ ] 决定旧 `WorldCanvas` / `BattleCanvas` 的最终命运：保留 compatibility、简化、或在满足覆盖条件后删除。
+- [x] 设备 capability detection、质量自动选择与设置页手动切换。
+- [x] 第一轮性能预算：粒子上限、静态 container / landmark / entity cap、scene-local preload ownership 与场景销毁边界。
+- [x] 浏览器截图 harness 的首轮运行时内存 / container 观测与重复进入回归：15 次 scene switch、三轮 World → battle sandbox → World、强制 GC heap delta < 32 MiB。
+- [x] 正式可玩路径的 draw call / 内存长期观测：本地真实注册 / 建档 / 剧情 / warp 后，三轮 GPU World → GPU Battle → GPU World，强制 GC heap delta < 32 MiB。
+- [x] 可访问性与兼容：减少闪烁选项、镜头强度选项、兼容 renderer。
+- [ ] 断网 / 资源加载失败策略：GPU stage 的重试、错误 UI、重新进入场景和资源失败诊断必须独立于旧 Canvas；不得把 Canvas 当作最终失败策略。
+- [x] 检查 sandbox World → battle → World 的资源释放与重复进入稳定性。
+- [x] 检查正式可玩 World → battle → World 的资源释放与重复进入稳定性：真实认证 / 建档 / 剧情 / warp 后三轮 GPU World → GPU Battle → GPU World，heap、draw-call、child 与单 canvas 观测稳定。
+- [ ] 完成阶段 9 的全量迁移和删除门槛后，删除旧 `WorldCanvas` / `BattleCanvas` 及其专用 adapter；在此之前禁止“半删除”造成行为双轨。
 - [ ] 更新 README、架构文档、开发指南和 smoke / test 文档。
 
 验收：
 
-- [ ] 长时间地图切换与重复战斗不出现明显内存增长。
-- [ ] 三档质量模式可运行且 UI / 规则表现一致。
+- [x] 浏览器回归执行三轮 World → battle sandbox → World、15 次 scene switch；每次仅一个 canvas，强制 GC 后 heap delta < 32 MiB。
+- [x] 在正式可玩路径完成长时间地图切换与重复战斗的人机观察：三轮认证 GPU World → GPU Battle → GPU World，canvas=1、renderer child / draw-call 采样稳定。
+- [x] 五张 Scene Pack × 三档质量的浏览器 PNG baseline 已生成并可重复比对；规则路径不参与截图。
 - [ ] 主线关键路径完整可玩。
 - [ ] 已文档化的 renderer contract、scene pack、skill recipe 有稳定维护说明。
+
+---
+
+### 阶段 9：全量 GPU 迁移与旧 Canvas 退役
+
+**目标：** 将自定义 `WorldCanvas.vue` / `BattleCanvas.vue` 路径从“临时兼容 fallback”收敛为**可删除的旧实现**。本阶段的完成不是把 GPU 按钮改成默认，而是让 GPU renderer 覆盖全部已发布规则路径、错误路径与质量档位后，删除旧 Canvas 代码和双轨 bridge。
+
+#### 9.0 先决决策（已确定）
+
+- **目标架构：** Vue 继续负责路由、HUD、菜单、对话和设置；世界与战斗实时画面统一由 `renderer-pixi` 承担。
+- **不保留自定义 Canvas fallback：** 删除后，`compatibility` 是 Pixi 的低质量档，不是 `WorldCanvas` / `BattleCanvas` 的别名。
+- **WebGL 不可用策略：** 显示明确的设备不支持 / 重试 UI，而不是悄悄切回旧 Canvas；这项策略必须在删除旧实现前验收。
+- **资源失败策略：** scene-local preload 或 Stage 初始化失败必须可诊断、可重试、可安全回到菜单 / 重进当前路由；不得重新依赖旧 Canvas。
+- **规则不变量：** engine、碰撞、warp、NPC 坐标、遭遇、剧情、战斗结算和存档仍由既有 runtime / store 负责；迁移只改变 renderer 与 bridge。
+
+#### 9.1 覆盖清单与迁移顺序
+
+先以 `MAPS` 的实际运行结果建立覆盖 manifest；不得手写一个可能遗漏条件开关地图的列表。覆盖对象至少包括：所有正常地图、`ILLUSION_TOWER_ENABLED=true` 时的所有训练塔层、PVE 野外 / 剧情战 / PVP 三类战斗路径，以及从每个获准 GPU 世界返回世界的路径。
+
+推荐单图闭环顺序：
+
+1. `viridian-forest`：迷雾森林 / 剧情物件模板；
+2. `route3`：高径 / 石路 / 星痕模板；
+3. `rock-tunnel`：低光洞窟、遮挡和 `encounterFloor` 模板；
+4. `sea-route`：潮位、水域、船只与水环境模板；
+5. 开发训练塔：五层共用**一个**按 `illusion-tower-*` map ID / floor index 参数化生成的 Scene Pack，不为单层新增 renderer `mapId` 分支；
+6. 复核所有既有 GPU 地图及隐藏 / 剧情 warp 回路。
+
+每张地图只能按以下顺序进入正式资格：
+
+```text
+WorldSceneSpec / 通用 landmark grammar
+  → sandbox DTO 预览与三质量人工验收
+  → config budget + fingerprint / visuals:report
+  → 浏览器截图 baseline
+  → 正式 WorldView 路径行为回归（移动、碰撞、warp、NPC、剧情、遭遇）
+  → 显式 GPU migration gate
+  → 认证 World → Battle → World 观测
+```
+
+在第六步前，**不得**仅因 scene pack 存在而扩大 `GPU_WORLD_MAP_IDS`；在阶段 9.4 前，也不得删除 Canvas。
+
+##### 9.1-a `viridian-forest` sandbox-first（2026-07-15）
+
+- [x] `viridian-forest` 已新增仅配置化 `WorldSceneSpec`：迷雾森林色板、树墙 / 林地 / 根环 / 孢子环 / 遮挡树冠 / 前景低雾、织羽 character DTO，以及潮光孢子 / 异相核 object DTO 外观。
+- [x] `WorldStage` 仅扩展通用 `spore-ring` landmark grammar 和 `signal-spore` / `anomaly-core` object grammar；renderer 不读取 Pinia 或 engine 内部状态，也不决定故事对象的坐标或可见性。
+- [x] `/world-stage-sandbox` 默认预览迷雾林境，并以既有 story 坐标 `(10, 9)`、`(3, 4)`、`(12, 7)`、`(4, 11)`、`(8, 5)` 作为 renderer DTO 样本；`visuals:browser` 已覆盖六张 sandbox Scene Pack × 三质量档。
+- [x] 人工验收已通过：迷雾层次、孢子与异相核可辨性、近景树冠遮挡及 cinematic / standard / compatibility 三档差异均获确认。
+- [x] `GPU_WORLD_MAP_IDS` 仍严格为 `pallet` / `route1` / `mt-moon` / `deep-space` / `dragon-den`；`viridian-forest` 未加入 gate，未改 `WorldCanvas.vue`，未删除 Canvas。
+
+##### 9.1-b `viridian-forest` 正式 WorldView 行为回归（2026-07-15）
+
+- [x] 仅在认证 `?renderer-observation=1&world-gpu-diagnostic=viridian-forest` 诊断会话内，Vue bridge 可将**当前就是** `viridian-forest` 的既有 `WorldEntityRenderSnapshot[]` 镜像到 WorldStage；这不是 `GPU_WORLD_MAP_IDS` 的成员资格、不会写入存档，也不进入普通 URL / 发布默认路径。
+- [x] 可玩观测经真实注册、开局、白夜战、萤火林道巡查员和真实 north warp 到达迷雾林境；验证森林 WorldStage sceneId、玩家 / NPC / object DTO、三枚孢子的顺序故事可见性、阻挡树格碰撞、草丛 encounter 语义、真实试炼战的 GPU World → GPU Battle → GPU World 返回，以及森林 south warp → 已批准地图路径。
+- [x] `renderer-pixi` 仍不读取 Pinia / engine；正式行为与对象状态由 WorldView / store / story 输入。常规用户仍只能通过既有五图 gate 开启 GPU，迷雾林境未出现玩家可见 GPU 开关。
+- [x] 人工验收通过：认证诊断路径中的真实移动、树格阻挡、孢子消失 / 织羽出现、试炼战返回与 south warp 均正常。
+- [x] 已确认诊断会话边界：URL 查询参数会在路由切换后消失，但同一浏览器标签页的 `sessionStorage` 保留 `renderer-observation` / `world-gpu-diagnostic` 上下文，以覆盖连续 World → Battle → World；这是诊断会话续航，不是 gate 扩大。新标签页 / 新浏览器会话，或清除该标签页 sessionStorage 后，未带显式参数进入迷雾林境仍须为 Canvas 且没有 GPU 切换按钮。
+- [x] 9.1-c（2026-07-15）：仅将已验收的 `viridian-forest` 加入显式 `GPU_WORLD_MAP_IDS` migration gate；认证 `visuals:playable` 不再传入 `world-gpu-diagnostic`，确认该图经正常 config gate 完成真实 World → Battle → World。Canvas、`WorldCanvas.vue`、engine、地图、故事与存档均未修改。
+
+##### 9.1-d `route3` sandbox-first（2026-07-15，已人工验收）
+
+- [x] `route3` 新增仅配置化 `starfall-ridge` `WorldSceneSpec`：高径色板、断崖岩壁 / 石阶古道 / 风化台地 / 坠星刻痕 / 岩檐遮挡 / 前景高空薄霭，以及陵导员与三枚坠星刻痕 DTO 外观。
+- [x] `WorldStage` 仅扩展 renderer-generic 的 `ridge-wall` / `stone-terrace` / `starfall-scar` / `ridge-overhang` landmark grammar 与 `star-scar` object DTO 外观；不读取 Pinia / engine，也不拥有星痕的故事可见性或位置。
+- [x] `/world-stage-sandbox` 默认预览星陨高径，并以既有 story 配置的洛岩 `(6, 8)`、三枚坠星刻痕 `(3, 4)` / `(12, 6)` / `(5, 11)` 作为纯 renderer 输入；浏览器矩阵已扩为七图 × 三档质量的 21 张候选 PNG。
+- [x] config fingerprint `0711a01b`、scene budget、smoke 与浏览器自动比对通过；cinematic / standard / compatibility 三档人工视觉验收已通过。
+- [x] 认证 `renderer-observation` 已使用受记录的 `world-gpu-diagnostic=route3` 走完真实 chapter-one 开放路径、`route3` DTO / 碰撞 / 星痕顺序 / 洛岩 / 野外战斗往返及 north warp；自动观测通过，等待人工正式行为验收。
+- [ ] `GPU_WORLD_MAP_IDS` 不含 `route3`；Canvas 继续保留。只有人工确认正式行为回归后，才可讨论显式 migration gate。
+
+#### 9.2 GPU 默认化（仍保留删除前的安全窗口）
+
+- 全部地图通过上节验收后，WorldView 改为 GPU 默认路径；BattleView 的 PVE、剧情战和 PVP 改为 GPU 默认路径。
+- 设置页保留质量、减少闪烁、镜头强度；移除玩家可见的 Canvas / GPU 模式切换按钮。
+- 自定义 Canvas 仍可在短暂的内部过渡版本保留，但只能通过明确、受记录的开发诊断开关使用；该开关不得进入发布默认路径，也不得成为资源失败回退。
+- 扩展 `visuals:browser`：基于 coverage manifest 覆盖全部已启用 WorldScene × 三质量档；扩展 `visuals:playable`：覆盖野外 PVE、剧情战、PVP 及至少一次跨 biome / warp 往返。
+
+#### 9.3 删除门槛（全部满足才可开始机械删除）
+
+- [ ] `MAPS` 中每张当前启用地图均有经过验收的 `WorldSceneSpec`；开关地图的覆盖由自动校验验证。
+- [ ] `GPU_WORLD_MAP_IDS` 不再作为“部分地图白名单”；改为由完整 coverage manifest / 全量配置校验支撑，且没有 Canvas 分支依赖它。
+- [ ] WorldView 的 GPU 路径已覆盖移动、碰撞、warp、NPC、故事物件、自然 encounterFloor、潮位、隐藏地图和训练塔开关；这些事实仍由 renderer 外部 DTO 输入。
+- [ ] BattleStage 已成为 PVE 野外、剧情战、PVP 的默认 renderer，覆盖 normal / skill / status / KO / capture / result / return；HUD 与规则 tick 保持 Vue / engine 原边界。
+- [ ] WebGL 不可用、Stage mount 失败、scene preload 失败、路由中断均有非 Canvas 的用户恢复策略和自动化 / 人工验收。
+- [ ] 全部地图 × `cinematic` / `standard` / `compatibility` 截图基线通过；正式认证路径至少三轮 World → Battle → World、跨地图 / 战斗类型观察通过，heap 增量 `< 32 MiB`、每 viewport 一个 canvas。
+- [ ] `npm run typecheck`、`npm run smoke`、`npm run visuals:report`、`npm run visuals:browser`、`npm run visuals:playable`、`npm run build:web`、Pixi esbuild bundle 与 `git diff --check` 全部通过。
+- [ ] README、迁移指南、handoff、smoke / report 说明已把“Canvas default/fallback”更新为历史信息或删除。
+
+#### 9.4 机械删除批次（单独提交、可审查、不可夹带玩法变更）
+
+删除前先通过静态引用清单确认真实写入集合。预期审计对象包括但不限于：
+
+- `apps/web/src/components/WorldCanvas.vue`；
+- `apps/web/src/components/BattleCanvas.vue`；
+- Canvas 专用 battle / world adapter、cue adapter、sprite / field helper；
+- WorldView / BattleView 中的 renderer mode、Canvas ref、Canvas fallback UI；
+- 仅服务于旧 Canvas 的测试、样式、文档与开发按钮。
+
+删除批次必须遵守：
+
+1. 只删除旧 renderer / adapter / UI 分支与死代码；不得顺带改 engine、剧情、地图或存档；
+2. 先用 TypeScript / 搜索验证不存在 `WorldCanvas`、`BattleCanvas`、`CanvasCueAdapter` 等旧路径残留；
+3. `compatibility` 继续传给 Pixi Stage，而不是重新创建 Canvas；
+4. 资源 / WebGL 失败 UI 不实例化旧 Canvas；
+5. 删除后重新生成全部视觉基线并完成正式认证 e2e 观测；
+6. 若任一删除门槛失败，回到 9.1–9.3 修复，不恢复“永久双轨”设计。
+
+#### 9.5 阶段 9 验收
+
+- [ ] 所有当前启用场景和三类战斗路径只通过 GPU renderer 呈现实时画面；
+- [ ] 项目中已不存在自定义 `WorldCanvas` / `BattleCanvas` 的运行时引用或隐藏 fallback；
+- [ ] `compatibility`、减少闪烁和镜头关闭均在 GPU renderer 内工作；
+- [ ] GPU 失败与不支持设备有可理解、可恢复的产品路径；
+- [ ] 规则、存档、地图和剧情 smoke 结果与迁移前一致；
+- [ ] 发布构建、全量视觉回归和正式认证路径观测持续通过。
+
 
 ---
 
@@ -713,6 +836,7 @@ git diff --check
 | 2026-07-14 | 特效以程序化 VFX recipe 为主。 | 支持大量技能、降低资源负担、避免每招序列帧。 | 新技能视觉优先新增配置与 primitive。 |
 | 2026-07-14 | 世界表现纳入本次重构一级范围。 | 战斗与城镇质量断层会破坏整体体验。 | 必须完成雾湾镇和萤火林道垂直切片。 |
 | 2026-07-14 | 阶段 1 Spike 采用 PixiJS 8.19.0，保留 Canvas compatibility 路径。 | 已完成独立 Pixi v8 分层、RenderTexture、additive、resize、质量档位和销毁生命周期实现；正式 BattleView / WorldView 未迁移。 | 继续阶段 2，先抽离 BattleDirector 与 Canvas cue adapter；GPU renderer 不读取 Pinia 或 engine 内部状态。 |
+| 2026-07-15 | 旧自定义 Canvas 路径的最终方向确定为删除，而非永久兼容。 | 目前 Canvas 只用于分批迁移和风险隔离；长期双轨会扩大规则 / 视觉回归维护面。 | 阶段 9 要求先覆盖所有启用地图与三类战斗、提供非 Canvas 错误恢复，再单独删除 `WorldCanvas` / `BattleCanvas` 及 adapter。 |
 
 ---
 
@@ -724,9 +848,12 @@ git diff --check
 请继续执行 `doc/VISUAL_RUNTIME_REFACTOR_PLAN.md`。
 当前阶段：<填写阶段编号与名称>。
 本轮目标：<一个明确、可验证的工作包>。
-请先阅读 PROJECT_RULES.md、README.md、该计划文档，检查 git status，
-不要覆盖未提交改动；遵守 engine / presentation / renderer / Vue 的依赖边界。
-完成后运行 typecheck、smoke、build:web、git diff --check，报告修改文件、验收结果与下一步。
+请先阅读 PROJECT_RULES.md、README.md、doc/VISUAL_RUNTIME_REFACTOR_PLAN.md、
+doc/VISUAL_RUNTIME_HANDOFF.md、doc/VISUAL_RUNTIME_BASELINE.md，并先检查 git status；
+保留全部未提交改动。遵守 engine / presentation / renderer / Vue 边界，不改规则、地图、剧情、存档或 GPU migration gate，除非本工作包明确在阶段 9 门槛下处理。
+
+若本轮属于阶段 9：一次只迁移一张地图或一个无交叉删除批次；不得在 `WorldCanvas.vue` 新增地图分支，
+不得在覆盖 / 错误恢复 / 全量回归满足前删除 Canvas。完成后运行 npm run typecheck、npm run smoke、npm run visuals:report、npm run visuals:browser、npm run visuals:playable、npm run build:web、Pixi esbuild bundle、git diff --check；报告覆盖清单、renderer 边界、验证结果与下一步。
 ```
 
 建议每次只选一个可闭环目标，例如：
@@ -750,7 +877,9 @@ git diff --check
 - [ ] 不依赖“每个技能一套特效文件”；
 - [ ] `packages/engine` 保持纯规则，测试和 smoke 仍稳定；
 - [ ] Vue 菜单 / HUD 保持独立且没有被 renderer 侵入；
-- [ ] 旧 Canvas renderer 的 compatibility 策略已明确、已测试；
+- [ ] 所有当前启用地图、训练塔开关地图与 PVE / 剧情战 / PVP 路径已完成 GPU 覆盖；
+- [ ] 自定义旧 Canvas renderer、Canvas adapter 和玩家可见的 Canvas / GPU 双轨切换已按阶段 9 删除；        - - `compatibility` 仅是 GPU 低质量档；
+- [ ] WebGL / 资源失败策略不依赖旧 Canvas，且已测试；
 - [ ] 文档、开发规范、资源规范、性能预算和迁移指南均已更新。
 
 ---

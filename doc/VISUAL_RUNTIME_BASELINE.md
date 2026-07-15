@@ -121,6 +121,100 @@ CharacterView 首次人工验收中地点行为不够可读；已增强为高对
 
 ## 阶段 4 最终验收记录（2026-07-14）
 
-雾湾镇 GPU WorldStage 已完成正式受控接入并通过人工验收：质量档位雾层差异、屋檐遮挡、角色可辨性、三名代表 NPC 的地点行为、Canvas/GPU 切换、移动/交互/warp 与 GPU 世界 ↔ GPU 战斗渐暗/渐亮转场均正常。`pallet` 仍是唯一正式 GPU 世界地图，Canvas 是默认 compatibility 与失败 fallback。白夜的 `baiye-rematch` 可反复用于回归测试，且不会改变剧情或奖励。
+雾湾镇 GPU WorldStage 已完成正式受控接入并通过人工验收：质量档位雾层差异、屋檐遮挡、角色可辨性、三名代表 NPC 的地点行为、Canvas/GPU 切换、移动/交互/warp 与 GPU 世界 ↔ GPU 战斗渐暗/渐亮转场均正常。`pallet` 与 `route1` 是正式 GPU 世界地图，Canvas 是默认 compatibility 与失败 fallback。白夜的 `baiye-rematch` 可反复用于回归测试，且不会改变剧情或奖励。
 
-下一工作包转入阶段 5：萤火林道仅做配置化 WorldSceneSpec + 通用 WorldStage sandbox，不接入正式 WorldView。
+阶段 5 已完成并人工验收：萤火林道的配置化 WorldSceneSpec、通用自然场景 WorldStage、独立 sandbox 与受控正式 GPU WorldView 接入均已完成。`GPU_WORLD_MAP_IDS` 明确仅批准 `pallet` / `route1`，Canvas 仍为默认 compatibility 与失败 fallback；碰撞、warp、NPC 坐标、遭遇和剧情未改。
+
+
+## 阶段 6 实施记录（2026-07-14）
+
+已建立配置优先的 battle visual pack：`skill-visuals.ts` 覆盖全部 141 个当前技能，并通过 delivery / impact / tier / variant / particleBudget 描述演出；`battle-environments.ts` 描述 grass、cave、water、dragon、arena 的地表、氛围、色板和环境反应。BattleStage 仅消费这些 renderer-ready DTO，所有质量档位对 burst 粒子都设置上限。`npm run visuals:report` 与 smoke 校验配方覆盖、重复、无效 signature 引用及预算约束。
+
+
+## 阶段 7 星陨观测所 sandbox 与受控正式接入（2026-07-15）
+
+`mt-moon`（星陨观测所）已完成 sandbox-first Scene Pack：观测穹顶、陨石尖塔、星图地台、晶簇、裂隙雾与 starlight ambience 全部由 `WorldSceneSpec` 描述；WorldStage 增加通用 observatory landmark grammar，CharacterView 增加星图师朔的 `trace-stars` 行为。人工验收后，该地图已加入 `GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'mt-moon']`，正式 WorldView 可受控启用 GPU；现有 handoff 自动覆盖 GPU World → cave GPU Battle → GPU World。Canvas 仍是默认 compatibility 与失败 fallback，碰撞、自然 encounterFloor、warp、NPC、剧情或存档均未改变。
+
+## 阶段 7 深空遗迹 sandbox-first 实施记录（2026-07-15）
+
+`deep-space` 已新增配置化 `WorldSceneSpec`，以失重石台、裂隙拱门、悬浮碎片、前景石台、裂隙雾与 `rune` ambience 表达异常遗迹。`WorldStage` 仅扩展通用 `gravity-platform` / `rift-arch` / `void-debris` landmark grammar，并消费 scene config 的 `objectVisuals` 为传入 renderer DTO 的既有故事物件提供外观；不会读取 Pinia / engine 状态，也不会决定对象可见性或坐标。
+
+`/world-stage-sandbox` 默认展示深空遗迹，并以原有故事配置的晶簇、终端、守卫核心与幻兽回响坐标做独立 DTO 样本。人工验收通过后，`deep-space` 已加入 `GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'mt-moon', 'deep-space']`，由既有 `isGpuWorldMapId()` bridge 受控启用正式 GPU WorldView；Canvas 仍是默认 compatibility 与失败 fallback。`WorldView` / `WorldCanvas` 未新增地图专用分支，碰撞、warp、NPC 坐标、自然 encounterFloor、剧情与存档均未修改。
+
+## 阶段 7 潮洞 sandbox-first 实施记录（2026-07-15）
+
+`dragon-den`（潮洞）已新增配置化 `WorldSceneSpec`：潮蚀洞壁、盐晶潮池、深潮锚印地台、前景潮雾与 `rune` ambience 均由 scene config 描述。`WorldStage` 仅扩展通用 `tide-cavern-wall` / `crystal-tide-pool` / `anchor-dais` / `cave-veil` grammar，并消费 `objectVisuals` 为外部 DTO 的深潮锚印与深空裂隙提供外观；不会读取 Pinia / engine 状态，也不决定对象的可见性或位置。
+
+`/world-stage-sandbox` 默认展示潮洞，并以既有故事配置中的守望者 `(10, 8)`、锚印 `(8, 5)`、裂隙 `(8, 2)` 作为独立 renderer DTO 样本。人工验收通过后，`dragon-den` 已加入 `GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'mt-moon', 'deep-space', 'dragon-den']`，由既有 `isGpuWorldMapId()` bridge 受控启用正式 GPU WorldView；Canvas 仍是默认 compatibility 与失败 fallback。`WorldView` / `WorldCanvas` 未新增地图专用分支，碰撞、warp、NPC 坐标、自然 encounterFloor、剧情与存档均未修改。
+
+## 阶段 8 前置：WorldScene 资源与配置级视觉基线（2026-07-15）
+
+五张受控 GPU 地图的 `WorldSceneSpec` 均声明本地 `resources` 预算：landmark、静态 container、cinematic ambience particle、dynamic entity 和 preload key 的上限。目前所有 pack 的 `preloadKeys` 均为 `['procedural-primitives']`，因此明确不预加载全世界资产；后续引入纹理时必须先把 key 加入当前 Scene Pack，再由 `WorldStage.enterScene()` 以 scene-local 生命周期加载。场景切换和 unmount 会清理上一场景的预加载所有权，Pixi children / texture source 仍按既有销毁路径释放。
+
+`npm run visuals:report` 与 smoke 校验预算、GPU gate 与 Scene Pack 的对应关系，并记录五张配置组成 hash 基线：雾湾 `18226d2f`、萤火林道 `d2919216`、星陨观测所 `05366b70`、潮洞 `fa843cf7`、深空遗迹 `9ebe7f67`。这些是 DOM/Pixi 无关的首轮视觉回归基线；修改 Scene Pack 的 landmark / character / object 组成后，必须经视觉评审再更新 hash。此工作包未增加 GPU 地图，未改世界规则、地图、故事或存档。
+
+## 阶段 8：浏览器视觉基线与 WorldStage 生命周期回归（2026-07-15）
+
+`npm run visuals:browser` 已固定使用本机 Chrome + SwiftShader、`1280×800` viewport，生成 / 比对五张 Scene Pack × `cinematic` / `standard` / `compatibility` 的 15 张 PNG。受审查基线及 manifest 位于 `doc/visual-baselines/`；常规执行只比对，只有带 `-- --update` 的显式命令才会覆盖基线。`?visual-regression=1` 仅允许独立 sandbox 路由，并关闭 WorldStage animation，从而使程序化图形、粒子和角色姿势可稳定截图，不影响正式可玩页面的认证边界。
+
+浏览器 harness 同时读取 `WorldStage.getDiagnostics()` 并执行三轮 World → battle sandbox → World：共 15 次 scene switch，持续断言每个 viewport 只有一个 canvas、scene-local preload key 为一项且 visual motion 已关闭。通过 CDP 强制 GC 的首轮观测为 `heap delta = 0 bytes`；回归阈值保守设为小于 32 MiB，避免浏览器和 GPU 驱动差异导致脆弱测试。此工作包未增加 GPU gate、未改 engine、地图、故事、碰撞或存档。
+
+## 阶段 8：可访问性视觉偏好回归（2026-07-15）
+
+“减少闪烁”与“镜头强度”以 renderer-neutral `VisualRuntimeSettings` 进入 WorldStage / BattleStage。默认值为 `reduceFlicker: false`、`cameraIntensity: 'full'`，完全保留既有截图表现；浏览器视觉 harness 因而继续比对同一组五图 × 三质量档 PNG，不更新 manifest。偏好只保存在当前浏览器，不构成存档或规则数据。
+
+## 阶段 8：质量自动选择与手动档位回归（2026-07-15）
+
+自动质量由 Vue bridge 的浏览器能力探测解析，但 renderer 的选择策略仍是 DOM-free `selectQualityProfile()`。浏览器截图 harness 显式请求 `cinematic` / `standard` / `compatibility`，不受本机 `localStorage` 偏好影响；因此同一五图 × 三档 PNG manifest 继续作为稳定基线。
+
+## 阶段 8：正式 renderer 观测基线边界（2026-07-15）
+
+正式可玩页的观测使用显式 `?renderer-observation=1`，且仍要求真实认证和现有存档；它不属于截图 harness，也不会绕过 auth 或改变 PNG baseline。报告仅包含 renderer-local canvas / WebGL draw-call / container / effect 计数及浏览器端 heap 采样时间，供长时人工或认证 e2e 观察使用。
+
+## 阶段 9.1-a：迷雾林境 sandbox-first 三质量基线（2026-07-15，已人工验收）
+
+`viridian-forest` 现有 `mist-forest` `WorldSceneSpec`：迷雾森林 palette、树墙 / 树群 / 孢子林地 / 根环 / 苔石 / 孢子环、遮挡树冠、前景低雾和 `mist` ambience。`WorldStage` 只增加 renderer-generic 的 `spore-ring` landmark 与 `signal-spore` / `anomaly-core` object DTO 外观；它不读取 Pinia / engine，也不拥有对象的故事可见性或位置。sandbox 用既有 story 配置的织羽 `(10, 9)`、三枚孢子 `(3, 4)` / `(12, 7)` / `(4, 11)` 和异相核 `(8, 5)` 作为纯 renderer 输入。
+
+`npm run visuals:report` 已记录 config fingerprint hash `796ba47b`。`npm run visuals:browser -- --update` 已把 sandbox 矩阵扩为六图 × `cinematic` / `standard` / `compatibility` 的 18 张候选 PNG；常规比对通过，三轮 World → battle sandbox → World 共 18 次 scene switch，强制 GC 后 heap delta 为 `0 bytes`。三质量人工验收已通过：迷雾层次、孢子 / 异相核可辨性与树冠遮挡均符合预期，随后进入正式 WorldView 行为回归。
+
+`GPU_WORLD_MAP_IDS` 仍是 `['pallet', 'route1', 'mt-moon', 'deep-space', 'dragon-den']`；`viridian-forest` 未加入 gate，`WorldCanvas.vue` 未改，Canvas 未删除。碰撞、warp、NPC 坐标、遭遇、剧情和存档均未修改。
+
+## 阶段 9.1-b：迷雾林境认证 WorldView 行为观测（2026-07-15，已人工验收）
+
+人工通过 sandbox 三质量验收后，认证 `renderer-observation` 新增一个受记录的诊断参数：`world-gpu-diagnostic=viridian-forest`。它只在同一浏览器 observation 会话内由 Vue bridge 启用，允许 `WorldView` 将该图**已经由 WorldView / story 计算出的** player、NPC 与 object DTO 镜像到 `WorldStage`；`GPU_WORLD_MAP_IDS` 没有改变，普通用户开关与默认路径仍只承认五张既有地图。renderer-pixi 不读取 Pinia / engine，且该参数不写入存档、不会绕过认证或路由守卫。
+
+`npm run visuals:playable` 已走真实注册 / 建档 / 初始剧情 / 白夜战 / 萤火林道巡查员 / north warp，验证迷雾林境 `mistwood-trial` GPU scene、孢子顺序对象 DTO、织羽 DTO、树格阻挡、草丛 encounter 资格与真实织羽试炼战的 GPU World → GPU Battle → GPU World 返回；最后经 south warp 回到萤火林道与雾湾镇的既有 GPU 路径。观测共 169 个 renderer-local samples，强制 GC heap delta 为 `0 bytes`。未伪造 battle 胜利或 story flag；完整异相核后续故事保持既有 smoke 回归覆盖。
+
+人工确认真实认证页面的移动、孢子 / 织羽状态变化、树格阻挡、试炼战返回和 south warp 均正常。观察到路由切换后 URL 查询参数会消失、但同一浏览器标签页仍继续 GPU 渲染：这是 observation 会话将显式 `renderer-observation` / `world-gpu-diagnostic` 写入**该标签页的** `sessionStorage`，使 World → Battle → World 诊断不丢上下文；它不修改 `GPU_WORLD_MAP_IDS`，也不写入存档。新标签页 / 新浏览器会话或清除该标签页 sessionStorage 后，未带显式参数访问迷雾林境仍为 Canvas，且无迷雾林境 GPU 开关。
+
+9.1-b 已获批准进入 9.1-c 的**显式 config gate**工作包；开始前，`viridian-forest` 仍不得被视为已加入 gate，Canvas 继续保留。
+
+## 阶段 8：认证正式路径观测结果（2026-07-15）
+
+`npm run visuals:playable` 在本机 Chrome + SwiftShader 下走真实认证 / 建档 / 剧情 / warp 后完成三轮 GPU World → GPU Battle → GPU World。CDP 强制 GC 的 heap delta 为 `0 bytes`；观测模块按秒采样得到 23 条样本，JS heap 采样增量 `6,336,016 bytes`，低于 `< 32 MiB` 阈值。每条样本均为单 canvas，最大 WorldStage / BattleStage child 计数为 `45 / 73`，最大累计 WebGL draw-call 为 `795`。该数值用于结构性回归观察，不作为跨 GPU 驱动的像素基线。
+
+## 阶段 9.1-c：迷雾林境显式 GPU migration gate（2026-07-15）
+
+`GPU_WORLD_MAP_IDS` 现为 `['pallet', 'route1', 'viridian-forest', 'mt-moon', 'deep-space', 'dragon-den']`。本工作包仅改变 config gate，并同步 smoke 的显式资格断言；`WorldCanvas.vue`、`packages/engine`、地图、碰撞、warp、NPC 坐标、遭遇、剧情和存档均未修改。
+
+`npm run visuals:playable` 已移除登录和世界 URL 中的 `world-gpu-diagnostic=viridian-forest`，只保留 `renderer-observation=1` 的 renderer-local 观测。真实注册 / 建档 / 开局 / 白夜战 / 萤火林道巡查员 / north warp 后，迷雾林境通过正常 config gate 完成孢子状态、树格碰撞、试炼战 GPU World → GPU Battle → GPU World 与 south warp 回程验证。结果为 194 个 samples、强制 GC heap delta `0 bytes`、sampled heap delta `4,842,935 bytes`（低于 32 MiB）、最大 WorldStage / BattleStage child `49 / 90`、最大累计 draw-call `14,117`。
+
+`npm run visuals:report`、`npm run visuals:browser`（18 张截图、18 次 scene switch、heap delta `0 bytes`）、`npm run smoke`、`npm run typecheck`、`npm run build:web` 和 Pixi bundle 均通过。Canvas 仍保留，下一张候选地图为 `route3`。
+
+## 阶段 9.1-d：星陨高径 sandbox-first 三质量基线（2026-07-15，已人工验收）
+
+`route3` 已新增 `starfall-ridge` `WorldSceneSpec`：`sunlit-route` 高径色板、断崖岩壁、石阶古道、风化台地、坠星刻痕、近景岩檐与高空薄霭。`WorldStage` 仅增加 renderer-generic 的 `ridge-wall` / `stone-terrace` / `starfall-scar` / `ridge-overhang` landmark 与 `star-scar` object DTO 外观；它不读取 Pinia / engine，也不决定洛岩或星痕的故事坐标、可见性、交互、碰撞、warp 或 encounter。
+
+`/world-stage-sandbox` 默认使用既有 story 坐标：洛岩 `(6, 8)`、坠星刻痕 `(3, 4)` / `(12, 6)` / `(5, 11)`。`npm run visuals:report` 记录 config fingerprint `0711a01b`；`visuals:browser --update` 后的正式比对通过，矩阵为七图 × `cinematic` / `standard` / `compatibility` 共 21 张 PNG，三轮 World → battle sandbox → World 共 21 次 scene switch，强制 GC 后 heap delta `0 bytes`。
+
+`GPU_WORLD_MAP_IDS` 仍是 `['pallet', 'route1', 'viridian-forest', 'mt-moon', 'deep-space', 'dragon-den']`，不含 `route3`；`WorldCanvas.vue`、Canvas、`packages/engine`、地图、故事与存档均未修改。cinematic / standard / compatibility 三档人工视觉验收已通过；正式 WorldView 自动行为观测已通过，等待人工确认，因此不得进入 migration gate。
+
+迁移决策：`ILLUSION_TOWER_ENABLED=true` 时的五个训练塔 map ID 必须共用一个由 tower floor index / map ID 参数化生成的 Scene Pack；不得为任一层新增 renderer `mapId` 分支。
+
+## 阶段 9.1-d-b：星陨高径认证 WorldView 行为观测（2026-07-15，自动通过、待人工确认）
+
+认证 `renderer-observation` 以显式 `world-gpu-diagnostic=route3` 建立仅该标签页有效的 pending-map 诊断，并由 Vue bridge 将已经由 WorldView / story 计算的 player、洛岩与星痕 DTO 传给 `WorldStage`。为使诊断会话可从已批准地图跨越至目标图，bridge 只保留该显式目标的 visual handoff capability；它不扩大 `GPU_WORLD_MAP_IDS`、不写入存档，也不让 renderer-pixi 读取 Pinia / engine。
+
+`npm run visuals:playable` 已走真实注册 / 建档 / 白夜战 / 岚巡员 / 三枚孢子 / 织羽试炼 / 异相核 / 澜博士 chapter-one 完成，再经既有 warp 到达星陨高径。观测验证 `starfall-ridge` scene、洛岩与三枚坠星刻痕的有序 DTO 可见性、中央石阶岩壁碰撞、洛岩交互、真实草丛野外 GPU World → GPU Battle → GPU World 往返，以及满足既有 `star_3` 条件后的 north warp 至已批准的星陨观测所。未伪造 battle 胜利、story flag、坐标或存档。
+
+结果为 336 个 renderer-local samples、强制 GC heap delta `0 bytes`、sampled heap delta `3,357,185 bytes`（低于 32 MiB）、最大 WorldStage / BattleStage child `49 / 87`、最大累计 draw-call `16,857`。该记录仍需人工确认正式页面行为；在确认前 `route3` 继续不在 GPU migration gate。
