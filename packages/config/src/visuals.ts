@@ -202,6 +202,53 @@ export const BIOME_VISUALS: Readonly<Record<BiomeId, BiomeVisualSpec>> = {
   },
 };
 
+/** The tower uses one parameterized Scene Pack factory across its five floors.
+ * Floor index only selects static visual composition; collision, encounter bands,
+ * progression and stair warps remain owned by the existing map configuration. */
+export const ILLUSION_TOWER_SCENE_MAP_IDS = ['illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5'] as const;
+
+function illusionTowerScene(floor: number): WorldSceneSpec {
+  const isSummit = floor === 5;
+  const paletteByFloor: readonly WorldScenePalette[] = [
+    { backdrop: '#24113d', ground: '#493069', path: '#7c618f', shadow: '#1a102c', accent: '#7be9ff', fog: '#d4b4ff' },
+    { backdrop: '#291244', ground: '#53316f', path: '#89639c', shadow: '#1c1030', accent: '#a58bff', fog: '#dfc5ff' },
+    { backdrop: '#2e154a', ground: '#613777', path: '#9b6ca8', shadow: '#201137', accent: '#f0a6ff', fog: '#efd0ff' },
+    { backdrop: '#351852', ground: '#6c3d80', path: '#aa779e', shadow: '#25143f', accent: '#ffc27b', fog: '#f5d9ff' },
+    { backdrop: '#3d1a5b', ground: '#79458b', path: '#bd8dac', shadow: '#2b1649', accent: '#fff0a6', fog: '#ffe3ff' },
+  ];
+  const palette = paletteByFloor[floor - 1]!;
+  const suffix = `f${floor}`;
+  return {
+    id: `illusion-tower-training-${floor}`,
+    mapId: ILLUSION_TOWER_SCENE_MAP_IDS[floor - 1]!,
+    biome: 'illusion-tower',
+    terrain: [{ id: 'illusion-stone-floor', depth: 2 }, { id: 'projection-walkway', depth: 2 }],
+    scenery: [{ id: 'rune-terraces', depth: 3 }, { id: 'projection-crystals', depth: 3 }, { id: 'floating-rift-mist', depth: 3 }],
+    occlusion: [{ id: 'near-tower-shadow', depth: 5 }],
+    foreground: [{ id: 'front-rune-veil', depth: 6, parallax: 1.08 }],
+    ambience: { preset: 'rune', density: 0.44 + floor * 0.035 },
+    palette,
+    characters: [{ id: 'player', appearance: 'hero', behavior: 'idle' }],
+    /** Generic terrace/crystal/rift grammar. Nothing here identifies a collision
+     * cell, encounter species, stair coordinate, or floor-transition rule. */
+    landmarks: [
+      { id: `tower-far-rift-${suffix}`, kind: 'rift-mist', x: 0.3, y: 0.4, width: 15.4, height: 2.5, depth: 'scenery' },
+      { id: `tower-west-terrace-${suffix}`, kind: 'stone-terrace', x: 0.4, y: 2.1, width: 4.0, height: 8.7, depth: 'scenery' },
+      { id: `tower-east-terrace-${suffix}`, kind: 'stone-terrace', x: 11.6, y: 1.8, width: 4.0, height: 9.1, depth: 'scenery' },
+      { id: `tower-central-path-${suffix}`, kind: 'path', x: 6.3, y: 0.6, width: 3.4, height: 12.3, depth: 'terrain' },
+      { id: `tower-west-crystals-${suffix}`, kind: 'crystal-cluster', x: 2.4, y: 3.0, width: 2.8, height: 3.0, depth: 'scenery' },
+      { id: `tower-east-crystals-${suffix}`, kind: 'crystal-cluster', x: 10.6, y: 4.2, width: 2.7, height: 3.1, depth: 'scenery' },
+      { id: `tower-lower-crystals-${suffix}`, kind: 'crystal-cluster', x: 6.4, y: 8.9, width: 3.2, height: 2.4, depth: 'scenery' },
+      { id: `tower-projection-stones-${suffix}`, kind: 'boulder', x: 3.2, y: 9.9, width: 2.1, height: 1.4, depth: 'scenery' },
+      { id: `tower-north-shadow-${suffix}`, kind: 'cave-shadow', x: 0.4, y: 0, width: 6.0, height: 2.3, depth: 'occlusion' },
+      { id: `tower-${isSummit ? 'summit' : 'stair'}-veil-${suffix}`, kind: 'cave-veil', x: 0.8, y: 10.5, width: 14.1, height: 2.5, depth: 'foreground' },
+    ],
+    resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 14, staticContainerLimit: 32, ambientParticleLimit: 48, entityLimit: 8 },
+  };
+}
+
+export const ILLUSION_TOWER_SCENES: readonly WorldSceneSpec[] = ILLUSION_TOWER_SCENE_MAP_IDS.map((_, index) => illusionTowerScene(index + 1));
+
 /** First scene-pack samples. They intentionally describe layers rather than
  * duplicating map collision, encounters, warp, or story logic. */
 export const WORLD_SCENES: readonly WorldSceneSpec[] = [
@@ -480,11 +527,12 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
     ],
     resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 14, staticContainerLimit: 36, ambientParticleLimit: 50, entityLimit: 12 },
   },
+  ...ILLUSION_TOWER_SCENES,
 ];
 
 /** Explicit migration gate for formal WorldView GPU rendering. Scene packs can
  * exist for sandbox/prototyping without being eligible for the live world path. */
-export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'deep-space', 'dragon-den'] as const;
+export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'deep-space', 'dragon-den'] as const;
 export function isGpuWorldMapId(mapId: string): mapId is typeof GPU_WORLD_MAP_IDS[number] {
   return (GPU_WORLD_MAP_IDS as readonly string[]).includes(mapId);
 }
@@ -532,6 +580,11 @@ export const WORLD_SCENE_VISUAL_BASELINES: Readonly<Record<string, string>> = {
   'sea-route': '15c1084d',
   'dragon-den': 'fa843cf7',
   'deep-space': '9ebe7f67',
+  'illusion-tower-1': '8549b7fc',
+  'illusion-tower-2': '10977c7e',
+  'illusion-tower-3': 'ee088b9c',
+  'illusion-tower-4': '87888546',
+  'illusion-tower-5': 'e94e9ce6',
 };
 
 export function worldSceneBudgetReport(scene: WorldSceneSpec): WorldSceneBudgetReport {

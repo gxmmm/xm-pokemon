@@ -621,7 +621,7 @@ export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 验收：
 
 - [ ] 所有当前启用的可玩地图（含开发训练塔开关启用时的塔层）均具有 `WorldSceneSpec`、sandbox 和受控正式 GPU 验收记录。
-- [ ] 主线核心地图均使用新 WorldStage；剩余 `rock-tunnel`、`sea-route` 及按开关启用的训练塔地图必须逐张迁移，不允许用 `WorldCanvas.vue` 地图分支补齐。
+- [x] 主线核心地图均已有新 WorldStage Scene Pack；`rock-tunnel` 已经 gate 接入，`sea-route` 已完成正式人工行为验收但 gate 仍待单独变更；剩余按开关启用的训练塔地图必须以一个参数化 Scene Pack 逐张覆盖，不允许用 `WorldCanvas.vue` 地图分支补齐。
 - [ ] 旧 Canvas 世界 renderer 仅在全量迁移完成前作为临时 fallback；其最终删除条件见“阶段 9”。
 - [x] 星陨观测所、深空遗迹与潮洞受控正式 GPU 接入未改变剧情、碰撞、遇敌、NPC 交互和存档兼容性；Canvas 仍为默认与失败 fallback。
 
@@ -724,13 +724,14 @@ WorldSceneSpec / 通用 landmark grammar
 - [x] 已直接将 `rock-tunnel` 加入显式 `GPU_WORLD_MAP_IDS`，浏览器矩阵扩为八图 × 三质量档的 24 张 baseline；自动检查通过。
 - [x] 正式页面人工验收通过：GPU 切换、低光遮挡、`encounterFloor` 自然遇敌、岩壁碰撞及上下洞窟 warp 均正常；Canvas 继续保留。
 
-##### 9.1-f `sea-route` sandbox-first（2026-07-15，待正式页面人工验证）
+##### 9.1-f `sea-route` sandbox-first 与正式页面人工验收（2026-07-15，gate 待单独变更）
 
 - [x] 新增 `sea-route` `stilltide-isles` Scene Pack：低潮礁石 / 浅潮水道 / 沉船 / 潮洞入口 / 海雾，以及船长赛岚、海图学徒宁墨、潮位仪和沉船航海日志的 DTO 外观。
 - [x] `WorldStage` 仅扩展通用 `reef-islet` / `tide-channel` / `shipwreck` / `tide-cave-mouth` landmark grammar 与 `tide-gauge` / `ship-log` object DTO 外观；不读取 Pinia / engine，也不拥有潮位、对象可见性、坐标或交互。
 - [x] config fingerprint 为 `15c1084d`，浏览器矩阵扩为九图 × 三质量档的 27 张 baseline；scene budget、自动截图比对和生命周期观测通过。
-- [x] `sea-route` 未加入 `GPU_WORLD_MAP_IDS`，因此 migration gate、`WorldCanvas.vue`、地图规则、碰撞、`encounterFloor`、船只 / 洞窟 warp、剧情和存档均未改变。
-- [ ] 请在 sandbox 三档视觉与正式页面人工验证通过后，才可单独把 `sea-route` 加入显式 GPU gate。Canvas 继续保留；幻境之塔五层必须共用一个参数化 Scene Pack。
+- [x] 已完成 sandbox 的 cinematic / standard / compatibility 人工视觉验收，以及正式 WorldView 诊断路径人工行为验收：GPU 切换、潮位对象可见性、自然地面 `encounterFloor`、礁石碰撞、船只 / 洞窟 warp 均正常。
+- [x] 本轮仍未把 `sea-route` 加入 `GPU_WORLD_MAP_IDS`；因此 migration gate、`WorldCanvas.vue`、地图规则、碰撞、`encounterFloor`、船只 / 洞窟 warp、剧情和存档均未改变。
+- [ ] 下一独立工作包只可将已验收的 `sea-route` 加入显式 GPU gate，并同步 smoke eligibility 断言 / 正常 config-gate 的正式认证回归；不得夹带 Scene Pack、engine、地图规则、剧情或存档修改。Canvas 继续保留；幻境之塔五层必须共用一个参数化 Scene Pack。
 
 #### 9.2 GPU 默认化（仍保留删除前的安全窗口）
 
@@ -915,4 +916,18 @@ doc/VISUAL_RUNTIME_HANDOFF.md、doc/VISUAL_RUNTIME_BASELINE.md，并先检查 gi
 
 完成该闭环后，再批量扩展世界地图和全部技能；在此之前，不要声称底座已经完成。
 
+### 2026-07-16 阶段 9 实施记录：静潮群岛 gate
 
+已将已人工验收的 `sea-route` / `stilltide-isles` 通过唯一允许的显式 `GPU_WORLD_MAP_IDS` config gate 接入正式 WorldView，并同步 smoke eligibility 与正式认证 observation harness。该工作包不改变 engine、地图规则、剧情、存档或 Canvas 分支；完整自动化回归按快速开发节奏延后至统一测试轮次。幻境之塔五层继续要求使用一个参数化 Scene Pack。
+
+### 2026-07-16 阶段 9 实施记录：幻境之塔参数化迁移
+
+已完成幻境之塔的一个参数化 Scene Pack factory，覆盖一至五层，并仅将已实装的一层加入显式 `GPU_WORLD_MAP_IDS` gate。该 factory 只描述通用视觉构图；训练塔五层的遭遇等级、上下楼 warp、地图开关和存档语义维持原有 authority。快速开发模式下，完整自动化与人工正式页面回归延后到统一测试轮次。
+
+### 2026-07-16 阶段 9 实施记录：幻境之塔二层 gate
+
+已在不新增 renderer grammar 的前提下，将 `illusion-tower-2` 加入正式 GPU gate，并保持一至五层共用 `illusionTowerScene(floor)` 参数化 Scene Pack。三至五层仍待逐层 gate 与统一测试轮次验证。
+
+### 2026-07-16 阶段 9 保存点：训练塔一、二层
+
+训练塔一、二层已扩入显式 GPU gate，三至五层保留在同一参数化 Scene Pack factory 下待逐层迁移。快速开发期间仅完成类型 / bundle / diff 检查；全量视觉、可玩认证与 build 回归已显式留待后续统一测试轮次。

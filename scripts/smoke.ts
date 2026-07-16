@@ -4,7 +4,7 @@ import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { BATTLE_ENVIRONMENTS, BIOME_VISUALS, SKILL_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
+import { BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, SKILL_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
@@ -215,9 +215,19 @@ function assert(cond: boolean, msg: string): void {
 // Formal GPU-world eligibility is an explicit config-owned migration gate;
 // scene-pack existence alone must not enable the live WorldView GPU path.
 {
-  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,viridian-forest,route3,mt-moon,rock-tunnel,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('route3') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('rock-tunnel') && !isGpuWorldMapId('sea-route') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, Mistwood Trial, Starfall Ridge, Starfall Observatory, Red Rift Canyon, Deep-space Ruins, and Tide Dragon Den');
+  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,illusion-tower-1,illusion-tower-2,viridian-forest,route3,mt-moon,rock-tunnel,sea-route,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('illusion-tower-1') && isGpuWorldMapId('illusion-tower-2') && !isGpuWorldMapId('illusion-tower-3') && !isGpuWorldMapId('illusion-tower-4') && !isGpuWorldMapId('illusion-tower-5') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('route3') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('rock-tunnel') && isGpuWorldMapId('sea-route') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, Illusion Tower floors one and two, Mistwood Trial, Starfall Ridge, Starfall Observatory, Red Rift Canyon, Stilltide Isles, Deep-space Ruins, and Tide Dragon Den');
   assert(GPU_WORLD_MAP_IDS.every((mapId) => !!WORLD_SCENE_BY_MAP_ID[mapId]), 'every controlled GPU world map has a scene pack');
   console.log('✓ controlled GPU world eligibility');
+}
+
+// The five training floors intentionally share a single parameterized Scene Pack
+// factory. Only floor one is formally GPU-gated this pass; later floors reuse the
+// same grammar without requiring a new renderer branch or a new Scene Pack family.
+{
+  assert(ILLUSION_TOWER_SCENE_MAP_IDS.join(',') === 'illusion-tower-1,illusion-tower-2,illusion-tower-3,illusion-tower-4,illusion-tower-5' && ILLUSION_TOWER_SCENES.length === 5, 'Illusion Tower defines five parameterized Scene Pack instances');
+  assert(ILLUSION_TOWER_SCENES.every((scene, index) => scene.id === `illusion-tower-training-${index + 1}` && scene.biome === 'illusion-tower' && scene.landmarks?.some((landmark) => landmark.kind === 'stone-terrace') && scene.landmarks?.some((landmark) => landmark.kind === 'crystal-cluster') && scene.landmarks?.some((landmark) => landmark.kind === 'rift-mist')), 'Illusion Tower floors share generic terrace, crystal, and rift grammar');
+  assert(isGpuWorldMapId('illusion-tower-1') && isGpuWorldMapId('illusion-tower-2') && !isGpuWorldMapId('illusion-tower-3') && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-1'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-1']!) && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-2'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-2']!), 'Illusion Tower floors one and two are approved through the explicit GPU gate with their reviewed parameterized config baselines');
+  console.log('✓ Illusion Tower parameterized WorldSceneSpec contract');
 }
 
 // Stage 4 config keeps Mist Bay landmarks outside legacy WorldCanvas map-id
@@ -260,9 +270,10 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ Red Rift Canyon direct GPU WorldSceneSpec contract');
 }
 
-// Sandbox-first Stilltide Isles uses only renderer-generic reef, channel, wreck
-// and cave-mouth grammar. Tide state, encounterFloor, boat/cave warps and story
-// visibility remain authoritative inputs; formal GPU eligibility remains unchanged.
+// Stilltide Isles uses only renderer-generic reef, channel, wreck and cave-mouth
+// grammar. Its reviewed Scene Pack is promoted only through the explicit config
+// gate; tide state, encounterFloor, boat/cave warps and story visibility remain
+// authoritative map/story inputs.
 {
   const isles = WORLD_SCENE_BY_MAP_ID['sea-route'];
   assert(isles?.biome === 'tide-sea' && isles.palette.accent === '#80dce3', 'Stilltide Isles WorldSceneSpec has a distinct tide-sea palette');
@@ -271,8 +282,8 @@ function assert(cond: boolean, msg: string): void {
   assert(isleLandmarks.some((landmark) => landmark.kind === 'reef-islet' && landmark.depth === 'occlusion') && isleLandmarks.some((landmark) => landmark.kind === 'cave-veil' && landmark.depth === 'foreground'), 'Stilltide Isles has readable reef occlusion and foreground spray');
   const isleObjects = isles?.objectVisuals ?? [];
   assert(isleObjects.map((object) => object.id).join(',') === 'tide-gauge,ship-log' && isleObjects.map((object) => object.kind).join(',') === 'tide-gauge,ship-log', 'Stilltide Isles maps tide story object DTO appearances without owning visibility or positions');
-  assert(!isGpuWorldMapId('sea-route') && !GPU_WORLD_MAP_IDS.includes('sea-route') && WORLD_SCENE_VISUAL_BASELINES['sea-route'] === worldSceneFingerprintHash(isles!), 'Stilltide Isles remains sandbox-first with a reviewed config baseline candidate');
-  console.log('✓ Stilltide Isles sandbox-first WorldSceneSpec contract');
+  assert(isGpuWorldMapId('sea-route') && GPU_WORLD_MAP_IDS.includes('sea-route') && WORLD_SCENE_VISUAL_BASELINES['sea-route'] === worldSceneFingerprintHash(isles!), 'Stilltide Isles is approved through the explicit GPU gate with its reviewed config baseline');
+  console.log('✓ Stilltide Isles explicit GPU WorldSceneSpec contract');
 }
 
 // Stage 9.1-d-c promotes the accepted Starfall Ridge through the explicit
