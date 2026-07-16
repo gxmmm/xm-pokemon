@@ -13,3 +13,4 @@ export * from './exp.ts';
 export * from './visuals.ts';
 export * from './skill-visuals.ts';
 export * from './battle-environments.ts';
+export * from './battle-art.ts';

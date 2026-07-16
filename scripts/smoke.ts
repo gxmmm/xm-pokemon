@@ -1,15 +1,16 @@
+import { existsSync } from 'node:fs';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, SKILL_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
+import { ABILITY_VISUAL_RECIPES, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
-import { planBattleCue } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, CombatantView, isSpriteAsset, planBattleCue } from '@pokemon-online/renderer-pixi';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -105,6 +106,50 @@ function assert(cond: boolean, msg: string): void {
   assert(Object.keys(BIOME_VISUALS).length >= 8, 'biome visual catalog configured');
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
   console.log('✓ visual scene and recipe config:', SKILL_VISUAL_RECIPES.length);
+}
+
+// Battle art Stage A: all presentation identity is declared in static config.
+// The resolver combines a shared skill recipe with the model profile/theme;
+// no renderer or component needs a species/skill branch to create the variant.
+{
+  const artReport = validateBattleArtConfiguration();
+  assert(BATTLE_ART_PROFILES.length === SPECIES_LIST.length && artReport.missingSpeciesProfileIds.length === 0 && artReport.duplicateSpeciesProfileIds.length === 0, 'every configured species has exactly one battle art profile');
+  assert(artReport.missingAssetIds.length === 0 && artReport.invalidProfileIds.length === 0 && artReport.invalidMotionProfileIds.length === 0 && artReport.invalidAnchorProfileIds.length === 0 && artReport.invalidLayerProfileIds.length === 0, 'battle art profiles reference declared assets, complete motion sets, anchors, and valid 2.5D layers');
+  assert(artReport.missingSkillCastIds.length === 0 && artReport.missingAbilityRecipeIds.length === 0 && artReport.missingPassiveRecipeIds.length === 0 && artReport.missingStatusRecipeIds.length === 0, 'skills, abilities, passives, and statuses have configuration-owned presentation coverage');
+  assert(SKILL_CAST_PRESENTATIONS.length === SKILLS.length && ABILITY_VISUAL_RECIPES.length > 0 && PASSIVE_VISUAL_RECIPES.length === PASSIVE_SKILLS.length && Object.keys(STATUS_VISUAL_RECIPES).length === 6, 'battle art catalogs expose complete static presentation data');
+  const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
+  const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
+  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.url.endsWith('/back/6.png') && pikachuSwift.asset.url.endsWith('/25.png'), 'a shared skill resolves through configured player/enemy model assets');
+  assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'cast', 'one shared skill receives model-configured theme, anchor, and motion differences');
+  const unknown = resolveBattleArtPresentation({ speciesId: -1, side: 'enemy', skillId: '__missing__', motion: 'hit' });
+  assert(unknown.profile.id === 'generic:fallback' && unknown.asset.kind === 'fallback-shape' && unknown.motion.id === 'hit', 'battle art resolver has a configuration-owned missing model/skill fallback');
+  const manifestFilesExist = BATTLE_ASSET_MANIFEST.filter((asset) => asset.kind === 'static-sprite').every((asset) => {
+    const relative = asset.url.replace(/^\//, '');
+    return existsSync(`apps/web/public/${relative}`);
+  });
+  assert(manifestFilesExist, 'every static battle-art manifest entry resolves to a bundled public asset');
+  const representativeProfiles = REPRESENTATIVE_BATTLE_ART_SPECIES.map((speciesId) => resolveBattleArtPresentation({ speciesId, side: 'enemy' }).profile);
+  assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length > 0 && Object.keys(profile.motionPoses).length >= 4), 'six representative models declare layered 2.5D art and distinct motion poses in configuration');
+  assert(new Set(representativeProfiles.map((profile) => profile.modelId)).size === representativeProfiles.length, 'representative model identities remain explicit profile data rather than renderer branches');
+  console.log(`✓ battle art config and resolver: ${BATTLE_ART_PROFILES.length} profiles, ${BATTLE_ASSET_MANIFEST.length} assets`);
+}
+
+// Stage B keeps the GPU asset boundary manifest-driven. Browser decoding is
+// intentionally left to Pixi; this Node check proves the loader contract has
+// no path/species API and a CombatantView can retain the configuration fallback.
+{
+  const assetLoader = new BattleArtAssetLoader();
+  const spriteEntry = BATTLE_ASSET_MANIFEST.find((asset) => isSpriteAsset(asset.kind))!;
+  assert(isSpriteAsset(spriteEntry.kind) && !isSpriteAsset('fallback-shape'), 'Pixi battle asset loader distinguishes manifest sprite and fallback entries');
+  const viewCombatant = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10)], enemy: [createWildInstance(25, 10)], seed: 716 }).state.combatants[0]!;
+  const combatantView = new CombatantView(viewCombatant, assetLoader);
+  combatantView.playAnimation('windup');
+  combatantView.update(0.12);
+  const viewDiagnostics = combatantView.getDiagnostics();
+  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge', 'CombatantView consumes configured representative layers and motions without renderer species branches');
+  combatantView.destroy({ children: true });
+  assetLoader.clear();
+  console.log('✓ Pixi manifest asset loader and CombatantView contract');
 }
 
 // Stage 2 presentation direction: the same structured fixture must yield a

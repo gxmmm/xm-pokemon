@@ -1,7 +1,9 @@
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type QualityProfile, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
-import { battleEnvironmentFor, type BattleEnvironmentSpec } from '@pokemon-online/config';
+import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, type BattleEnvironmentSpec } from '@pokemon-online/config';
 import { Application, Container, Graphics } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
+import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { CombatantView } from './CombatantView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
 
 const DESIGN_WIDTH = 1280;
@@ -34,7 +36,8 @@ export class BattleStage implements BattleRenderer {
   private combatants = new Container();
   private effects = new Container();
   private overlay = new Container();
-  private views = new Map<string, Graphics>();
+  private views = new Map<string, CombatantView>();
+  private readonly battleArtAssets = new BattleArtAssetLoader();
   private positions = new Map<string, Point>();
   private activeEffects: TimedEffect[] = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -86,6 +89,7 @@ export class BattleStage implements BattleRenderer {
     this.activeEffects = [];
     this.views.clear();
     this.positions.clear();
+    this.battleArtAssets.clear();
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
     this.app?.destroy(true, { children: true, texture: true, textureSource: true });
@@ -129,7 +133,12 @@ export class BattleStage implements BattleRenderer {
     };
   }
 
-  async preload(_keys: readonly AssetKey[]): Promise<void> {}
+  async preload(keys: readonly AssetKey[]): Promise<void> {
+    const entries = keys
+      .map((key) => BATTLE_ASSET_BY_ID[String(key)])
+      .filter((entry): entry is NonNullable<typeof entry> => !!entry);
+    await this.battleArtAssets.preload(entries);
+  }
 
   async transition(request: SceneTransitionRequest): Promise<void> {
     await this.animateTransitionOverlay(
@@ -158,6 +167,8 @@ export class BattleStage implements BattleRenderer {
   async enterBattle(input: BattleRenderInput): Promise<void> {
     this.biomeId = input.biomeId;
     this.drawEnvironment();
+    const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side }).asset);
+    await this.battleArtAssets.preload(entries);
     this.applyBattleSnapshot({ time: 0, combatants: input.combatants });
   }
 
@@ -175,13 +186,13 @@ export class BattleStage implements BattleRenderer {
       this.positions.set(combatant.uid, point);
       let view = this.views.get(combatant.uid);
       if (!view) {
-        view = this.createCombatantView(combatant.side === 'player');
+        view = new CombatantView(combatant, this.battleArtAssets);
         this.views.set(combatant.uid, view);
         this.combatants.addChild(view);
+      } else {
+        view.refresh(combatant);
       }
       view.position.set(point.x, point.y);
-      view.alpha = combatant.alive ? 1 : 0.25;
-      view.scale.set(combatant.alive ? 1 : 0.72);
     }
   }
 
@@ -189,6 +200,8 @@ export class BattleStage implements BattleRenderer {
     for (const cue of cues) {
       if (cue.type === 'camera') {
         this.aimCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
+      } else if (cue.type === 'animation') {
+        this.views.get(cue.subjectId)?.playAnimation(cue.animation);
       } else if (cue.type === 'hit-stop') {
         this.hitStopSeconds = Math.max(this.hitStopSeconds, cue.milliseconds / 1000);
       } else if (cue.type === 'vfx' || cue.type === 'environment') {
@@ -263,16 +276,6 @@ export class BattleStage implements BattleRenderer {
       else graphic.circle(x, y, 1.5 + index % 2).fill({ color: spec.palette.mote, alpha: 0.55 });
       this.environment.addChild(graphic);
     }
-  }
-
-  private createCombatantView(player: boolean): Graphics {
-    const color = player ? 0x69d4e7 : 0xf28577;
-    return new Graphics()
-      .ellipse(0, 18, 43, 15).fill({ color: 0x07101a, alpha: 0.3 })
-      .circle(0, -8, 25).fill({ color, alpha: 0.95 })
-      .circle(-8, -16, 8).fill({ color: 0xffffff, alpha: 0.35 })
-      .rect(-26, 26, 52, 6).fill({ color: 0x172331, alpha: 0.9 })
-      .rect(-25, 27, 50, 4).fill({ color: player ? 0x7ee6ac : 0xffaa83 });
   }
 
   private project(pixelX: number, pixelY: number): Point {
@@ -406,6 +409,7 @@ export class BattleStage implements BattleRenderer {
       layer.position.set(this.cameraOffset.x + shakeX, this.cameraOffset.y + shakeY);
     }
     if (!clock) return;
+    for (const view of this.views.values()) view.update(clock);
     this.activeEffects = this.activeEffects.filter((effect) => {
       effect.elapsed += clock;
       effect.update(Math.min(1, effect.elapsed / effect.duration));

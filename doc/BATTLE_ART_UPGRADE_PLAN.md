@@ -180,6 +180,19 @@ texture = `/sprites/pokemon/${speciesId}.png`
 
 **验收：** 无 renderer/组件硬编码新增；schema、fallback 和 resolver 优先级有单元/smoke 覆盖。
 
+### 阶段 A 实施记录（2026-07-16）
+
+本阶段已完成静态战斗美术契约与审计底座，未改动 BattleSim、伤害、AI、存档、正式运行时路径或 Canvas 源码。
+
+- 新增 `packages/config/src/battle-art.ts`，集中声明 `BattleAssetManifestEntry`、`BattleArtProfile`、锚点、完整动作集、动作 marker、主题调色、技能施法表现、被动/特性/状态 reactive recipe 与纯 `resolveBattleArtPresentation()` resolver；并从 `packages/config/src/index.ts` 统一导出。
+- 已为 151 个现有 Species 生成显式 art profile，资源地址只出现在 asset manifest：前视 `/sprites/pokemon/<id>.png`、玩家后视 `/sprites/pokemon/back/<id>.png`。当前模型表现格式标记为 `static-sprite`，为下一阶段替换为分层/骨骼资产保留 `modelId`、`motions`、`anchors` 与 manifest key，不绑定 Pixi 对象或贴图。
+- 已为全部 141 个主动技能生成 `SkillCastPresentationSpec`；`castTime` 仅映射为表现层 `windupMs`，并配置 prepare/release/recover marker、charge/channel 意图与近战/远程发射挂点。正常攻击使用通用 fallback，不要求复制技能配置。
+- 已为全部现有 Ability、Passive 与 6 种 Status 建立 reactive visual recipe；它们尚未改动正式 cue/renderer 消费路径，后续阶段接入时只能消费结构化事件，不得解析日志或重算规则。
+- resolver 已验证“同一技能、不同模型”路径：共享 `swift` recipe 仍是一份，喷火龙和皮卡丘按 profile 得到不同主题、前/后资源与发射挂点；未知模型/技能解析到配置化 `generic:fallback`，不会在 renderer 中补物种分支。
+- `validateBattleArtConfiguration()` 与 smoke 已校验：151 profile、303 manifest 资产声明、所有实际 sprite 文件、动作/锚点完整性、技能/能力/被动/状态覆盖及 fallback。`npm run smoke` 与 `npm run typecheck` 于 2026-07-16 通过。
+
+**审计结论与下一阶段边界：** 当前 GPU `BattleStage` 仍用程序化 `Graphics` 圆形战斗体，尚未消费模型资产；Canvas 保留层仍有自己的贴图加载辅助。阶段 B 应实现通用 GPU asset loader / `CombatantView`，只消费本阶段的 manifest 与 resolver 输出，并以 3–6 个代表模型验证 2.5D 分层或骨骼资产；不得把具体物种路径、技能 ID 分支或 Canvas fallback 接回正式路径。
+
 ### 阶段 B：资产管线与首批模型基线
 
 **目标：** 建立可重复导入、可替换、可追踪版本的资产流程。
@@ -191,6 +204,28 @@ texture = `/sprites/pokemon/${speciesId}.png`
 - 正式 renderer 通过 DTO 的 `modelId` / `artProfileId` 消费资产，永不拼接物种 URL。
 
 **验收：** 同一模型可替换资源不改代码；资源加载失败有可见但不崩溃的通用 fallback；切场景/重复战斗无持有资源泄漏。
+
+#### 阶段 B-1 实施记录（2026-07-16）：静态 Sprite GPU 接入
+
+本工作包先完成现有 151 张前/后视 sprite 的**通用 GPU 资产接入**，不宣称已完成新模型生产、骨骼动画或 2.5D 首批美术资产。
+
+- 新增 `packages/renderer-pixi/src/BattleArtAssets.ts`：`BattleArtAssetLoader` 只接收 `BattleAssetManifestEntry`，使用 Pixi `Assets.load()` 按 manifest 加载并缓存 `Texture`；资源失败返回 `null`，不抛出到战斗流程。它不接收 `speciesId`、`skillId` 或任意文件路径字符串。
+- 新增 `packages/renderer-pixi/src/CombatantView.ts`：消费 `resolveBattleArtPresentation()` 的 profile、asset、theme 与 motion；正常显示 manifest 声明的 sprite，未加载或失败时显示配置化程序 fallback。它包含 idle / locomotion / charge / channel 的轻微循环，以及 attack / cast / hit / faint 等统一 motion 状态，动作 cue 由配置层 `battleArtMotionForAnimation()` 映射。
+- `BattleStage` 不再创建程序化圆形战斗体；进入战斗时只预加载当前 3vN 队伍的 manifest 资产，snapshot 仅以 `speciesId`/side 通过 resolver 创建或刷新 `CombatantView`，animation cue 驱动 view 的通用动作。正式 GPU 路径没有引入 Canvas fallback，Canvas 源码未改动。
+- `BattleArtAssetLoader`、`CombatantView` 已从 `@pokemon-online/renderer-pixi` 导出；smoke 覆盖 loader 的 manifest-only 输入、fallback 类型与 `CombatantView` motion；`npm run smoke`、`npm run typecheck`、`npm run build:web` 于 2026-07-16 通过。
+
+**仍在阶段 B 的后续工作：** 选择 3–6 个代表宝可梦，替换现有静态 sprite 为受控的分层/骨骼或高质量序列帧资产；在不改变 `BattleArtProfile`/manifest/resolver API 的前提下补充真实 attack、cast、charge、channel、hit、faint clip，并做浏览器人工验收和资源生命周期观测。
+
+#### 阶段 B-2 实施记录（2026-07-16）：六种代表模型的 2.5D 配置切片
+
+本工作包以现有已记录来源的静态 sprite 为底图，完成可运行的 **2.5D 分层与动作姿态切片**；没有引入未确认授权的新外部图片，也没有把临时图片路径绑进 renderer。
+
+- 在 `battle-art.ts` 为 profile 补充通用 `BattleArtLayerSpec`（aura / halo、前后景、主题色、呼吸参数）与 `BattleArtMotionPose`（位移、旋转、缩放、发光强度）。这些是 renderer 通用能力，不包含物种或技能条件分支。
+- 首批代表模型由配置显式选定：喷火龙 #006（空中爆发）、皮卡丘 #025（小型敏捷）、耿鬼 #094（幽灵施法）、拉普拉斯 #131（水系支援）、卡比兽 #143（重装坦克）、快龙 #149（空中龙系）。每个 profile 有独立 `modelId`、体型/阴影尺度、aura/halo 组合及 attack/cast/charge/channel/hit/faint 等姿态参数。
+- `CombatantView` 现根据 resolved profile 创建前后分层，按 motion pose 驱动模型的位移、旋转、缩放与光效；未配置代表切片的其余 145 只继续使用相同的 manifest sprite + 通用动作/fallback，不出现 renderer 物种分支。
+- 新增 view diagnostics 和 smoke 覆盖，确认 #006 的 `showcase:flame-wing` profile 在 `windup` cue 后进入 `charge`、声明两层配置化装饰。`npm run smoke`、`npm run typecheck`、`npm run build:web` 与 `git diff --check` 于 2026-07-16 通过。
+
+**下一项真实美术生产前的确认：** 当前六只的“分层”是可运行的 GPU 配置与通用光效层，不等同于新绘制的骨骼/序列帧角色美术。进入新位图或骨骼资产生产前，需要确认视觉风格与授权来源；届时新资产只能新增 manifest 项和 profile 引用，不能改变 gameplay 数据、把文件路径散落到 renderer，或删除/接回 Canvas。
 
 ### 阶段 C：动作导演与施法时间轴
 
