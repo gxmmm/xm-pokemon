@@ -13,7 +13,7 @@ const ARTIFACT_DIR = resolve(BASELINE_DIR, 'artifacts');
 const MANIFEST_PATH = resolve(BASELINE_DIR, 'manifest.json');
 const CHROME_PATH = process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const UPDATE = process.argv.includes('--update');
-const MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'dragon-den', 'deep-space'] as const;
+const MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'dragon-den', 'deep-space'] as const;
 const QUALITIES = ['cinematic', 'standard', 'compatibility'] as const;
 
 type MatrixEntry = { mapId: typeof MAP_IDS[number]; quality: typeof QUALITIES[number]; file: string; sha256: string; diagnostics: Record<string, unknown> };

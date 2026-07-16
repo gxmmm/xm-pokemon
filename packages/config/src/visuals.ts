@@ -532,7 +532,7 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
 
 /** Explicit migration gate for formal WorldView GPU rendering. Scene packs can
  * exist for sandbox/prototyping without being eligible for the live world path. */
-export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'deep-space', 'dragon-den'] as const;
+export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'deep-space', 'dragon-den'] as const;
 export function isGpuWorldMapId(mapId: string): mapId is typeof GPU_WORLD_MAP_IDS[number] {
   return (GPU_WORLD_MAP_IDS as readonly string[]).includes(mapId);
 }

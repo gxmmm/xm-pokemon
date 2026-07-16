@@ -29,7 +29,7 @@ type ObservationReport = {
 type WorldBehaviorDiagnostics = {
     mapId: string;
     sceneId: string | null;
-    renderer: 'canvas' | 'pixi';
+    renderer: 'pixi';
     position: {
         x: number;
         y: number;
@@ -176,10 +176,29 @@ async function enterWarp(page: Page, mapId: string, from: {
     y: number;
 }, key: 'ArrowUp' | 'ArrowDown', expectedHeading: string, allowLowTideReef = false): Promise<void> {
     await moveTo(page, mapId, from, allowLowTideReef);
-    await press(page, key);
-    await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 10000 });
-    await page.waitForTimeout(320);
+    // WorldView can remount immediately after a real battle or scene transition.
+    // Retry the same ordinary edge key only while the player remains on the source
+    // map; this is the real keyboard route, not a coordinate or save mutation.
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await press(page, key);
+        try {
+            await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 5000 });
+            await page.waitForTimeout(320);
+            return;
+        }
+        catch {
+            const state = await worldBehavior(page);
+            if (state.mapId !== mapId) {
+                await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 10000 });
+                await page.waitForTimeout(320);
+                return;
+            }
+            await moveTo(page, mapId, from, allowLowTideReef);
+        }
+    }
+    throw new Error(`normal warp key did not reach ${expectedHeading} from ${mapId}:${from.x},${from.y}; state=${JSON.stringify(await worldBehavior(page))}`);
 }
+
 async function requireMistwood(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '迷雾林境', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
@@ -237,13 +256,18 @@ async function advanceToChoices(page: Page): Promise<void> {
         throw new Error(`dialog choices did not appear; state=${JSON.stringify(await worldState(page))}; body=${(await page.locator('body').innerText()).slice(0, 1800)}`);
     }
 }
-async function finishBattle(page: Page, expectedWorld = '萤火林道'): Promise<string> {
+type BattleFinish = { resultText: string; caught: boolean };
+
+async function finishBattle(page: Page, expectedWorld = '萤火林道', captureFirstWild = false): Promise<BattleFinish> {
     await page.getByRole('button', { name: '⏭' }).click();
     const result = page.locator('.modal-backdrop .modal');
     await result.waitFor({ timeout: 20000 });
     const resultText = (await result.locator('h2').textContent())?.trim() ?? '';
     const releaseAll = result.getByRole('button', { name: '全部放生' });
-    if (await releaseAll.count()) await releaseAll.click();
+    const capture = result.getByRole('button', { name: '捕捉' }).first();
+    const caught = captureFirstWild && await capture.count() === 1;
+    if (caught) await capture.click();
+    else if (await releaseAll.count()) await releaseAll.click();
     else {
         // Use Playwright's real pointer sequence on the visible modal action.
         // A fresh locator avoids clicking a stale result DOM after BattleView
@@ -257,7 +281,25 @@ async function finishBattle(page: Page, expectedWorld = '萤火林道'): Promise
     for (let retry = 0; retry < 40 && await page.locator('.battle').count(); retry++) await page.waitForTimeout(120);
     await page.getByRole('heading', { name: expectedWorld }).waitFor({ timeout: 10000 });
     await page.waitForTimeout(500);
-    return resultText;
+    return { resultText, caught };
+}
+
+async function addRosterToPveTeam(page: Page, expectedWorld: string): Promise<void> {
+    // This uses the same menu and team-selection controls available to a player.
+    // It only chooses legitimately caught roster members; no store state is read or
+    // written by the harness.
+    await page.getByRole('button', { name: '菜单' }).click();
+    await page.getByRole('button', { name: '队伍' }).click();
+    await page.getByRole('heading', { name: '队伍 / 阵容' }).waitFor({ timeout: 10000 });
+    for (let slot = 0; slot < 3; slot++) {
+        const join = page.getByRole('button', { name: '加入' }).first();
+        if (await join.count() === 0) break;
+        await join.click();
+    }
+    assert(await page.getByText('已选 3/3', { exact: false }).count() === 1, 'captured roster members were not selected into the normal PVE team UI');
+    await page.getByRole('button', { name: '← 探索' }).first().click();
+    await page.getByRole('heading', { name: expectedWorld }).waitFor({ timeout: 10000 });
+    await page.waitForTimeout(320);
 }
 async function unlockRoute1(page: Page): Promise<void> {
     // Start at (8,6). Interact with Professor Lan at (6,6), then White Night at  
@@ -269,11 +311,18 @@ async function unlockRoute1(page: Page): Promise<void> {
     await press(page, 'ArrowDown', 2);
     await press(page, 'e');
     await advanceToChoices(page);
-    await page.getByRole('button', { name: '接受切磋' }).click();
-    try {
-        await page.locator('.battle').waitFor({ timeout: 10000 });
+    // The opening choice may race the initial GPU WorldView mount on this local
+    // browser. Retry only the visible NPC dialogue and choice if its normal route
+    // transition was not accepted; no state is written outside that UI path.
+    for (let attempt = 0; attempt < 3 && await page.locator('.battle').count() === 0; attempt++) {
+        if (attempt > 0) {
+            await press(page, 'e');
+            await advanceToChoices(page);
+        }
+        await page.getByRole('button', { name: '接受切磋' }).click();
+        for (let retry = 0; retry < 16 && await page.locator('.battle').count() === 0; retry++) await page.waitForTimeout(120);
     }
-    catch {
+    if (await page.locator('.battle').count() === 0) {
         await page.screenshot({ path: resolve(ARTIFACT_DIR, 'playable-observation-trainer-failure.png') });
         const body = (await page.locator('body').innerText()).slice(0, 2400);
         throw new Error(`trainer battle did not start; state=${JSON.stringify(await worldState(page))}; url=${page.url()}; body=${body}`);
@@ -336,7 +385,7 @@ async function completeChapterOne(page: Page): Promise<void> {
         await page.getByRole('button', { name: '接受试炼' }).click();
         await page.locator('.battle').waitFor({ timeout: 10000 });
         await page.locator('.pixi-battle-viewport canvas').waitFor({ timeout: 10000 });
-        const resultText = await finishBattle(page, '迷雾林境');
+        const { resultText } = await finishBattle(page, '迷雾林境');
         state = await requireMistwood(page, `after mist runner battle ${attempt + 1}`);
         if (state.activeQuest === 'confront-anomaly' && state.objectIds.join(',') === 'anomaly-core' && state.npcIds.length === 0) break;
         if (attempt === STORY_BATTLE_RETRY_LIMIT - 1) throw new Error(`mist runner scripted battle did not advance story after normal retries; last result=${resultText}; state=${JSON.stringify(state)}`);
@@ -367,7 +416,7 @@ async function completeChapterOne(page: Page): Promise<void> {
     assert(returned.mapId === 'pallet' && returned.renderer === 'pixi' && !returned.diagnosticWorldScene && returned.activeQuest === 'climb-starfell', `chapter-one return did not restore the approved GPU path and next quest (${JSON.stringify(returned)})`);
 }
 
-async function resolveRoute3WildBattle(page: Page): Promise<void> {
+async function resolveRoute3WildBattle(page: Page, captureFirstWild = false): Promise<void> {
     // Alternate between a known grass tile and its walkable neighbour until the
     // authoritative encounter roll opens a normal wild battle. This checks an
     // actual GPU World -> GPU Battle -> GPU World round trip on the pending map.
@@ -380,13 +429,23 @@ async function resolveRoute3WildBattle(page: Page): Promise<void> {
             continue;
         }
         await page.locator('.pixi-battle-viewport canvas').waitFor({ timeout: 10000 });
-        await finishBattle(page, '星陨高径');
+        const outcome = await finishBattle(page, '星陨高径', captureFirstWild);
         await requireStarfallRidge(page, 'after route3 wild battle');
-        return;
+        if (!captureFirstWild || outcome.caught) return;
     }
-    throw new Error('route3 did not trigger a normal wild encounter within the observation budget');
+    throw new Error(captureFirstWild ? 'route3 did not produce a winnable capturable encounter within the observation budget' : 'route3 did not trigger a normal wild encounter within the observation budget');
 }
 
+async function recruitRoute3PveTeam(page: Page): Promise<void> {
+    // The fresh save starts with only one level-5 starter, while the next existing
+    // story trainer is a simultaneous 2v2 at levels 11-12. Catch two normal Route3
+    // encounters and select them through the regular TeamView before challenging
+    // the trainer. This is the real player progression path, rather than a retry
+    // loop that asks one starter to win an unwinnable composition.
+    for (let recruit = 0; recruit < 2; recruit++)
+        await resolveRoute3WildBattle(page, true);
+    await addRosterToPveTeam(page, '星陨高径');
+}
 async function resolveSeaRouteWildBattle(page: Page): Promise<void> {
     // `sea-route` has encounterFloor, so this ordinary pair of walkable natural
     // floor cells verifies the existing sea encounter rule through GPU World ->
@@ -411,16 +470,25 @@ async function completeStilltideGateObservation(page: Page): Promise<void> {
     // Complete the existing observatory story entirely through normal UI so the
     // route to the newly gated map remains an authenticated player path.
     await requireWorld(page, '星陨观测所', 'observatory entry before Stilltide path');
-    await moveTo(page, 'mt-moon', { x: 10, y: 8 });
-    assert((await worldBehavior(page)).nearbyNpcId === 'sky-cartographer', 'sky cartographer was not adjacent on the normal Stilltide route');
-    await press(page, 'e');
-    await advanceToChoices(page);
-    await page.getByRole('button', { name: '接受星图试炼' }).click();
-    await page.locator('.battle').waitFor({ timeout: 10000 });
-    await page.locator('.pixi-battle-viewport canvas').waitFor({ timeout: 10000 });
-    const cartographerBattleResult = await finishBattle(page, '星陨观测所');
-    const cartographerResult = await worldBehavior(page);
-    if (cartographerResult.activeQuest === 'challenge-cartographer') throw new Error(`cartographer scripted battle did not advance story; result=${cartographerBattleResult}; state=${JSON.stringify(cartographerResult)}`);
+    // This is an existing real AI battle. Retry only through the same normal
+    // NPC dialogue / choice path after a loss; never write story flags or forge
+    // a victory for the renderer observation.
+    let cartographerResult: WorldBehaviorDiagnostics | null = null;
+    let cartographerBattleResult = '';
+    for (let attempt = 0; attempt < STORY_BATTLE_RETRY_LIMIT; attempt++) {
+        await moveTo(page, 'mt-moon', { x: 10, y: 8 });
+        assert((await worldBehavior(page)).nearbyNpcId === 'sky-cartographer', 'sky cartographer was not adjacent on the normal Stilltide route');
+        await press(page, 'e');
+        await advanceToChoices(page);
+        await page.getByRole('button', { name: '接受星图试炼' }).click();
+        await page.locator('.battle').waitFor({ timeout: 10000 });
+        await page.locator('.pixi-battle-viewport canvas').waitFor({ timeout: 10000 });
+        cartographerBattleResult = (await finishBattle(page, '星陨观测所')).resultText;
+        cartographerResult = await worldBehavior(page);
+        if (cartographerResult.activeQuest !== 'challenge-cartographer') break;
+        if (attempt === STORY_BATTLE_RETRY_LIMIT - 1) throw new Error(`cartographer scripted battle did not advance story after normal retries; last result=${cartographerBattleResult}; state=${JSON.stringify(cartographerResult)}`);
+    }
+    assert(cartographerResult && cartographerResult.activeQuest !== 'challenge-cartographer', `cartographer scripted battle did not advance story after normal retries; result=${cartographerBattleResult}; state=${JSON.stringify(cartographerResult)}`);
     const lensApproaches = [{ x: 8, y: 6 }, { x: 7, y: 5 }, { x: 9, y: 5 }, { x: 8, y: 4 }];
     let lensState = await worldBehavior(page);
     for (const approach of lensApproaches) {
@@ -456,7 +524,8 @@ async function completeStilltideGateObservation(page: Page): Promise<void> {
     await dismissDialog(page);
     state = await requireStilltideIsles(page, 'after tide captain briefing');
     assert(state.activeQuest === 'find-ship-log' && state.objectIds.join(',') === 'tide-gauge', `tide captain did not expose the existing tide-gauge DTO (${JSON.stringify(state)})`);
-    await moveTo(page, 'sea-route', { x: 5, y: 10 });
+    // Approach from the north instead of pathing through the captain at (6,10).
+    await moveTo(page, 'sea-route', { x: 4, y: 9 });
     assert((await worldBehavior(page)).nearbyObjectId === 'tide-gauge', 'tide gauge was not adjacent at the normal sea-route tile');
     await press(page, 'e');
     await advanceToChoices(page);
@@ -524,6 +593,7 @@ async function enterStarfallRidgeObservation(page: Page): Promise<void> {
     assert((await worldState(page)).dialogText.includes('三道刻痕'), `ridge guide dialogue did not use the existing WorldView path; state=${JSON.stringify(await worldState(page))}`);
     await dismissDialog(page);
     await resolveRoute3WildBattle(page);
+    await recruitRoute3PveTeam(page);
     // The north exit remains subject to the original star_3 gate, now satisfied
     // by real interactions; the destination is an already approved GPU map.
     await enterWarp(page, 'route3', { x: 8, y: 1 }, 'ArrowUp', '星陨观测所');
@@ -601,12 +671,11 @@ async function main(): Promise<void> {
         await page.goto(`${BASE_URL}/world?renderer-observation=1`, { waitUntil: 'networkidle' });
         await page.waitForFunction(() => document.querySelector('.world h2')?.textContent?.trim() === '雾湾镇', undefined, { timeout: STARTUP_UI_TIMEOUT_MS });
         await dismissDialog(page);
-        // First complete the normal gated opening using the default compatibility    
-        // renderer. The approved route1 GPU path then reaches viridian-forest through    
-        // its formal config gate, without a map-specific diagnostic override.
-        await unlockRoute1(page);
-        await page.getByRole('button', { name: 'Canvas' }).click();
+        // Complete the normal gated opening through the default GPU WorldView.
+        // The route1 path reaches viridian-forest through its formal config gate,
+        // without a map-specific diagnostic override or a Canvas mode switch.
         await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
+        await unlockRoute1(page);
         const beforeHeap = await readHeap(page);
         await completeChapterOne(page);
         await enterStarfallRidgeObservation(page);

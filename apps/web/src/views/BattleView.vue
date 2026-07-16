@@ -9,7 +9,6 @@ import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
-import BattleCanvas from '../components/BattleCanvas.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { Biome } from '../battle/BattleField.ts';
 import type { QualityProfile } from '@pokemon-online/renderer';
@@ -34,41 +33,30 @@ const ended = ref(false);
 const resultMsg = ref('');
 const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
-const canvasRef = ref<InstanceType<typeof BattleCanvas> | null>(null);
 const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
-type BattleRendererMode = 'canvas' | 'pixi';
-// Canvas remains the default compatibility renderer until the full Stage-3
-// vertical slice is accepted. GPU mode is a user-controlled parallel path.
-const rendererMode = ref<BattleRendererMode>(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'pixi' : 'canvas');
+// BattleStage is the only gameplay renderer for wild, story, and PvP battles.
+// Legacy Canvas code remains in the repository but is never mounted by gameplay.
+const gpuUnavailable = ref<string | null>(null);
 const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
-const pixiStatus = ref(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : 'Canvas compatibility renderer');
+const pixiStatus = ref(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
 const returningToWorld = ref(false);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
 watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
   pixiQuality.value = quality;
-  if (rendererMode.value === 'pixi') pixiStatus.value = `GPU ${quality} renderer`;
+  pixiStatus.value = `GPU ${quality} renderer`;
 });
-function toggleRenderer(): void {
-  if (rendererMode.value === 'pixi') {
-    rendererMode.value = 'canvas';
-    pixiStatus.value = 'Canvas compatibility renderer';
-    return;
-  }
-  pixiQuality.value = visualRuntimeCapabilities.value.quality;
-  rendererMode.value = 'pixi';
-  pixiStatus.value = '正在初始化 GPU renderer…';
+function onPixiReady(): void {
+  gpuUnavailable.value = null;
+  pixiStatus.value = `GPU ${pixiQuality.value} renderer`;
 }
-function onPixiReady(): void { pixiStatus.value = `GPU ${pixiQuality.value} renderer`; }
 function onPixiUnavailable(message: string): void {
-  rendererMode.value = 'canvas';
-  pixiStatus.value = `GPU 不可用，已回退 Canvas：${message}`;
+  gpuUnavailable.value = message;
+  pixiStatus.value = `GPU 战斗渲染不可用：${message}`;
 }
 function activeRendererSettled(): boolean {
-  return rendererMode.value === 'pixi'
-    ? pixiRef.value?.isPresentationSettled() ?? false
-    : canvasRef.value?.isPresentationSettled() ?? false;
+  return !!gpuUnavailable.value || (pixiRef.value?.isPresentationSettled() ?? false);
 }
 // skill-cast avatar flash: uid -> intensity 0..1, set to 1 on a 'skill' event,
 // decays each frame. Reset when a new battle (sim) starts.
@@ -210,10 +198,8 @@ function updatePresentation(s: BattleSim, dtScaled: number): void {
   presentationCues.value = [...frame.cues];
   // Pixi consumes the same director hit-stop cue. The bridge pauses only its
   // delayed visual cursor, never BattleSim's authoritative rule clock.
-  if (rendererMode.value === 'pixi') {
-    for (const directed of frame.cues) {
-      if (directed.cue.type === 'hit-stop') presentationBridge.requestHitStop(Math.max(0, (directed.cue.milliseconds - 30) / 70));
-    }
+  for (const directed of frame.cues) {
+    if (directed.cue.type === 'hit-stop') presentationBridge.requestHitStop(Math.max(0, (directed.cue.milliseconds - 30) / 70));
   }
   presentationCaughtUp = frame.isCaughtUp;
   processPresentationEvents(frame.newEvents);
@@ -224,10 +210,6 @@ function processPresentationEvents(events: readonly import('@pokemon-online/shar
     if (event.type === 'skill' && event.actor) skillFlash.value[event.actor] = 1;
     if (event.type === 'info' && event.actor && /被打断/.test(event.message ?? '')) interruptFlash.value[event.actor] = 1;
   }
-}
-
-function onCanvasImpact(intensity: number): void {
-  presentationBridge.requestHitStop(intensity);
 }
 
 function frame(now: number): void {
@@ -253,9 +235,6 @@ function frame(now: number): void {
       const v = interruptFlash.value[k] - realDt * 3;
       if (v <= 0) delete interruptFlash.value[k]; else interruptFlash.value[k] = v;
     }
-    // Effects/camera continue through presentation hit-stop, while the delayed
-    // combat state remains held on the impact frame.
-    canvasRef.value?.render(running.value ? realDt * speed.value : 0);
   }
   // Do not cover the canvas the instant the simulator decides a winner. The
   // final delayed event (especially a KO burst/faint) must finish its local VFX
@@ -347,7 +326,7 @@ function releaseAll(): void {
 async function returnToWorld(): Promise<void> {
   if (returningToWorld.value) return;
   returningToWorld.value = true;
-  if (rendererMode.value === 'pixi' && battle.mapId && canBridgeGpuWorld(battle.mapId)) {
+  if (!gpuUnavailable.value && battle.mapId && canBridgeGpuWorld(battle.mapId)) {
     await pixiRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
     requestWorldReturnVisualTransition({ mapId: battle.mapId, quality: pixiQuality.value });
   }
@@ -422,15 +401,14 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <BattleCanvas v-if="rendererMode === 'canvas'" ref="canvasRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" @impact="onCanvasImpact" />
-        <PixiBattleViewport v-else ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
         <div class="arena-controls">
           <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
           <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
           <button class="sm ghost" @click="skip">⏭</button>
-          <button class="sm ghost renderer-mode" :title="pixiStatus" @click="toggleRenderer">{{ rendererMode === 'pixi' ? 'GPU' : 'Canvas' }}</button>
         </div>
       </div>
 
@@ -583,6 +561,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
   background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
 }
 .arena.over { filter: brightness(.85); }
+.gpu-unavailable { position:absolute; inset:0; z-index:6; display:grid; place-items:center; padding:24px; text-align:center; color:#ffe4a6; background:rgba(8,13,24,.88); border:1px solid rgba(255,203,5,.35); }
 .tactic-ribbon { position:absolute; left:50%; transform:translateX(-50%); z-index:4; min-width:132px; max-width:calc(100% - 18px); padding:4px 8px; border-radius:7px; text-align:center; pointer-events:none; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.45); box-shadow:0 2px 8px rgba(0,0,0,.28); background:rgba(62,78,108,.88); }
 .tactic-ribbon.player { top:8px; }.tactic-ribbon.enemy { bottom:8px; }
 .tactic-ribbon span { display:block; font-size:10px; font-weight:900; letter-spacing:.4px; }.tactic-ribbon small { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; opacity:.92; }

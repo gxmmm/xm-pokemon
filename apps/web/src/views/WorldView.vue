@@ -7,7 +7,6 @@ import { getMap, isWalkable, isEncounterTile, MAP_MAP, STORY_TRAINERS, STORY_WAR
 import { rollWildGroup, ENCOUNTER_CHANCE, dayNight } from '@pokemon-online/engine';
 import type { Facing } from '@pokemon-online/shared';
 import type { QualityProfile, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
-import WorldCanvas from '../components/WorldCanvas.vue';
 import PixiWorldViewport from '../components/PixiWorldViewport.vue';
 import WorldMap from '../components/WorldMap.vue';
 import { createTransitionState, runTransition } from '../world/transitions.ts';
@@ -20,7 +19,7 @@ declare global {
     __PO_WORLD_BEHAVIOR_DIAGNOSTICS__?: () => {
       mapId: string;
       sceneId: string | null;
-      renderer: WorldRendererMode;
+      renderer: 'pixi';
       position: { x: number; y: number };
       activeQuest: string | null;
       npcIds: readonly string[];
@@ -39,45 +38,33 @@ const router = useRouter();
 const returnedFromGpuBattle = consumeWorldReturnVisualTransition();
 
 const map = computed(() => getMap(game.save!.currentMapId));
-type WorldRendererMode = 'canvas' | 'pixi';
 /** Formal eligibility stays config-owned. The observation-only branch below is an
  * authenticated diagnostic for a pending Scene Pack; it never mutates the gate. */
 function canBridgeGpuWorld(mapId: string): boolean {
   return isGpuWorldMapId(mapId) || hasRendererObservationWorldScene(mapId);
 }
-const rendererMode = ref<WorldRendererMode>(
-  returnedFromGpuBattle && canBridgeGpuWorld(returnedFromGpuBattle.mapId)
-    ? 'pixi'
-    : isRendererObservationWorldScene(map.value.id) ? 'pixi' : 'canvas',
-);
+// All configured maps have an approved Scene Pack and explicit GPU gate.
+// Legacy Canvas code remains in the repository but is never mounted by gameplay.
+const gpuUnavailable = ref<string | null>(null);
 const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
-const pixiStatus = ref(returnedFromGpuBattle && canBridgeGpuWorld(returnedFromGpuBattle.mapId)
-  ? '正在恢复 GPU 世界 renderer…'
-  : isRendererObservationWorldScene(map.value.id) ? 'GPU WorldView observation diagnostic' : 'Canvas compatibility renderer');
+const pixiStatus = ref(
+  returnedFromGpuBattle && canBridgeGpuWorld(returnedFromGpuBattle.mapId)
+    ? '正在恢复 GPU 世界 renderer…'
+    : canBridgeGpuWorld(map.value.id) ? `正在初始化 GPU ${map.value.name} renderer…` : 'GPU 世界场景不可用',
+);
 const pixiWorldRef = ref<InstanceType<typeof PixiWorldViewport> | null>(null);
 const gpuWorldScene = computed(() => canBridgeGpuWorld(map.value.id) ? WORLD_SCENE_BY_MAP_ID[map.value.id] : undefined);
-/** Keep the player-visible toggle tied to the formal config gate. */
-const canUseGpuWorld = computed(() => isGpuWorldMapId(map.value.id));
 watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
   pixiQuality.value = quality;
-  if (rendererMode.value === 'pixi') pixiStatus.value = `GPU ${map.value.name} ${quality} renderer`;
+  pixiStatus.value = `GPU ${map.value.name} ${quality} renderer`;
 });
 const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
   { id: 'player', kind: 'player', position: { x: view.px, y: view.py }, facing: view.facing },
   ...npcs.value.map((npc) => ({ id: npc.id, kind: 'npc' as const, position: { x: npc.x, y: npc.y } })),
   ...objects.value.map((object) => ({ id: object.id, kind: 'object' as const, position: { x: object.x, y: object.y } })),
 ]);
-function toggleWorldRenderer(): void {
-  if (!canUseGpuWorld.value || rendererMode.value === 'pixi') {
-    rendererMode.value = 'canvas';
-    pixiStatus.value = 'Canvas compatibility renderer';
-    return;
-  }
-  pixiQuality.value = visualRuntimeCapabilities.value.quality;
-  rendererMode.value = 'pixi';
-  pixiStatus.value = `正在初始化 GPU ${map.value.name} renderer…`;
-}
 async function onPixiWorldReady(): Promise<void> {
+  gpuUnavailable.value = null;
   pixiStatus.value = `GPU ${map.value.name} ${pixiQuality.value} renderer`;
   if (returnedFromGpuBattle?.mapId === map.value.id && canBridgeGpuWorld(map.value.id)) {
     await nextTick();
@@ -85,13 +72,13 @@ async function onPixiWorldReady(): Promise<void> {
   }
 }
 function onPixiWorldUnavailable(message: string): void {
-  rendererMode.value = 'canvas';
-  pixiStatus.value = `GPU 不可用，已回退 Canvas：${message}`;
+  gpuUnavailable.value = message;
+  pixiStatus.value = `GPU 世界渲染不可用：${message}`;
 }
 async function enterBattleRoute(): Promise<void> {
   // Route handoff transports visual intent only. Battle facts have already been
   // created by the battle store and world movement stays frozen by `leaving`.
-  if (rendererMode.value === 'pixi' && canBridgeGpuWorld(map.value.id)) {
+  if (!gpuUnavailable.value && canBridgeGpuWorld(map.value.id)) {
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
     requestBattleVisualTransition({ mapId: map.value.id, quality: pixiQuality.value });
   }
@@ -118,27 +105,19 @@ const objective = computed(() => storyQuestLabel(game.save?.story.activeQuest ??
 const tide = computed(() => game.save?.story.tide ?? 'high');
 const canInteract = computed(() => (!!nearbyNpc.value || !!nearbyObject.value) && !dialog.value && !transition.active && !leaving);
 watch(gpuWorldScene, (scene) => {
+  gpuUnavailable.value = null;
   if (scene) {
-    if (isRendererObservationWorldScene(map.value.id)) {
-      rendererMode.value = 'pixi';
-      pixiStatus.value = `GPU ${map.value.name} observation diagnostic`;
-    }
+    pixiStatus.value = isRendererObservationWorldScene(map.value.id)
+      ? `GPU ${map.value.name} observation diagnostic`
+      : `正在初始化 GPU ${map.value.name} renderer…`;
     return;
   }
-  rendererMode.value = 'canvas';
-  pixiStatus.value = 'Canvas compatibility renderer';
-});
-// A pending-map observation can cross approved Canvas/GPU maps before reaching
-// its target. Map-id watching makes the target handoff explicit even when both
-// the prior and next scenes already have non-null Scene Pack DTOs.
-watch(() => map.value.id, (mapId) => {
-  if (!isRendererObservationWorldScene(mapId)) return;
-  rendererMode.value = 'pixi';
-  pixiStatus.value = `GPU ${map.value.name} observation diagnostic`;
+  gpuUnavailable.value = '当前地图缺少 GPU Scene Pack';
+  pixiStatus.value = `GPU 世界渲染不可用：${gpuUnavailable.value}`;
 });
 
-// render-time float position, interpolated between tiles for smooth walking.
-// save.position stays integer (the logical cell); `view` is what the canvas draws.
+// Render-time float position, interpolated between tiles for smooth walking.
+// save.position stays integer (the logical cell); `view` is the GPU entity DTO.
 const view = reactive({ px: 0, py: 0, facing: 'down' as Facing, moving: false });
 const transition = reactive(createTransitionState());
 
@@ -353,7 +332,7 @@ onMounted(() => {
     window.__PO_WORLD_BEHAVIOR_DIAGNOSTICS__ = () => ({
       mapId: map.value.id,
       sceneId: gpuWorldScene.value?.id ?? null,
-      renderer: rendererMode.value,
+      renderer: 'pixi',
       position: { x: Math.round(view.px), y: Math.round(view.py) },
       activeQuest: game.save?.story.activeQuest ?? null,
       npcIds: npcs.value.map((npc) => npc.id),
@@ -397,26 +376,15 @@ watch(() => game.save?.position, () => {
         <button class="sm ghost" @click="showMap = !showMap">🗺 地图</button>
         <button class="sm ghost" @click="interact">💬 交互</button>
         <button class="sm ghost" @click="heal">💊 治疗</button>
-        <button v-if="canUseGpuWorld" class="sm ghost" :title="pixiStatus" @click="toggleWorldRenderer">{{ rendererMode === 'pixi' ? `GPU ${map.name}` : 'Canvas' }}</button>
       </div>
     </div>
     <p class="tiny muted" style="margin:0 0 5px">{{ map.description }} {{ map.ambient }}</p>
     <div class="objective"><span>主线目标</span><strong>{{ objective }}</strong></div>
 
     <div class="canvas-wrap">
-      <WorldCanvas v-if="rendererMode === 'canvas'"
-        :map="map"
-        :px="view.px"
-        :py="view.py"
-        :facing="view.facing"
-        :moving="view.moving"
-        :npcs="npcs"
-        :interact-npc-id="nearbyNpc?.id ?? null"
-        :objects="objects"
-        :interact-object-id="nearbyObject?.id ?? null"
-        :tide="tide"
-      />
-      <PixiWorldViewport v-else-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
+      <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
+      <div v-else class="gpu-unavailable">GPU 世界场景不可用。</div>
+      <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 世界渲染不可用：{{ gpuUnavailable }}</div>
     </div>
 
     <div v-if="(nearbyNpc || nearbyObject) && !dialog" class="interact-hint">按 <b>E</b> / 空格 {{ nearbyNpc ? `与 ${nearbyNpc.name} 对话` : `调查 ${nearbyObject?.name}` }}</div>
@@ -461,6 +429,7 @@ watch(() => game.save?.position, () => {
 <style scoped>
 .world { display:flex; flex-direction:column; height:100%; gap:8px; }
 .canvas-wrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+.gpu-unavailable { position:absolute; inset:0; z-index:20; display:grid; place-items:center; padding:24px; text-align:center; color:#ffe4a6; background:rgba(8,13,24,.88); border:1px solid rgba(255,203,5,.35); }
 
 .transition-overlay { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
 .fade-screen { position: absolute; inset: 0; background: #000; }
