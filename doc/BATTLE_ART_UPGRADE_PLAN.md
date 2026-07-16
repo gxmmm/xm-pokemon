@@ -227,6 +227,17 @@ texture = `/sprites/pokemon/${speciesId}.png`
 
 **下一项真实美术生产前的确认：** 当前六只的“分层”是可运行的 GPU 配置与通用光效层，不等同于新绘制的骨骼/序列帧角色美术。进入新位图或骨骼资产生产前，需要确认视觉风格与授权来源；届时新资产只能新增 manifest 项和 profile 引用，不能改变 gameplay 数据、把文件路径散落到 renderer，或删除/接回 Canvas。
 
+#### 阶段 B-3 实施记录（2026-07-16）：首期真实角色资产的来源门禁与导入契约
+
+本工作包确认了首期 vertical slice 的推荐方向是喷火龙 #006（`showcase:flame-wing`）的高质量、保留像素辨识度的 **2D PNG 序列帧 + JSON metadata**；但是视觉方向与实际授权来源尚未获产品确认。因此本次**没有生成、下载或引入新的角色位图**，也没有更换现有 #006 profile 的 PokeAPI static-sprite 引用。
+
+- `BattleAssetManifestEntry` 现在以 `sourceId` 显式关联 `BATTLE_ASSET_SOURCES`；每个来源记录包含来源链接、许可证证据链接、署名和审计状态。现有 PokeAPI sprite 与程序 fallback 的出处均已记录，且不对 Pokémon IP 作超出上游条款的授权宣称。
+- 新增 `BATTLE_ART_IMPORT_CONTRACTS`：#006 的 `vertical-slice:flame-wing-2d-sequence` 声明未来前/后序列资源 key、`png-sequence-json` 格式、`idle/attack/cast/charge/channel/hit/faint` 动作需求与公共 fallback。状态为 `awaiting-art-direction-and-source-approval`，校验会确保该状态下预期 bitmap manifest 项不存在。
+- Pixi manifest loader 对通用 `sprite-sheet` bitmap 类型保持 manifest-only 输入；它不接收 species、skill 或路径字符串。角色资源加载失败依旧使用配置化程序 fallback；Canvas 文件保持未挂载，也未被接回正式路径。
+- 新增 `doc/BATTLE_ASSET_SOURCES.md`，记录当前来源、许可证证据和获批后的导入步骤。smoke 扩展为来源/许可证字段、未批准资源缺席、关键动作契约、manifest ID 与 fallback 的确定性断言。
+
+**B-3 后续阻塞项：** 在开发者确认具体视觉风格及可用授权来源前，禁止创建或接入 #006 新位图。确认后只能按该 import contract 添加新 source record、manifest 条目与 profile asset-ID 替换，再进行浏览器人工验收；不得改 BattleSim/AI/伤害/存档，或在 renderer/Vue/cue adapter 添加物种、技能或资源路径分支。
+
 ### 阶段 C：动作导演与施法时间轴
 
 **目标：** 把 cue 从粗粒度 `animation` 扩展为可审计的动作/相位计划。

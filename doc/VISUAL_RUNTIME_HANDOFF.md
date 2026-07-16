@@ -1,7 +1,7 @@
-# 战斗美术 B-3 交接：真实代表资产生产前
+# 战斗美术 B-3 交接：真实代表资产导入待批准
 
 > **更新时间：2026-07-16**
-> 正式世界与战斗已使用 GPU/Pixi。上一轮运行时重构已结束；Canvas 源码必须保留但不参与正式路径。当前工作进度已完成战斗美术 **阶段 A、阶段 B-1、阶段 B-2**；下一新上下文应只处理 **B-3：真实代表模型资产的生产与接入准备**。
+> 正式世界与战斗已使用 GPU/Pixi。上一轮运行时重构已结束；Canvas 源码必须保留但不参与正式路径。当前工作进度已完成战斗美术 **阶段 A、阶段 B-1、阶段 B-2，以及 B-3 的来源门禁/导入契约**；下一新上下文只能在确认视觉方向与授权来源后，继续 **B-3：真实代表模型资产的生产与接入**。
 
 ## 1. 当前已完成状态（不要回退）
 
@@ -37,6 +37,12 @@
 | #149 快龙 | `showcase:sky-dragon` | 空中龙系 |
 
 当前六只仍以现有 PokeAPI 静态 sprite 为底图，叠加通用 GPU 光环/姿态；**尚未生产新绘制的骨骼或序列帧模型资产。**
+
+### 已完成的 B-3 非位图准备（2026-07-16）
+
+- `BattleAssetManifestEntry` 通过 `sourceId` 引用 `BATTLE_ASSET_SOURCES`；该记录包含来源、许可证证据、署名与审计状态，并已覆盖 PokeAPI 和程序 fallback。
+- `BATTLE_ART_IMPORT_CONTRACTS` 已为 #006 的 `showcase:flame-wing` 声明未来 `png-sequence-json` 前/后资源 ID、关键 `idle/attack/cast/charge/channel/hit/faint` 动作与 fallback。状态是 `awaiting-art-direction-and-source-approval`，因此对应新位图 manifest 项必须不存在。
+- `doc/BATTLE_ASSET_SOURCES.md` 是人工审计记录；smoke 校验来源字段、未批准位图缺席、动作要求和 fallback。没有改变 renderer/Vue/cue adapter 的物种、技能或路径边界，Canvas 也未接回。
 
 ## 2. B-3 的唯一目标
 

@@ -7,7 +7,7 @@ export class BattleArtAssetLoader {
   private readonly textureRequests = new Map<string, Promise<Texture | null>>();
 
   load(entry: BattleAssetManifestEntry): Promise<Texture | null> {
-    if (entry.kind !== 'static-sprite' || !entry.url) return Promise.resolve(null);
+    if (!isSpriteAsset(entry.kind) || !entry.url) return Promise.resolve(null);
     const cached = this.textureRequests.get(entry.id);
     if (cached) return cached;
     const request = Assets.load(entry.url)
@@ -28,5 +28,5 @@ export class BattleArtAssetLoader {
 
 /** Useful for diagnostics/tests without requiring browser asset decoding. */
 export function isSpriteAsset(kind: BattleArtAssetKind): boolean {
-  return kind === 'static-sprite';
+  return kind === 'static-sprite' || kind === 'sprite-sheet';
 }

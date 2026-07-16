@@ -5,7 +5,7 @@ import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { ABILITY_VISUAL_RECIPES, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
+import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
@@ -114,7 +114,7 @@ function assert(cond: boolean, msg: string): void {
 {
   const artReport = validateBattleArtConfiguration();
   assert(BATTLE_ART_PROFILES.length === SPECIES_LIST.length && artReport.missingSpeciesProfileIds.length === 0 && artReport.duplicateSpeciesProfileIds.length === 0, 'every configured species has exactly one battle art profile');
-  assert(artReport.missingAssetIds.length === 0 && artReport.invalidProfileIds.length === 0 && artReport.invalidMotionProfileIds.length === 0 && artReport.invalidAnchorProfileIds.length === 0 && artReport.invalidLayerProfileIds.length === 0, 'battle art profiles reference declared assets, complete motion sets, anchors, and valid 2.5D layers');
+  assert(artReport.missingAssetIds.length === 0 && artReport.invalidProfileIds.length === 0 && artReport.invalidMotionProfileIds.length === 0 && artReport.invalidAnchorProfileIds.length === 0 && artReport.invalidLayerProfileIds.length === 0 && artReport.duplicateAssetIds.length === 0 && artReport.invalidAssetIds.length === 0 && artReport.invalidAssetSourceIds.length === 0 && artReport.invalidImportContractIds.length === 0, 'battle art profiles reference declared assets, complete motion sets, anchors, valid 2.5D layers, and auditable asset/import contracts');
   assert(artReport.missingSkillCastIds.length === 0 && artReport.missingAbilityRecipeIds.length === 0 && artReport.missingPassiveRecipeIds.length === 0 && artReport.missingStatusRecipeIds.length === 0, 'skills, abilities, passives, and statuses have configuration-owned presentation coverage');
   assert(SKILL_CAST_PRESENTATIONS.length === SKILLS.length && ABILITY_VISUAL_RECIPES.length > 0 && PASSIVE_VISUAL_RECIPES.length === PASSIVE_SKILLS.length && Object.keys(STATUS_VISUAL_RECIPES).length === 6, 'battle art catalogs expose complete static presentation data');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
@@ -128,6 +128,9 @@ function assert(cond: boolean, msg: string): void {
     return existsSync(`apps/web/public/${relative}`);
   });
   assert(manifestFilesExist, 'every static battle-art manifest entry resolves to a bundled public asset');
+  const flameWingImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:flame-wing-2d-sequence');
+  assert(BATTLE_ASSET_SOURCES.every((source) => source.sourceUrl && source.licenseLabel && source.licenseEvidenceUrl && source.attribution), 'every battle asset source has auditable provenance, licence evidence, and attribution');
+  assert(flameWingImport?.status === 'awaiting-art-direction-and-source-approval' && flameWingImport.format === 'png-sequence-json' && flameWingImport.requiredMotions.includes('charge') && !BATTLE_ASSET_MANIFEST.some((asset) => asset.id === flameWingImport.plannedFrontAssetId || asset.id === flameWingImport.plannedBackAssetId), 'Charizard vertical-slice import contract records the approved future format, required actions, and no unapproved bitmap');
   const representativeProfiles = REPRESENTATIVE_BATTLE_ART_SPECIES.map((speciesId) => resolveBattleArtPresentation({ speciesId, side: 'enemy' }).profile);
   assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length > 0 && Object.keys(profile.motionPoses).length >= 4), 'six representative models declare layered 2.5D art and distinct motion poses in configuration');
   assert(new Set(representativeProfiles.map((profile) => profile.modelId)).size === representativeProfiles.length, 'representative model identities remain explicit profile data rather than renderer branches');
@@ -140,7 +143,7 @@ function assert(cond: boolean, msg: string): void {
 {
   const assetLoader = new BattleArtAssetLoader();
   const spriteEntry = BATTLE_ASSET_MANIFEST.find((asset) => isSpriteAsset(asset.kind))!;
-  assert(isSpriteAsset(spriteEntry.kind) && !isSpriteAsset('fallback-shape'), 'Pixi battle asset loader distinguishes manifest sprite and fallback entries');
+  assert(isSpriteAsset(spriteEntry.kind) && isSpriteAsset('sprite-sheet') && !isSpriteAsset('fallback-shape'), 'Pixi battle asset loader accepts manifest-declared bitmap forms and rejects procedural fallbacks');
   const viewCombatant = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10)], enemy: [createWildInstance(25, 10)], seed: 716 }).state.combatants[0]!;
   const combatantView = new CombatantView(viewCombatant, assetLoader);
   combatantView.playAnimation('windup');

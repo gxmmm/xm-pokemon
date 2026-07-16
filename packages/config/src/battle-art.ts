@@ -12,7 +12,9 @@ import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
  * receive the resolved DTO and must not add species / skill branches of their
  * own.
  */
-export type BattleArtAssetKind = 'static-sprite' | 'fallback-shape';
+export type BattleArtAssetKind = 'static-sprite' | 'sprite-sheet' | 'fallback-shape';
+export type BattleAssetSourceReviewStatus = 'recorded-existing' | 'procedural';
+export type BattleArtImportStatus = 'awaiting-art-direction-and-source-approval' | 'ready-for-manifest-import' | 'integrated';
 export type BattleArtAnchorId = 'root' | 'center' | 'body' | 'head' | 'muzzle' | 'ground';
 export type BattleArtMotionId =
   | 'idle' | 'locomotion' | 'enter' | 'exit' | 'attack' | 'cast'
@@ -25,13 +27,40 @@ export type BattleArtLayerKind = 'aura' | 'halo';
 export type BattleArtLayerColor = 'primary' | 'secondary' | 'highlight';
 export type BattleArtLayerDepth = 'behind' | 'front';
 
+/** Auditable source and rights record. A record documents provenance; it does
+ * not itself grant rights beyond the linked upstream terms or project policy. */
+export interface BattleAssetSourceRecord {
+  id: string;
+  label: string;
+  sourceUrl: string;
+  licenseLabel: string;
+  licenseEvidenceUrl: string;
+  attribution: string;
+  reviewStatus: BattleAssetSourceReviewStatus;
+}
+
 export interface BattleAssetManifestEntry {
   id: string;
   kind: BattleArtAssetKind;
   /** Public asset URL. Only the manifest owns concrete resource paths. */
   url: string;
-  source: 'pokeapi-sprites' | 'procedural-fallback';
+  /** Must identify an entry in BATTLE_ASSET_SOURCES; paths never imply provenance. */
+  sourceId: string;
   quality: 'all';
+}
+
+/** Design-time contract for a future production asset. It intentionally has no
+ * URL or manifest entry until art direction and source rights are confirmed. */
+export interface BattleArtImportContract {
+  id: string;
+  profileId: string;
+  modelId: string;
+  status: BattleArtImportStatus;
+  format: 'png-sequence-json';
+  plannedFrontAssetId: string;
+  plannedBackAssetId: string;
+  fallbackAssetId: string;
+  requiredMotions: readonly BattleArtMotionId[];
 }
 
 export interface BattleArtAnchor {
@@ -201,11 +230,39 @@ const DEFAULT_MOTIONS: BattleMotionSet = {
 
 const FALLBACK_ASSET_ID = 'battle:fallback-shape';
 
+/** All production manifest entries must point here for provenance and licence
+ * review. The PokeAPI record preserves the existing project's attribution and
+ * deliberately does not claim a new licence for Pokémon IP. */
+export const BATTLE_ASSET_SOURCES: readonly BattleAssetSourceRecord[] = [
+  {
+    id: 'pokeapi-sprites',
+    label: 'PokeAPI Sprites repository',
+    sourceUrl: 'https://github.com/PokeAPI/sprites',
+    licenseLabel: 'Upstream repository terms and Pokémon IP rights; use remains non-commercial fan-project use.',
+    licenseEvidenceUrl: 'https://github.com/PokeAPI/sprites',
+    attribution: 'Sprites © PokeAPI / Pokémon rights holders. Used by this non-commercial fan project.',
+    reviewStatus: 'recorded-existing',
+  },
+  {
+    id: 'procedural-fallback',
+    label: 'Pokemon Online procedural fallback',
+    sourceUrl: 'internal://pokemon-online/renderer-pixi',
+    licenseLabel: 'Project code licence (MIT); generated fallback geometry contains no imported character art.',
+    licenseEvidenceUrl: 'LICENSE',
+    attribution: 'Generated at runtime by Pokemon Online.',
+    reviewStatus: 'procedural',
+  },
+];
+
+export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourceRecord>> = Object.fromEntries(
+  BATTLE_ASSET_SOURCES.map((source) => [source.id, source]),
+);
+
 export const BATTLE_ASSET_MANIFEST: readonly BattleAssetManifestEntry[] = [
-  { id: FALLBACK_ASSET_ID, kind: 'fallback-shape', url: '', source: 'procedural-fallback', quality: 'all' },
+  { id: FALLBACK_ASSET_ID, kind: 'fallback-shape', url: '', sourceId: 'procedural-fallback', quality: 'all' },
   ...SPECIES_LIST.flatMap((species) => [
-    { id: `pokemon:${species.id}:front`, kind: 'static-sprite' as const, url: `/sprites/pokemon/${species.id}.png`, source: 'pokeapi-sprites' as const, quality: 'all' as const },
-    { id: `pokemon:${species.id}:back`, kind: 'static-sprite' as const, url: `/sprites/pokemon/back/${species.id}.png`, source: 'pokeapi-sprites' as const, quality: 'all' as const },
+    { id: `pokemon:${species.id}:front`, kind: 'static-sprite' as const, url: `/sprites/pokemon/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
+    { id: `pokemon:${species.id}:back`, kind: 'static-sprite' as const, url: `/sprites/pokemon/back/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
   ]),
 ];
 
@@ -226,6 +283,23 @@ interface RepresentativeBattleArtTuning {
  * They intentionally reuse the legal existing sprite base while exercising the
  * same layer/motion contract future skeletal or sequence-frame assets use. */
 export const REPRESENTATIVE_BATTLE_ART_SPECIES = [6, 25, 94, 131, 143, 149] as const;
+
+/** B-3 is intentionally blocked before any unapproved character bitmap is
+ * added. Once a source is approved, create the two declared manifest entries,
+ * switch this profile's asset IDs atomically, and retain this fallback. */
+export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = [
+  {
+    id: 'vertical-slice:flame-wing-2d-sequence',
+    profileId: 'species:6',
+    modelId: 'showcase:flame-wing',
+    status: 'awaiting-art-direction-and-source-approval',
+    format: 'png-sequence-json',
+    plannedFrontAssetId: 'battle:flame-wing:front:sequence',
+    plannedBackAssetId: 'battle:flame-wing:back:sequence',
+    fallbackAssetId: FALLBACK_ASSET_ID,
+    requiredMotions: ['idle', 'attack', 'cast', 'charge', 'channel', 'hit', 'faint'],
+  },
+];
 
 const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeBattleArtTuning>> = {
   6: {
@@ -347,6 +421,9 @@ function profileFor(species: Species): BattleArtProfile {
 export const BATTLE_ART_PROFILES: readonly BattleArtProfile[] = SPECIES_LIST.map(profileFor);
 export const BATTLE_ART_PROFILE_BY_SPECIES_ID: Readonly<Record<number, BattleArtProfile>> = Object.fromEntries(
   BATTLE_ART_PROFILES.map((profile) => [profile.speciesId!, profile]),
+);
+export const BATTLE_ART_PROFILE_BY_ID: Readonly<Record<string, BattleArtProfile>> = Object.fromEntries(
+  BATTLE_ART_PROFILES.map((profile) => [profile.id, profile]),
 );
 
 export const GENERIC_BATTLE_ART_PROFILE: BattleArtProfile = {
@@ -483,6 +560,10 @@ export interface BattleArtValidationReport {
   invalidMotionProfileIds: readonly string[];
   invalidAnchorProfileIds: readonly string[];
   invalidLayerProfileIds: readonly string[];
+  duplicateAssetIds: readonly string[];
+  invalidAssetIds: readonly string[];
+  invalidAssetSourceIds: readonly string[];
+  invalidImportContractIds: readonly string[];
   missingSkillCastIds: readonly string[];
   missingAbilityRecipeIds: readonly string[];
   missingPassiveRecipeIds: readonly string[];
@@ -499,6 +580,23 @@ export function validateBattleArtConfiguration(
   assets: readonly BattleAssetManifestEntry[] = BATTLE_ASSET_MANIFEST,
 ): BattleArtValidationReport {
   const assetIds = new Set(assets.map((asset) => asset.id));
+  const sourceIds = new Set(BATTLE_ASSET_SOURCES.map((source) => source.id));
+  const duplicateAssetIds = assets.filter((asset, index) => assets.findIndex((candidate) => candidate.id === asset.id) !== index).map((asset) => asset.id);
+  const invalidAssetIds = assets.filter((asset) => !asset.id || (asset.kind === 'fallback-shape' ? !!asset.url : !asset.url)).map((asset) => asset.id);
+  const invalidAssetSourceIds = [
+    ...BATTLE_ASSET_SOURCES.filter((source) => !source.id || !source.sourceUrl || !source.licenseLabel || !source.licenseEvidenceUrl || !source.attribution).map((source) => source.id),
+    ...assets.filter((asset) => !sourceIds.has(asset.sourceId)).map((asset) => asset.id),
+  ];
+  const invalidImportContractIds = BATTLE_ART_IMPORT_CONTRACTS.filter((contract) => {
+    const profile = profiles.find((candidate) => candidate.id === contract.profileId);
+    return !profile
+      || profile.modelId !== contract.modelId
+      || !assetIds.has(contract.fallbackAssetId)
+      || contract.requiredMotions.length === 0
+      || contract.requiredMotions.some((motion) => !profile.motions[motion])
+      || (contract.status === 'awaiting-art-direction-and-source-approval'
+        && (assetIds.has(contract.plannedFrontAssetId) || assetIds.has(contract.plannedBackAssetId)));
+  }).map((contract) => contract.id);
   const knownSpeciesIds = new Set(SPECIES_LIST.map((species) => species.id));
   const seenSpecies = new Set<number>();
   const duplicateSpeciesProfileIds: number[] = [];
@@ -539,6 +637,10 @@ export function validateBattleArtConfiguration(
     invalidMotionProfileIds,
     invalidAnchorProfileIds,
     invalidLayerProfileIds,
+    duplicateAssetIds,
+    invalidAssetIds,
+    invalidAssetSourceIds,
+    invalidImportContractIds,
     missingSkillCastIds: SKILLS.filter((skill) => !SKILL_CAST_PRESENTATION_BY_SKILL_ID[skill.id]).map((skill) => skill.id),
     missingAbilityRecipeIds: ABILITIES.filter((ability) => !abilityIds.has(ability.id)).map((ability) => ability.id),
     missingPassiveRecipeIds: PASSIVE_SKILLS.filter((passive) => !passiveIds.has(passive.id)).map((passive) => passive.id),
