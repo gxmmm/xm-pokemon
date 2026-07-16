@@ -1,3 +1,9 @@
+/**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { BATTLE_GRID } from '@pokemon-online/shared';

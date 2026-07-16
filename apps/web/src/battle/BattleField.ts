@@ -1,4 +1,10 @@
 /**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
+/**
  * BattleField - a layered, biome-aware combat diorama.  The simulation still
  * owns a rectangular tactical grid, but it is projected onto a perspective
  * field instead of an abstract oval stadium.  This keeps positions deterministic

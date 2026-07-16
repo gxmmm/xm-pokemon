@@ -229,14 +229,14 @@ texture = `/sprites/pokemon/${speciesId}.png`
 
 #### 阶段 B-3 实施记录（2026-07-16）：首期真实角色资产的来源门禁与导入契约
 
-本工作包确认了首期 vertical slice 的推荐方向是喷火龙 #006（`showcase:flame-wing`）的高质量、保留像素辨识度的 **2D PNG 序列帧 + JSON metadata**；但是视觉方向与实际授权来源尚未获产品确认。因此本次**没有生成、下载或引入新的角色位图**，也没有更换现有 #006 profile 的 PokeAPI static-sprite 引用。
+本工作包以喷火龙 #006（`showcase:flame-wing`）完成首个 vertical slice。经过 v1～v3 纯代码重绘候选的人工否决后，开发者验收通过 v4：以项目已经下载、已记录来源的 PokeAPI #006 前/后视静态 sprite 为基底，离线脚本逐像素复制为 PNG 序列帧 + JSON metadata；通过 manifest/profile 原子接入，未覆盖任何原始 sprite。
 
-- `BattleAssetManifestEntry` 现在以 `sourceId` 显式关联 `BATTLE_ASSET_SOURCES`；每个来源记录包含来源链接、许可证证据链接、署名和审计状态。现有 PokeAPI sprite 与程序 fallback 的出处均已记录，且不对 Pokémon IP 作超出上游条款的授权宣称。
-- 新增 `BATTLE_ART_IMPORT_CONTRACTS`：#006 的 `vertical-slice:flame-wing-2d-sequence` 声明未来前/后序列资源 key、`png-sequence-json` 格式、`idle/attack/cast/charge/channel/hit/faint` 动作需求与公共 fallback。状态为 `awaiting-art-direction-and-source-approval`，校验会确保该状态下预期 bitmap manifest 项不存在。
-- Pixi manifest loader 对通用 `sprite-sheet` bitmap 类型保持 manifest-only 输入；它不接收 species、skill 或路径字符串。角色资源加载失败依旧使用配置化程序 fallback；Canvas 文件保持未挂载，也未被接回正式路径。
-- 新增 `doc/BATTLE_ASSET_SOURCES.md`，记录当前来源、许可证证据和获批后的导入步骤。smoke 扩展为来源/许可证字段、未批准资源缺席、关键动作契约、manifest ID 与 fallback 的确定性断言。
+- `BattleAssetManifestEntry` 以 `sourceId` 显式关联 `BATTLE_ASSET_SOURCES`；每个来源记录包含来源链接、许可证证据链接、署名和审计状态。#006 v4 明确继承已记录的 PokeAPI 来源；v1～v3 的纯代码重绘来源仍保留，仅作历史候选。
+- `BATTLE_ART_IMPORT_CONTRACTS` 中 #006 的 `vertical-slice:flame-wing-2d-sequence` 已声明 v4 PokeAPI 派生来源、96×96/12fps/透明 PNG 的 `png-sequence-json`、`idle/attack/cast/charge/channel/hit/faint`、`cubic-in-out` 通用补间和公共 fallback。状态为 `integrated`；校验确保前/后 manifest 条目存在且 #006 profile 同步引用它们。
+- Pixi manifest loader 对通用 `sprite-sheet` 位图与 JSON clip 元数据保持仅 manifest 输入；`CombatantView` 用通用播放器按 clip 帧播放，以 `cubic-in-out` 插值实现待机到攻击等 motion pose 衔接，并从 snapshot 的 `combatant.facing` 统一镜像贴图、序列帧、光环、fallback、水平偏移和倾角。它不接收 species、skill 或路径字符串；角色资源、元数据或 clip 加载失败依旧使用配置化程序 fallback；Canvas 文件保持未挂载，也未被接回正式路径。
+- 新增 `doc/BATTLE_ASSET_SOURCES.md`，记录当前来源、许可证证据、无损封装脚本、校验和和验收结论。smoke 扩展为来源/许可证字段、已生成 PNG/JSON 存在、关键动作与补间契约、方向镜像、manifest ID 与 fallback 的确定性断言。
 
-**B-3 后续阻塞项：** 在开发者确认具体视觉风格及可用授权来源前，禁止创建或接入 #006 新位图。确认后只能按该 import contract 添加新 source record、manifest 条目与 profile asset-ID 替换，再进行浏览器人工验收；不得改 BattleSim/AI/伤害/存档，或在 renderer/Vue/cue adapter 添加物种、技能或资源路径分支。
+**B-3 后续工作：** #006 的代码生成资产已接入；v1、v2、v3 的纯代码重绘均未达到角色可辨识质量要求而保留为未验收候选；v4 不再重绘轮廓，而是将项目已下载、已记录来源的 PokeAPI #006 前/后视 sprite 无损复制为序列帧基底，配合通用 motion pose、补间和 aura/halo 提供动态，已获开发者基础模型验收通过。后续代表模型优先采用同一“已记录来源静态基底 + 通用 GPU 动态表现”的路径。另已补齐通用 `facing` 镜像：模型、序列帧、光环、fallback、动作偏移和倾角均从 snapshot 的 `combatant.facing` 消费方向变化，禁止物种特判。下一项是浏览器中的完整人工验收、性能/资源生命周期观察，以及在确认质量后把同一通用契约推广到下一只代表模型。不得改 BattleSim/AI/伤害/存档，或在 renderer/Vue/cue adapter 添加物种、技能或资源路径分支。
 
 ### 阶段 C：动作导演与施法时间轴
 

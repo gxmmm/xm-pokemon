@@ -1,7 +1,7 @@
-# 战斗美术 B-3 交接：真实代表资产导入待批准
+# 战斗美术 B-3 交接：#006 基线验收通过，准备扩展下一代表模型
 
 > **更新时间：2026-07-16**
-> 正式世界与战斗已使用 GPU/Pixi。上一轮运行时重构已结束；Canvas 源码必须保留但不参与正式路径。当前工作进度已完成战斗美术 **阶段 A、阶段 B-1、阶段 B-2，以及 B-3 的来源门禁/导入契约**；下一新上下文只能在确认视觉方向与授权来源后，继续 **B-3：真实代表模型资产的生产与接入**。
+> 正式世界与战斗已使用 GPU/Pixi。Canvas 源码必须保留但不参与正式路径。当前已完成战斗美术 **阶段 A、B-1、B-2，以及 B-3 的 #006 静态基底 vertical slice**：开发者已验收 #006 的基础模型和通用朝向反转。下一新上下文应继续 **B-3：以同一静态基底 + 通用 GPU 动态契约接入下一只代表模型，并完成资源/生命周期人工验收**。
 
 ## 1. 当前已完成状态（不要回退）
 
@@ -9,7 +9,7 @@
 
 - `packages/config/src/battle-art.ts` 已是战斗美术静态配置权威：
   - 151 个 `BattleArtProfile`；
-  - 303 条资产 manifest（151 前视、151 后视、1 个程序 fallback）；
+  - 311 条资产 manifest（151 前视、151 后视、1 个程序 fallback、#006 的 v1～v4 前/后视序列帧候选）；
   - 全部 141 个主动技能的 `SkillCastPresentationSpec`；
   - Ability、Passive、6 种 Status 的 reactive visual recipe；
   - `resolveBattleArtPresentation()` 与 `validateBattleArtConfiguration()`。
@@ -36,37 +36,47 @@
 | #143 卡比兽 | `showcase:fortress-tank` | 重装坦克 |
 | #149 快龙 | `showcase:sky-dragon` | 空中龙系 |
 
-当前六只仍以现有 PokeAPI 静态 sprite 为底图，叠加通用 GPU 光环/姿态；**尚未生产新绘制的骨骼或序列帧模型资产。**
+#025/#094/#131/#143/#149 仍以现有 PokeAPI 静态 sprite 为底图，叠加通用 GPU 光环/姿态。#006 当前使用以项目已下载 PokeAPI 静态 sprite 无损封装的 v4 前/后视 PNG 序列帧与 JSON 元数据，已通过开发者基础模型验收；v1、v2、v3 保留为未验收历史候选，尚未使用骨骼资产。后续代表模型优先采用同一静态基底 + 通用 GPU 动态表现方向。
 
-### 已完成的 B-3 非位图准备（2026-07-16）
+### 已完成的 B-3 资产接入与运行时准备（2026-07-16）
 
 - `BattleAssetManifestEntry` 通过 `sourceId` 引用 `BATTLE_ASSET_SOURCES`；该记录包含来源、许可证证据、署名与审计状态，并已覆盖 PokeAPI 和程序 fallback。
-- `BATTLE_ART_IMPORT_CONTRACTS` 已为 #006 的 `showcase:flame-wing` 声明未来 `png-sequence-json` 前/后资源 ID、关键 `idle/attack/cast/charge/channel/hit/faint` 动作与 fallback。状态是 `awaiting-art-direction-and-source-approval`，因此对应新位图 manifest 项必须不存在。
-- `doc/BATTLE_ASSET_SOURCES.md` 是人工审计记录；smoke 校验来源字段、未批准位图缺席、动作要求和 fallback。没有改变 renderer/Vue/cue adapter 的物种、技能或路径边界，Canvas 也未接回。
+- #006 的 `BATTLE_ART_IMPORT_CONTRACTS` 已采用 `pokemon-online-pokeapi-derived-flame-wing-v4`：从项目已下载、已记录来源的 PokeAPI 96×96 前/后视静态 sprite 逐像素复制为 29 帧 `png-sequence-json` 封装。它声明 `idle/attack/cast/charge/channel/hit/faint`、待机到攻击等通用补间和 fallback；状态为 `integrated`。v4 已通过开发者基础模型验收；v1～v3 仅作未验收历史候选。
+- `CombatantView` 从 `BattleRenderSnapshot.combatants[].facing` 通用镜像模型层级：静态贴图、裁剪序列帧、aura/halo、程序 fallback、动作水平位移和倾角都会随目标方向改变；不按物种分支，也不改引擎的 facing 权威。
+- `doc/BATTLE_ASSET_SOURCES.md` 是简体中文人工审计记录；smoke 校验来源字段、已生成位图/元数据存在、动作与补间要求、方向镜像和 fallback。Canvas 源码均有 `@canvas-archive-only` 标记，`npm run canvas:archive-check` 阻止正式 world/battle Vue 入口、Pixi viewport 和 `renderer-pixi` 重新引用它；没有改变 renderer/Vue/cue adapter 的物种、技能或路径边界。
 
-## 2. B-3 的唯一目标
 
-在不改 BattleSim、AI、伤害、存档、玩法技能数据、Canvas 正式路径的前提下，完成一小批（建议先 1–2 只，最多 3 只）代表宝可梦的**新位图分层或骨骼/序列帧资产垂直切片**，并接入现有 manifest/profile/loader/CombatantView 契约。
+### 独立战斗验收沙盒（2026-07-16）
 
-优先候选：
+- 新增无需登录的 `/battle-sandbox`：不读取 Pinia、认证、存档、图鉴、队伍或战斗记录；它是前端内存中的验收入口，不能用于正常游戏流程。
+- 双方各可勾选 1～3 只，支持 1v1、1v2、2v3、3v3 等任意 N vs N 组合。每次开始都会对所选物种执行 `createWildInstance(speciesId, 100)`，因此 IV、成长、性格和可选被动按野生规则重新随机，不进入玩家数据。
+- 沙盒复用正式 `BattleSim`、`BattlePresentationBridge`、`PixiBattleViewport` 与 `BattleStage`；不改变 AI、伤害或存档权威。GPU 不可用时只显示状态，不使用 Canvas fallback。
 
-1. 喷火龙 #006：覆盖空中、近战/远程、蓄力/光束、火焰 aura；
-2. 耿鬼 #094：覆盖悬浮、施法、持续 channel、幽灵特效；
-3. 皮卡丘 #025：覆盖小型敏捷、短前冲与电系蓄力。
+## 2. 已验收结论与下一工作包
 
-**一次只选择一个可验证闭环。** 若没有明确确认的美术资源来源或风格，不要假称已生产真实新模型；可先完成资产格式导入/metadata 支持，但不要擅自下载或使用来源不明资产。
+### 已验收（冻结为后续模型生产基线）
 
-## 3. B-3 前唯一需要确认的产品决策
+1. **#006 基础模型：** v4 的前/后视基础轮廓合格。它必须保持“已记录来源的 PokeAPI 静态 sprite 无损序列帧封装”，不得用 v1～v3 的纯代码重绘替换。
+2. **朝向：** `CombatantView` 已从 snapshot 的 `combatant.facing` 通用镜像完整模型层级；开发者确认反转正确。后续模型、贴图、序列帧、aura/halo、fallback、动作水平偏移和倾角必须继续服从这一通用规则。
+3. **验收入口：** `/battle-sandbox` 无需登录，双方各选 1～3 只（最小 1v1、最大 3v3），每次以 `createWildInstance(speciesId, 100)` 创建仅存于内存的满级随机野生式个体；不会改图鉴、队伍、战斗记录或存档。
+4. **Canvas：** 13 个 Canvas 历史源以 `@canvas-archive-only` 保留；`npm run canvas:archive-check` 已阻止正式 world/battle Vue 入口、Pixi viewport 和 `renderer-pixi` 回接 Canvas。
 
-新上下文开始时应首先向开发者确认以下一点；确认前可以审计/搭建导入契约，但不能提交新的角色美术资源：
+### 下一工作包：B-3 下一代表模型（建议 #094 耿鬼）
 
-> 首期真实角色资产采用哪一种表现形式与来源？
->
-> **推荐：** 保留像素风识别度的高质量 2D 分层 / 序列帧（PNG + JSON metadata），首个 vertical slice 先做喷火龙；资源必须有明确的原创、授权或可用许可证记录。
->
-> 可选备选：Spine/骨骼、其他 2D 格式。无论选择哪种，asset manifest/profile 的接口不得按格式或物种散落到 renderer。
+**目标：** 以 #006 已验收的相同路径，接入耿鬼 #094：继续使用已下载、已记录来源的 PokeAPI 静态 sprite 作为前/后视基底；用 manifest + JSON sequence metadata + `BattleArtProfile` 引用实现通用动作、补间、facing 镜像和 fallback。优先验证悬浮、施法、`channel`、受击和倒下可读性。
 
-若开发者明确要求 AI 生成位图，先遵守 imagegen skill：生成文件必须放入项目工作区、记录来源/许可与版本；透明背景按 skill 的 chroma-key / 透明工作流处理，且不得覆盖现有原始 sprite。
+**不要做：** 不要再尝试用抽象多边形重绘角色本体；不要删除 v1～v3 候选；不要修改 BattleSim、AI、伤害、存档、正式 Canvas 边界；不要在 renderer/Vue/cue adapter 按物种、技能或路径硬编码。
+
+## 3. B-3 下一模型的固定生产策略
+
+在不改 BattleSim、AI、伤害、存档、玩法技能数据或 Canvas 正式路径的前提下，每次只完成一个可验证的代表模型 vertical slice。
+
+1. 先从项目已经下载、已有来源/许可证记录的 PokeAPI 静态前/后视 sprite 取得基底；不能拿来源不明图片，也不覆盖原始 sprite。
+2. 用离线脚本逐像素封装为 PNG sequence + JSON metadata；如果尚没有真正逐帧角色动画，就让通用 `BattleArtProfile.motionPoses`、Pixi 补间、aura/halo 与 `combatant.facing` 提供动态，而非抽象重绘角色轮廓。
+3. 新资源只能通过 `BattleAssetManifestEntry` 注册，profile 只引用 asset ID；记录 `sourceId`、许可证证据、署名、脚本版本、校验和、验收结论。
+4. 对当前模型完成 `/battle-sandbox` 的最小 1v1 和代表性 3v3 人工检查，再开始下一只。
+
+**下一候选：** 建议 #094 耿鬼（`showcase:spectral-caster`），重点验证悬浮、`cast/channel`、受击、倒下、方向镜像与加载 fallback。#025 皮卡丘可作为后续小型敏捷基线。
 
 ## 4. 不可突破的边界
 
@@ -95,25 +105,19 @@
 
 ## 6. 当前未提交工作区（必须保留）
 
-```text
-M  doc/BATTLE_ART_UPGRADE_PLAN.md
-M  packages/config/src/index.ts
-M  packages/renderer-pixi/src/BattleStage.ts
-M  packages/renderer-pixi/src/index.ts
-M  scripts/smoke.ts
-?? packages/config/src/battle-art.ts
-?? packages/renderer-pixi/src/BattleArtAssets.ts
-?? packages/renderer-pixi/src/CombatantView.ts
-```
+工作区包含本轮 B-3、Canvas 归档隔离、免登录战斗验收沙盒以及 #006 v1～v4 资产候选的未提交改动。新上下文开始时必须先运行 `git status --short` 获取准确清单；不得使用本文件中的旧快照代替真实状态。
 
-上述变更已经通过：
+已在本轮通过：
 
 ```powershell
-npm run smoke
+npm run canvas:archive-check
 npm run typecheck
+npm run smoke
 npm run build:web
 git diff --check
 ```
+
+并已完成浏览器回归：未登录 `/battle-sandbox` 中 #006 vs #025 的 1v1 能挂载 Pixi；#006 v4 的 PNG/JSON 可加载；未出现 GPU 或控制台错误。
 
 ## 7. B-3 最低验收清单
 
@@ -128,11 +132,29 @@ git diff --check
 ## 8. 可直接复制到新上下文的提示
 
 ```text
-继续 Pokemon Online 战斗美术阶段 B-3。先阅读 README.md、PROJECT_RULES.md、doc/VISUAL_RUNTIME_HANDOFF.md、doc/BATTLE_ART_UPGRADE_PLAN.md，并检查 git status；保留全部未提交改动，禁止 reset/checkout/覆盖/删除现有改动。
+继续 Pokemon Online 战斗美术升级计划，处理阶段 B-3 的下一只代表模型。
 
-当前已完成：151 个配置化 BattleArtProfile、manifest-only Pixi loader、CombatantView、正式 GPU sprite 接入，以及喷火龙#006/皮卡丘#025/耿鬼#094/拉普拉斯#131/卡比兽#143/快龙#149 的 2.5D aura/halo/motion pose 配置切片。它们仍使用已有 PokeAPI 静态 sprite，尚未生产新的骨骼或序列帧角色资产。
+先阅读：
+- README.md
+- PROJECT_RULES.md
+- doc/VISUAL_RUNTIME_HANDOFF.md
+- doc/BATTLE_ART_UPGRADE_PLAN.md
+- doc/BATTLE_ASSET_SOURCES.md
+- packages/config/src/battle-art.ts
+- packages/renderer-pixi/src/BattleArtAssets.ts
+- packages/renderer-pixi/src/CombatantView.ts
+- packages/renderer-pixi/src/BattleStage.ts
+- apps/web/src/views/BattleSandboxView.vue
 
-本次只处理 B-3：先确认首期真实角色资产的视觉形式与授权来源；推荐以喷火龙 #006 为首个高质量 2D 分层/序列帧 vertical slice。新资产必须通过 BattleAssetManifestEntry + BattleArtProfile 引用；禁止在 renderer/Vue/cue adapter 按 speciesId/skillId/文件路径硬编码，禁止改 BattleSim/AI/伤害/存档，Canvas 源码必须保留但不得接回正式路径。
+先检查 git status；保留所有未提交改动。禁止 reset、checkout、覆盖或删除现有改动。
 
-完成一个可验证闭环：asset 来源和许可证记录、manifest/profile 接入、关键动作与 fallback、smoke/typecheck/build/diff-check、计划文档实施记录。若风格/授权来源尚未获确认，不要生产或引入新的角色位图，只完成不依赖该决定的导入契约工作。
+已冻结：正式世界/战斗为 GPU-only Pixi；Canvas 源码必须保留为 @canvas-archive-only，但不得重新挂入正式路径、提供切换或作为 GPU fallback。BattleSim/engine 决定事实，presentation 产出 cue，renderer 只消费 DTO。
+
+#006 喷火龙的 v4 基础模型和通用 facing 镜像已经验收通过：以项目已下载、已记录来源的 PokeAPI 静态前/后视 sprite 无损封装为 PNG sequence + JSON metadata；通用 BattleArtProfile motion pose、Pixi cubic-in-out 补间、aura/halo 和 combatant.facing 提供动态。v1/v2/v3 纯代码重绘是未验收历史候选，必须保留但不得重新接为 #006 当前资源。
+
+本次建议只做 #094 耿鬼的同类 vertical slice：使用已下载且已记录来源的 PokeAPI 静态前/后视 sprite 作为基底，经 BattleAssetManifestEntry + BattleArtProfile 接入 JSON sequence metadata；验证悬浮、cast/channel、hit、faint、facing 和 fallback。禁止在 renderer/Vue/cue adapter 按 speciesId、skillId 或资源路径硬编码；禁止修改 BattleSim、AI、伤害、存档。
+
+可用验收入口：/battle-sandbox，无需登录，支持双方 1～3 只的 N vs N（最小 1v1），每次用 createWildInstance(speciesId, 100) 产生仅内存中的满级随机野生式个体，不写玩家数据。
+
+完成后更新简体中文来源记录、交接和计划文档，并执行 npm run canvas:archive-check、npm run typecheck、npm run smoke、npm run build:web、git diff --check，外加浏览器沙盒人工回归。
 ```

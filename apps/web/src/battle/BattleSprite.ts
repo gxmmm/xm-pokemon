@@ -1,4 +1,10 @@
 /**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
+/**
  * BattleSprite - loads Pokemon front/back pixel sprites and draws them on the
  * battle canvas, with per-frame effect overlays (hit flash + squash, faint,
  * cast charge-up, status aura, status tint). Falls back to a procedurally-

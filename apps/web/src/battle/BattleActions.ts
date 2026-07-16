@@ -1,3 +1,9 @@
+/**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
 import type { BattleEvent, BattleVfx } from '@pokemon-online/shared';
 import type { DirectedBattleCue } from '@pokemon-online/presentation';
 

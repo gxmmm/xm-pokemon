@@ -1,4 +1,10 @@
 /**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
+/**
  * Tileset - loads an external tile image + atlas (tile code -> atlas coords)
  * and draws map tiles. Falls back to a procedurally-drawn stylized tileset
  * when the external assets are missing or fail to load, so the world always

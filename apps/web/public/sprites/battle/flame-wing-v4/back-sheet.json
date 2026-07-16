@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "frameWidth": 96,
+  "frameHeight": 96,
+  "columns": 8,
+  "fps": 12,
+  "clips": {
+    "idle": {
+      "frames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "loop": true
+    },
+    "attack": {
+      "frames": [
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "loop": false
+    },
+    "cast": {
+      "frames": [
+        9,
+        10,
+        11,
+        12
+      ],
+      "loop": false
+    },
+    "charge": {
+      "frames": [
+        13,
+        14,
+        15,
+        16
+      ],
+      "loop": true
+    },
+    "channel": {
+      "frames": [
+        17,
+        18,
+        19,
+        20
+      ],
+      "loop": true
+    },
+    "hit": {
+      "frames": [
+        21,
+        22,
+        23
+      ],
+      "loop": false
+    },
+    "faint": {
+      "frames": [
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "loop": false
+    }
+  },
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "attack",
+      "durationMs": 120,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "attack",
+      "to": "idle",
+      "durationMs": 160,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "idle",
+      "to": "cast",
+      "durationMs": 140,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "cast",
+      "to": "idle",
+      "durationMs": 160,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "idle",
+      "to": "charge",
+      "durationMs": 180,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "charge",
+      "to": "channel",
+      "durationMs": 120,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "channel",
+      "to": "idle",
+      "durationMs": 180,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "idle",
+      "to": "hit",
+      "durationMs": 70,
+      "easing": "cubic-in-out"
+    },
+    {
+      "from": "hit",
+      "to": "idle",
+      "durationMs": 140,
+      "easing": "cubic-in-out"
+    }
+  ]
+}

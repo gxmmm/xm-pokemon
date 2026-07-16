@@ -3,14 +3,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS, isGpuWorldMapId } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS, isGpuWorldMapId, type BattleEnvironmentId } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
 import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
-import type { Biome } from '../battle/BattleField.ts';
 import type { QualityProfile } from '@pokemon-online/renderer';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
@@ -159,7 +158,7 @@ function hpColor(c: BattleCombatant): string {
   const r = hpRatio(c);
   return r > 0.5 ? '#4caf50' : r > 0.2 ? '#e0a800' : '#d23b3b';
 }
-const biome = computed<Biome>(() => {
+const biome = computed<BattleEnvironmentId>(() => {
   if (battle.mode === 'pvp') return 'arena';
   const id = battle.mapId ?? '';
 if (id.includes('dragon') || id === 'deep-space') return 'dragon';

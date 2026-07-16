@@ -1,3 +1,9 @@
+/**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
 const fxImages = new Map<string, HTMLImageElement>();
 let fxAtlasPromise: Promise<void> | null = null;
 

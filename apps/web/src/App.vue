@@ -14,10 +14,11 @@ const route = useRoute();
 const showNav = computed(() => auth.isAuthenticated && game.hasSave);
 // battle manages its own controls + result modal; hide the global menu/back there
 const showChrome = computed(() => showNav.value && route.path !== '/battle');
-// Use the immutable initial URL rather than reactive router timing: this mode is
-// available only for standalone sandbox paths and cannot unlock playable routes.
-const visualRegressionMode = computed(() => {
+// Use the immutable initial URL rather than reactive router timing. Standalone
+// validation sandboxes never unlock the playable world or account-bound routes.
+const standaloneSandboxMode = computed(() => {
   const path = window.location.pathname;
+  if (path.endsWith('/battle-sandbox')) return true;
   return new URLSearchParams(window.location.search).get('visual-regression') === '1'
     && (path.endsWith('/world-stage-sandbox') || path.endsWith('/battle-stage-sandbox'));
 });
@@ -35,7 +36,7 @@ onMounted(async () => {
   window.addEventListener('resize', updateScale);
   // Browser visual regression opens only standalone sandbox routes. It never
   // bypasses authentication for the playable world or application pages.
-  if (visualRegressionMode.value) return;
+  if (standaloneSandboxMode.value) return;
   await auth.restore();
   if (auth.isAuthenticated) {
     await game.load();
@@ -48,7 +49,7 @@ onUnmounted(() => window.removeEventListener('resize', updateScale));
 
 // if save disappears (logout), go to login
 watch(() => auth.isAuthenticated, (v) => {
-  if (!v && !visualRegressionMode.value) router.replace({ name: 'login' });
+  if (!v && !standaloneSandboxMode.value) router.replace({ name: 'login' });
 });
 </script>
 

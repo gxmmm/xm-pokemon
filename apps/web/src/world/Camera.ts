@@ -1,4 +1,10 @@
 /**
+ * @canvas-archive-only
+ * Archived Canvas compatibility/regression source. It must remain in the
+ * repository, but must not be imported, mounted, dynamically loaded, offered
+ * as a fallback, or extended by official GPU/Pixi world or battle runtime code.
+ */
+/**
  * Camera - viewport-centered scrolling over a tile map. Keeps the player
  * centered when the map is larger than the viewport; centers the whole map
  * (with an empty border) when it is smaller. Tile culling is left to the

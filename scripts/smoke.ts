@@ -1,9 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
 import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
+import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
 import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
@@ -119,7 +120,7 @@ function assert(cond: boolean, msg: string): void {
   assert(SKILL_CAST_PRESENTATIONS.length === SKILLS.length && ABILITY_VISUAL_RECIPES.length > 0 && PASSIVE_VISUAL_RECIPES.length === PASSIVE_SKILLS.length && Object.keys(STATUS_VISUAL_RECIPES).length === 6, 'battle art catalogs expose complete static presentation data');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
-  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.url.endsWith('/back/6.png') && pikachuSwift.asset.url.endsWith('/25.png'), 'a shared skill resolves through configured player/enemy model assets');
+  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'battle:flame-wing:v4:back:sequence' && charizardSwift.asset.metadataUrl?.endsWith('/flame-wing-v4/back-sheet.json') && pikachuSwift.asset.url.endsWith('/25.png'), '共享技能通过配置化的玩家/敌方模型资产解析，不需要 renderer 分支');
   assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'cast', 'one shared skill receives model-configured theme, anchor, and motion differences');
   const unknown = resolveBattleArtPresentation({ speciesId: -1, side: 'enemy', skillId: '__missing__', motion: 'hit' });
   assert(unknown.profile.id === 'generic:fallback' && unknown.asset.kind === 'fallback-shape' && unknown.motion.id === 'hit', 'battle art resolver has a configuration-owned missing model/skill fallback');
@@ -130,7 +131,11 @@ function assert(cond: boolean, msg: string): void {
   assert(manifestFilesExist, 'every static battle-art manifest entry resolves to a bundled public asset');
   const flameWingImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:flame-wing-2d-sequence');
   assert(BATTLE_ASSET_SOURCES.every((source) => source.sourceUrl && source.licenseLabel && source.licenseEvidenceUrl && source.attribution), 'every battle asset source has auditable provenance, licence evidence, and attribution');
-  assert(flameWingImport?.status === 'awaiting-art-direction-and-source-approval' && flameWingImport.format === 'png-sequence-json' && flameWingImport.requiredMotions.includes('charge') && !BATTLE_ASSET_MANIFEST.some((asset) => asset.id === flameWingImport.plannedFrontAssetId || asset.id === flameWingImport.plannedBackAssetId), 'Charizard vertical-slice import contract records the approved future format, required actions, and no unapproved bitmap');
+  assert(flameWingImport?.status === 'integrated' && flameWingImport.sourceId === 'pokemon-online-pokeapi-derived-flame-wing-v4' && flameWingImport.format === 'png-sequence-json' && flameWingImport.sequence.frameWidth === 96 && flameWingImport.sequence.frameHeight === 96 && flameWingImport.sequence.fps === 12 && flameWingImport.sequence.chromaKey === 'transparent-alpha' && flameWingImport.requiredMotions.includes('charge') && flameWingImport.sequence.requiredClips.includes('channel') && flameWingImport.sequence.transitions.some((transition) => transition.from === 'idle' && transition.to === 'attack' && transition.durationMs === 120) && flameWingImport.sequence.transitions.some((transition) => transition.from === 'attack' && transition.to === 'idle' && transition.durationMs === 160), '火翼飞龙代码生成序列契约记录来源、尺寸、动作与平滑 clip 过渡');
+  const flameWingAssets = [flameWingImport!.plannedFrontAssetId, flameWingImport!.plannedBackAssetId].map((id) => BATTLE_ASSET_MANIFEST.find((asset) => asset.id === id)!);
+  assert(flameWingAssets.every((asset) => asset.kind === 'sprite-sheet' && !!asset.metadataUrl && existsSync(`apps/web/public/${asset.url.replace(/^\//, '')}`) && existsSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`)), '火翼飞龙序列图与 JSON 元数据均通过 manifest 进入 public 资产目录');
+  const flameWingMetadata = flameWingAssets.map((asset) => JSON.parse(readFileSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`, 'utf8')) as { frameWidth: number; frameHeight: number; columns: number; fps: number; clips: Record<string, { frames: number[]; loop: boolean }>; transitions: Array<{ from: string; to: string; durationMs: number; easing: string }> });
+  assert(flameWingMetadata.every((metadata) => metadata.frameWidth === 96 && metadata.frameHeight === 96 && metadata.columns === 8 && metadata.fps === 12 && metadata.clips.idle.frames.length === 4 && metadata.clips.attack.frames.length === 5 && metadata.transitions.some((transition) => transition.from === 'idle' && transition.to === 'attack' && transition.durationMs === 120 && transition.easing === 'cubic-in-out')), '火翼飞龙前后视元数据包含可播放帧、待机到攻击补间与统一节奏');
   const representativeProfiles = REPRESENTATIVE_BATTLE_ART_SPECIES.map((speciesId) => resolveBattleArtPresentation({ speciesId, side: 'enemy' }).profile);
   assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length > 0 && Object.keys(profile.motionPoses).length >= 4), 'six representative models declare layered 2.5D art and distinct motion poses in configuration');
   assert(new Set(representativeProfiles.map((profile) => profile.modelId)).size === representativeProfiles.length, 'representative model identities remain explicit profile data rather than renderer branches');
@@ -149,10 +154,26 @@ function assert(cond: boolean, msg: string): void {
   combatantView.playAnimation('windup');
   combatantView.update(0.12);
   const viewDiagnostics = combatantView.getDiagnostics();
-  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge', 'CombatantView consumes configured representative layers and motions without renderer species branches');
+  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1 && !viewDiagnostics.spriteReady, 'CombatantView keeps a sprite-sheet combatant on its generic fallback until a cropped clip frame is ready');
+  combatantView.refresh({ ...viewCombatant, facing: -1 });
+  combatantView.update(0.12);
+  assert(combatantView.getDiagnostics().facing === -1, 'CombatantView mirrors the complete model hierarchy from generic battle-snapshot facing');
   combatantView.destroy({ children: true });
   assetLoader.clear();
   console.log('✓ Pixi manifest asset loader and CombatantView contract');
+}
+
+// Standalone battle acceptance sandbox remains front-end only: it accepts
+// arbitrary N-vs-N teams (1..3 per side) and rolls disposable level-100 wild
+// instances without touching any Pinia store, save, or official roster.
+{
+  assert(BATTLE_SANDBOX_LEVEL === 100 && BATTLE_SANDBOX_MIN_TEAM_SIZE === 1 && BATTLE_SANDBOX_MAX_TEAM_SIZE === 3, 'battle sandbox declares the 1v1-to-3v3 full-level acceptance range');
+  assert(isBattleSandboxTeamValid([6]) && isBattleSandboxTeamValid([6, 25, 94]) && !isBattleSandboxTeamValid([]) && !isBattleSandboxTeamValid([6, 25, 94, 131]) && !isBattleSandboxTeamValid([999]), 'battle sandbox validates N-vs-N species selections independently of save data');
+  const sandboxPlayer = createBattleSandboxTeam([6], () => 0.25);
+  const sandboxEnemy = createBattleSandboxTeam([25, 94, 131], () => 0.75);
+  const sandboxSim = BattleSim.fromInstances({ mode: 'pvp', player: sandboxPlayer, enemy: sandboxEnemy, deployment: 'simultaneous', isWild: false, seed: 7162026 });
+  assert(sandboxPlayer.length === 1 && sandboxEnemy.length === 3 && sandboxPlayer.every((instance) => instance.level === 100 && instance.currentHp > 0) && sandboxEnemy.every((instance) => instance.level === 100 && instance.currentHp > 0) && sandboxSim.state.combatants.filter((combatant) => combatant.side === 'player').length === 1 && sandboxSim.state.combatants.filter((combatant) => combatant.side === 'enemy').length === 3, 'battle sandbox produces disposable full-level wild-style 1v3 instances for the common 3v3 simulator');
+  console.log('✓ standalone N-vs-N battle acceptance sandbox contract');
 }
 
 // Stage 2 presentation direction: the same structured fixture must yield a

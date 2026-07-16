@@ -13,8 +13,8 @@ import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
  * own.
  */
 export type BattleArtAssetKind = 'static-sprite' | 'sprite-sheet' | 'fallback-shape';
-export type BattleAssetSourceReviewStatus = 'recorded-existing' | 'procedural';
-export type BattleArtImportStatus = 'awaiting-art-direction-and-source-approval' | 'ready-for-manifest-import' | 'integrated';
+export type BattleAssetSourceReviewStatus = 'recorded-existing' | 'procedural' | 'code-authored';
+export type BattleArtImportStatus = 'awaiting-art-direction-and-source-approval' | 'ready-for-ai-generation' | 'ready-for-manifest-import' | 'integrated';
 export type BattleArtAnchorId = 'root' | 'center' | 'body' | 'head' | 'muzzle' | 'ground';
 export type BattleArtMotionId =
   | 'idle' | 'locomotion' | 'enter' | 'exit' | 'attack' | 'cast'
@@ -44,9 +44,48 @@ export interface BattleAssetManifestEntry {
   kind: BattleArtAssetKind;
   /** Public asset URL. Only the manifest owns concrete resource paths. */
   url: string;
+  /** Only sprite-sheet assets provide clip/frame metadata. */
+  metadataUrl?: string;
   /** Must identify an entry in BATTLE_ASSET_SOURCES; paths never imply provenance. */
   sourceId: string;
   quality: 'all';
+}
+
+/** Production specification for a generated bitmap sequence. The final JSON
+ * metadata must use these clip names; renderer code never names a model. */
+export interface BattleArtFrameTransitionSpec {
+  from: BattleArtMotionId;
+  to: BattleArtMotionId;
+  durationMs: number;
+  easing: 'cubic-in-out';
+}
+
+/** JSON metadata next to a sprite sheet. It is renderer-neutral and contains
+ * no species or skill identifiers. */
+export interface BattleArtSpriteSheetClip {
+  frames: readonly number[];
+  loop: boolean;
+}
+
+export interface BattleArtSpriteSheetMetadata {
+  schemaVersion: 1;
+  frameWidth: number;
+  frameHeight: number;
+  columns: number;
+  fps: number;
+  clips: Partial<Readonly<Record<BattleArtMotionId, BattleArtSpriteSheetClip>>>;
+  transitions: readonly BattleArtFrameTransitionSpec[];
+}
+
+export interface BattleArtFrameSequenceSpec {
+  frameWidth: number;
+  frameHeight: number;
+  fps: number;
+  chromaKey: string;
+  requiredClips: readonly BattleArtMotionId[];
+  /** Asset-level continuity requirements. The generic player cross-fades/tweens
+   * these clips; no model-specific renderer transition code is allowed. */
+  transitions: readonly BattleArtFrameTransitionSpec[];
 }
 
 /** Design-time contract for a future production asset. It intentionally has no
@@ -56,7 +95,10 @@ export interface BattleArtImportContract {
   profileId: string;
   modelId: string;
   status: BattleArtImportStatus;
+  sourceId: string;
   format: 'png-sequence-json';
+  sequence: BattleArtFrameSequenceSpec;
+  generationPromptRevision: string;
   plannedFrontAssetId: string;
   plannedBackAssetId: string;
   fallbackAssetId: string;
@@ -252,6 +294,42 @@ export const BATTLE_ASSET_SOURCES: readonly BattleAssetSourceRecord[] = [
     attribution: 'Generated at runtime by Pokemon Online.',
     reviewStatus: 'procedural',
   },
+  {
+    id: 'pokemon-online-code-authored-flame-wing-v1',
+    label: 'Pokemon Online 代码生成 — #006 B-3 火翼飞龙 v1 试验切片',
+    sourceUrl: 'internal://pokemon-online/scripts/generate-flame-wing-sequence.py',
+    licenseLabel: '项目自制程序化像素资产，适用项目代码的 MIT 许可；角色相关 Pokémon IP 仍归其权利人，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'scripts/generate-flame-wing-sequence.py',
+    attribution: '由 Pokemon Online 的代码生成脚本产生；v1 保留为未验收的历史候选，参数、文件校验和与审核记录见 doc/BATTLE_ASSET_SOURCES.md。',
+    reviewStatus: 'code-authored',
+  },
+  {
+    id: 'pokemon-online-code-authored-flame-wing-v2',
+    label: 'Pokemon Online 代码生成 — #006 B-3 火翼飞龙 v2 未验收候选',
+    sourceUrl: 'internal://pokemon-online/scripts/generate-flame-wing-v2-sequence.py',
+    licenseLabel: '项目自制程序化像素资产，适用项目代码的 MIT 许可；角色相关 Pokémon IP 仍归其权利人，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'scripts/generate-flame-wing-v2-sequence.py',
+    attribution: '由 Pokemon Online 的代码生成脚本产生；v2 保留为未验收历史候选，参数、文件校验和与审核记录见 doc/BATTLE_ASSET_SOURCES.md。',
+    reviewStatus: 'code-authored',
+  },
+  {
+    id: 'pokemon-online-code-authored-flame-wing-v3',
+    label: 'Pokemon Online 代码生成 — #006 B-3 火翼飞龙 v3 未验收候选',
+    sourceUrl: 'internal://pokemon-online/scripts/generate-flame-wing-v3-sequence.py',
+    licenseLabel: '项目自制程序化像素资产，适用项目代码的 MIT 许可；角色相关 Pokémon IP 仍归其权利人，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'scripts/generate-flame-wing-v3-sequence.py',
+    attribution: '由 Pokemon Online 的代码生成脚本产生；v3 保留为未验收历史候选，参数、文件校验和与审核记录见 doc/BATTLE_ASSET_SOURCES.md。',
+    reviewStatus: 'code-authored',
+  },
+  {
+    id: 'pokemon-online-pokeapi-derived-flame-wing-v4',
+    label: 'Pokemon Online 序列帧封装 — #006 PokeAPI 静态 sprite v4 审核候选',
+    sourceUrl: 'https://github.com/PokeAPI/sprites',
+    licenseLabel: '基于项目已记录的 PokeAPI 静态 sprite 逐像素复制生成序列帧封装；适用上游仓库条款与 Pokémon IP 权利，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'https://github.com/PokeAPI/sprites',
+    attribution: 'Sprites © PokeAPI / Pokémon rights holders；由 Pokemon Online 脚本以无损帧封装形式生成。',
+    reviewStatus: 'recorded-existing',
+  },
 ];
 
 export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourceRecord>> = Object.fromEntries(
@@ -260,6 +338,70 @@ export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourc
 
 export const BATTLE_ASSET_MANIFEST: readonly BattleAssetManifestEntry[] = [
   { id: FALLBACK_ASSET_ID, kind: 'fallback-shape', url: '', sourceId: 'procedural-fallback', quality: 'all' },
+  {
+    id: 'battle:flame-wing:v1:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing/front-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing/front-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v1',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v1:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing/back-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing/back-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v1',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v2:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v2/front-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v2/front-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v2',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v2:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v2/back-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v2/back-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v2',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v3:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v3/front-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v3/front-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v3',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v3:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v3/back-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v3/back-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v3',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v4:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v4/front-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v4/front-sheet.json',
+    sourceId: 'pokemon-online-pokeapi-derived-flame-wing-v4',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v4:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v4/back-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v4/back-sheet.json',
+    sourceId: 'pokemon-online-pokeapi-derived-flame-wing-v4',
+    quality: 'all',
+  },
   ...SPECIES_LIST.flatMap((species) => [
     { id: `pokemon:${species.id}:front`, kind: 'static-sprite' as const, url: `/sprites/pokemon/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
     { id: `pokemon:${species.id}:back`, kind: 'static-sprite' as const, url: `/sprites/pokemon/back/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
@@ -272,6 +414,8 @@ export const BATTLE_ASSET_BY_ID: Readonly<Record<string, BattleAssetManifestEntr
 
 interface RepresentativeBattleArtTuning {
   modelId: string;
+  frontAssetId?: string;
+  backAssetId?: string;
   scale: number;
   shadowScale: number;
   layers: readonly BattleArtLayerSpec[];
@@ -292,10 +436,30 @@ export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = [
     id: 'vertical-slice:flame-wing-2d-sequence',
     profileId: 'species:6',
     modelId: 'showcase:flame-wing',
-    status: 'awaiting-art-direction-and-source-approval',
+    status: 'integrated',
+    sourceId: 'pokemon-online-pokeapi-derived-flame-wing-v4',
     format: 'png-sequence-json',
-    plannedFrontAssetId: 'battle:flame-wing:front:sequence',
-    plannedBackAssetId: 'battle:flame-wing:back:sequence',
+    sequence: {
+      frameWidth: 96,
+      frameHeight: 96,
+      fps: 12,
+      chromaKey: 'transparent-alpha',
+      requiredClips: ['idle', 'attack', 'cast', 'charge', 'channel', 'hit', 'faint'],
+      transitions: [
+        { from: 'idle', to: 'attack', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'attack', to: 'idle', durationMs: 160, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'cast', durationMs: 140, easing: 'cubic-in-out' },
+        { from: 'cast', to: 'idle', durationMs: 160, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'charge', durationMs: 180, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'channel', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'channel', to: 'idle', durationMs: 180, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'hit', durationMs: 70, easing: 'cubic-in-out' },
+        { from: 'hit', to: 'idle', durationMs: 140, easing: 'cubic-in-out' },
+      ],
+    },
+    generationPromptRevision: 'pokeapi-derived-flame-wing-v4-lossless-frame-wrapper',
+    plannedFrontAssetId: 'battle:flame-wing:v4:front:sequence',
+    plannedBackAssetId: 'battle:flame-wing:v4:back:sequence',
     fallbackAssetId: FALLBACK_ASSET_ID,
     requiredMotions: ['idle', 'attack', 'cast', 'charge', 'channel', 'hit', 'faint'],
   },
@@ -303,7 +467,10 @@ export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = [
 
 const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeBattleArtTuning>> = {
   6: {
-    modelId: 'showcase:flame-wing', scale: 1.16, shadowScale: 1.22,
+    modelId: 'showcase:flame-wing',
+    frontAssetId: 'battle:flame-wing:v4:front:sequence',
+    backAssetId: 'battle:flame-wing:v4:back:sequence',
+    scale: 1.16, shadowScale: 1.22,
     layers: [
       { id: 'ember-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.20, scale: 1.15, pulse: 0.18 },
       { id: 'wing-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.16, scale: 0.92, pulse: 0.12 },
@@ -403,8 +570,8 @@ function profileFor(species: Species): BattleArtProfile {
     id: `species:${species.id}`,
     speciesId: species.id,
     modelId: tuning?.modelId ?? `pokemon:${species.id}`,
-    frontAssetId: `pokemon:${species.id}:front`,
-    backAssetId: `pokemon:${species.id}:back`,
+    frontAssetId: tuning?.frontAssetId ?? `pokemon:${species.id}:front`,
+    backAssetId: tuning?.backAssetId ?? `pokemon:${species.id}:back`,
     fallbackAssetId: FALLBACK_ASSET_ID,
     themeId: `type:${type}`,
     /** The profile palette lets a shared move inherit model identity without cloning the skill. */
@@ -582,7 +749,7 @@ export function validateBattleArtConfiguration(
   const assetIds = new Set(assets.map((asset) => asset.id));
   const sourceIds = new Set(BATTLE_ASSET_SOURCES.map((source) => source.id));
   const duplicateAssetIds = assets.filter((asset, index) => assets.findIndex((candidate) => candidate.id === asset.id) !== index).map((asset) => asset.id);
-  const invalidAssetIds = assets.filter((asset) => !asset.id || (asset.kind === 'fallback-shape' ? !!asset.url : !asset.url)).map((asset) => asset.id);
+  const invalidAssetIds = assets.filter((asset) => !asset.id || (asset.kind === 'fallback-shape' ? !!asset.url : !asset.url) || (asset.kind === 'sprite-sheet' && !asset.metadataUrl)).map((asset) => asset.id);
   const invalidAssetSourceIds = [
     ...BATTLE_ASSET_SOURCES.filter((source) => !source.id || !source.sourceUrl || !source.licenseLabel || !source.licenseEvidenceUrl || !source.attribution).map((source) => source.id),
     ...assets.filter((asset) => !sourceIds.has(asset.sourceId)).map((asset) => asset.id),
@@ -591,10 +758,23 @@ export function validateBattleArtConfiguration(
     const profile = profiles.find((candidate) => candidate.id === contract.profileId);
     return !profile
       || profile.modelId !== contract.modelId
+      || !sourceIds.has(contract.sourceId)
       || !assetIds.has(contract.fallbackAssetId)
       || contract.requiredMotions.length === 0
       || contract.requiredMotions.some((motion) => !profile.motions[motion])
-      || (contract.status === 'awaiting-art-direction-and-source-approval'
+      || contract.sequence.frameWidth <= 0
+      || contract.sequence.frameHeight <= 0
+      || contract.sequence.fps <= 0
+      || !contract.sequence.chromaKey
+      || contract.sequence.requiredClips.length === 0
+      || contract.sequence.requiredClips.some((motion) => !contract.requiredMotions.includes(motion))
+      || contract.sequence.transitions.length === 0
+      || contract.sequence.transitions.some((transition) => transition.durationMs <= 0 || transition.easing !== 'cubic-in-out' || !contract.requiredMotions.includes(transition.from) || !contract.requiredMotions.includes(transition.to))
+      || new Set(contract.sequence.transitions.map((transition) => `${transition.from}:${transition.to}`)).size !== contract.sequence.transitions.length
+      || (contract.status === 'integrated'
+        && (!assetIds.has(contract.plannedFrontAssetId) || !assetIds.has(contract.plannedBackAssetId)
+          || profile.frontAssetId !== contract.plannedFrontAssetId || profile.backAssetId !== contract.plannedBackAssetId))
+      || (contract.status !== 'integrated'
         && (assetIds.has(contract.plannedFrontAssetId) || assetIds.has(contract.plannedBackAssetId)));
   }).map((contract) => contract.id);
   const knownSpeciesIds = new Set(SPECIES_LIST.map((species) => species.id));

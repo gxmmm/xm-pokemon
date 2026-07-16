@@ -19,12 +19,14 @@ export const router = createRouter({
     { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/renderer-spike', name: 'renderer-spike', component: () => import('./views/RendererSpikeView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/battle-stage-sandbox', name: 'battle-stage-sandbox', component: () => import('./views/BattleStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
+    { path: '/battle-sandbox', name: 'battle-sandbox', component: () => import('./views/BattleSandboxView.vue') },
     { path: '/world-stage-sandbox', name: 'world-stage-sandbox', component: () => import('./views/WorldStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/:pathMatch(.*)*', redirect: '/world' },
   ],
 });
 
 router.beforeEach(async (to) => {
+  if (to.name === 'battle-sandbox') return true;
   const visualRegressionMode = to.query['visual-regression'] === '1'
     && (to.name === 'world-stage-sandbox' || to.name === 'battle-stage-sandbox');
   if (visualRegressionMode) return true;
