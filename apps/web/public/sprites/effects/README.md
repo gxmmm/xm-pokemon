@@ -53,4 +53,4 @@
 - 蓄力充能核心（`cast/<属性>`）与状态光环（`status/<状态>`）默认程序化，可按上表放贴图覆盖。
 - 命中冻帧、攻击者前冲、受击形变、屏闪等打击感效果为纯渲染逻辑，无贴图。
 - 宝可梦精灵走 `sprites/pokemon/<id>.png` 与 `back/<id>.png`（已由 PokeAPI 下载），
-  缺失时由 `BattleSprite.ts` 程序化绘制属性色像素生物兜底。
+  缺失时由 Pixi 战斗 renderer 的配置化 fallback 保持战斗可读性。

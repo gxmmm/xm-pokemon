@@ -1,4 +1,4 @@
-import type { BattleCombatant, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 
 export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 export type QualityPreference = 'auto' | QualityProfile;
@@ -69,8 +69,9 @@ export interface BattleRenderSnapshot {
  * import a director implementation. Presentation is structurally compatible. */
 export type BattleCue =
   | { type: 'camera'; plan: { style: string; focusIds: readonly string[]; durationMs: number; zoom?: number; shake?: number } }
-  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; particleBudget?: number }; anchors: { actorId?: string; targetIds?: readonly string[] }; intensity: number }
-  | { type: 'animation'; subjectId: string; animation: string }
+  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; targetIds?: readonly string[] }; intensity: number; delayMs?: number }
+  | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number; delayMs?: number }
+  | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
   | { type: 'environment'; reaction: string }

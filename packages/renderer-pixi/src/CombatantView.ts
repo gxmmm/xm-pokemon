@@ -1,5 +1,5 @@
-import { battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtMotionId, type BattleArtSpriteSheetMetadata, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
-import type { BattleCombatant } from '@pokemon-online/shared';
+import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtMotionId, type BattleArtSpriteSheetMetadata, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
+import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 
@@ -13,7 +13,15 @@ export interface CombatantViewDiagnostics {
   profileId: string;
   layerCount: number;
   motion: BattleArtMotionId;
+  queuedMotionCount: number;
   facing: 1 | -1;
+  casting: boolean;
+  /** True while delayed battle snapshots indicate locomotion. */
+  moving: boolean;
+  /** Normalized cast windup currently shown by the generic charge halo. */
+  chargeProgress: number;
+  /** Child bitmap sign must match parent facing to preserve the selected source view. */
+  bitmapFacing: 1 | -1;
   transitioning: boolean;
   spriteReady: boolean;
 }
@@ -23,6 +31,10 @@ export class CombatantView extends Container {
   private readonly behindLayers = new Container();
   private readonly frontLayers = new Container();
   private readonly shadow = new Graphics();
+  /** Generic casting halo driven by castProgress; no model or skill branches. */
+  private readonly chargeAura = new Graphics({ blendMode: 'add' });
+  /** Generic element-tinted outline used by configuration-owned actor travel. */
+  private readonly choreographyOutline = new Graphics({ blendMode: 'add' });
   private readonly fallback = new Graphics();
   private readonly decorations = new Map<string, { graphic: Graphics; spec: BattleArtLayerSpec }>();
   private readonly sprite = new Sprite(Texture.EMPTY);
@@ -31,6 +43,9 @@ export class CombatantView extends Container {
   private clipRequestToken = 0;
   private motionElapsedMs = 0;
   private motion: BattleArtMotionId;
+  private motionDurationOverrideMs: number | null = null;
+  private activeChoreography: ActiveActorChoreography | null = null;
+  private queuedMotions: QueuedMotion[] = [];
   private transitionElapsedMs = 0;
   private transitionDurationMs = 0;
   private transitionFrom: MotionTransform | null = null;
@@ -42,6 +57,13 @@ export class CombatantView extends Container {
   /** Renderer-facing direction comes from the battle snapshot, never model IDs. */
   private facing: 1 | -1 = 1;
   private alive = true;
+  private casting = false;
+  /** Latest delayed-snapshot position, used only to select the generic locomotion clip. */
+  private snapshotPosition: { x: number; y: number } | null = null;
+  private locomotionHoldSeconds = 0;
+  private moving = false;
+  /** Normalized engine-authoritative windup progress for the persistent charge halo. */
+  private chargeProgress = 0;
   private baseScale: number;
 
   constructor(
@@ -49,33 +71,99 @@ export class CombatantView extends Container {
     private readonly assets: BattleArtAssetLoader,
   ) {
     super();
-    this.presentation = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side });
-    this.motion = this.presentation.motion.id;
+    this.presentation = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing });
+    // Resolver defaults describe a potential skill cast; a newly mounted
+    // combatant must always begin from the neutral visual state.
+    this.motion = 'idle';
     this.baseScale = this.presentation.profile.scale;
     this.drawFallback();
     this.rebuildLayers();
     this.sprite.anchor.set(0.5, 0.58);
     this.sprite.visible = false;
-    this.body.addChild(this.behindLayers, this.shadow, this.fallback, this.sprite, this.frontLayers);
+    this.body.addChild(this.behindLayers, this.shadow, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.frontLayers);
     this.addChild(this.body);
     this.refresh(combatant);
     this.requestTexture();
   }
 
   refresh(combatant: BattleCombatant): void {
-    const resolved = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side });
+    const resolved = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing });
     const changedAsset = this.presentation.asset.id !== resolved.asset.id;
     const changedProfile = this.presentation.profile.id !== resolved.profile.id;
     this.presentation = resolved;
     this.baseScale = resolved.profile.scale;
     this.facing = combatant.facing;
     this.alive = combatant.alive;
+    this.updateLocomotionIntent(combatant);
+    const beganCasting = !!combatant.castProgress && !this.casting;
+    this.casting = !!combatant.castProgress;
+    if (combatant.castProgress) {
+      // Resolve only through the configuration authority. The simulator owns
+      // remaining time; the renderer merely turns that DTO into a readable halo.
+      const cast = resolveBattleArtPresentation({
+        speciesId: combatant.speciesId,
+        side: combatant.side,
+        facing: combatant.facing,
+        skillId: combatant.castProgress.skillId,
+      }).cast;
+      const totalSeconds = Math.max(0.001, cast.windupMs / 1000);
+      this.chargeProgress = clamp01(1 - combatant.castProgress.remaining / totalSeconds);
+    } else {
+      this.chargeProgress = 0;
+    }
+    // castProgress is an authoritative, renderer-facing DTO. Enter charge as
+    // soon as it appears so the visual front swing cannot be skipped by a
+    // delayed event batch or snapshot interpolation.
+    if (beganCasting && this.motion !== 'faint') {
+      this.queuedMotions = [];
+      this.setMotion('charge');
+    } else if (!this.casting) {
+      // An interrupted cast has no release cue by design. Return its persistent
+      // charge clip to the neutral movement lane as soon as castProgress clears;
+      // a resolved cast cue arriving in the same presentation batch can still
+      // immediately replace this neutral pose with its configured action.
+      if (this.motion === 'charge' && this.queuedMotions.length === 0) {
+        this.setMotion(this.moving && this.alive ? 'locomotion' : 'idle');
+      } else {
+        this.syncLocomotionMotion();
+      }
+    }
     if (changedProfile) this.rebuildLayers();
     if (changedAsset) this.requestTexture();
   }
 
-  playAnimation(animation: string): void {
-    this.setMotion(battleArtMotionForAnimation(animation));
+  playAnimation(
+    animation: string,
+    schedule: 'immediate' | 'after-current-motion' = 'immediate',
+    durationMs?: number,
+    choreography?: BattleActorChoreography,
+    target?: { x: number; y: number },
+    element?: TypeName,
+  ): void {
+    const motion = battleArtMotionForAnimation(animation);
+    const entry = { motion, durationMs, choreography, target, element };
+    if (schedule === 'after-current-motion') {
+      this.queuedMotions.push(entry);
+      return;
+    }
+    // Auto battles may produce several ready skills in adjacent simulation
+    // frames. Serialize their visible actions behind the current action and its
+    // already-queued recover instead of replacing that recovery. A windup is
+    // deliberately pre-emptible by its own release action, while faint remains
+    // authoritative and clears cosmetic work that can no longer be observed.
+    if (isActionMotion(motion) && this.shouldQueueAction()) {
+      this.queuedMotions.push(entry);
+      return;
+    }
+    if (motion === 'faint') this.queuedMotions = [];
+    this.setMotion(motion, durationMs, choreography, target, element);
+  }
+
+  isSettled(): boolean {
+    if (this.transitionFrom || this.queuedMotions.length > 0) return false;
+    if (this.motion === 'idle' || this.motion === 'locomotion') return true;
+    if (this.motion !== 'faint') return false;
+    return this.motionElapsedMs >= this.activeMotionDurationMs();
   }
 
   getDiagnostics(): CombatantViewDiagnostics {
@@ -84,48 +172,107 @@ export class CombatantView extends Container {
       profileId: this.presentation.profile.id,
       layerCount: this.decorations.size,
       motion: this.motion,
+      queuedMotionCount: this.queuedMotions.length,
       facing: this.facing,
+      casting: this.casting,
+      moving: this.moving,
+      chargeProgress: this.chargeProgress,
+      bitmapFacing: this.sprite.scale.x < 0 ? -1 : 1,
       transitioning: this.transitionFrom !== null,
       spriteReady: this.sprite.visible,
     };
   }
 
   update(dtSeconds: number): void {
+    this.locomotionHoldSeconds = Math.max(0, this.locomotionHoldSeconds - dtSeconds);
+    if (!this.casting) this.syncLocomotionMotion();
     const clip = this.presentation.profile.motions[this.motion];
     const elapsedMs = dtSeconds * 1000;
     this.motionElapsedMs += elapsedMs;
-    const progress = clip.loop ? (this.motionElapsedMs % clip.durationMs) / clip.durationMs : Math.min(1, this.motionElapsedMs / clip.durationMs);
-    if (!clip.loop && progress >= 1 && this.motion !== 'faint') this.setMotion('idle');
+    const durationMs = this.activeMotionDurationMs();
+    const finite = !clip.loop || this.motionDurationOverrideMs !== null;
+    const progress = finite ? Math.min(1, this.motionElapsedMs / durationMs) : (this.motionElapsedMs % durationMs) / durationMs;
+    if (finite && progress >= 1 && this.motion !== 'faint') {
+      const next = this.queuedMotions.shift();
+      this.setMotion(next?.motion ?? 'idle', next?.durationMs, next?.choreography, next?.target, next?.element);
+    }
 
     const pulse = this.motion === 'idle' ? Math.sin(progress * Math.PI * 2) * 0.025
       : this.motion === 'locomotion' ? Math.sin(progress * Math.PI * 2) * 0.05
       : this.motion === 'charge' || this.motion === 'channel' ? Math.sin(progress * Math.PI * 2) * 0.035
       : 0;
     const recoil = this.motion === 'hit' ? Math.sin(progress * Math.PI) * -12 : 0;
+    // A readable shared action advance makes static-base models visibly commit
+    // to attacks and casts. Profile poses add their own character-specific
+    // offsets on top; renderer code still has no model or skill branches.
+    const actionAdvance = this.motion === 'attack' ? Math.sin(progress * Math.PI) * 22
+      : this.motion === 'cast' ? Math.sin(progress * Math.PI) * 10
+        : this.motion === 'channel' ? 5
+          : this.motion === 'recover' ? -Math.sin(progress * Math.PI) * 8
+            : 0;
     const faintScale = this.motion === 'faint' || !this.alive ? 1 - Math.min(0.3, progress * 0.3) : 1;
     const pose = this.presentation.profile.motionPoses[this.motion] ?? {};
+    const choreography = this.choreographyTransform(progress);
     const target: MotionTransform = {
-      // Mirror the complete visual hierarchy (sprite, authored layers, generic
-      // aura/halo and fallback) with the renderer snapshot direction. Offsets,
-      // recoil and tilt follow that same direction so attack/cast poses point
-      // toward the combatant's current target instead of a fixed screen side.
+      // The resolver has already selected the source view for facing (+1 back,
+      // -1 front). Keep the complete hierarchy mirrored for directional pose
+      // math, then counter-mirror the bitmap below so a front/back source is
+      // never flipped into the opposite head direction. Offsets, recoil and
+      // tilt still follow the current target direction.
       scaleX: this.facing * this.baseScale * (pose.scaleX ?? 1) * (1 + pulse) * faintScale,
       scaleY: this.baseScale * (pose.scaleY ?? 1) * (1 - pulse * 0.6) * faintScale,
-      x: this.facing * ((pose.offsetX ?? 0) + recoil),
-      y: pose.offsetY ?? 0,
+      x: this.facing * ((pose.offsetX ?? 0) + recoil + actionAdvance) + choreography.x,
+      y: (pose.offsetY ?? 0) + choreography.y,
       rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180,
     };
     this.advanceClip(elapsedMs);
     const transform = this.interpolateTransition(target, elapsedMs);
     this.body.scale.set(transform.scaleX, transform.scaleY);
+    // Parent scale still mirrors generic layers and pose geometry. Applying the
+    // same sign on the selected bitmap cancels that mirror only for the source
+    // sprite sheet, preserving its authored front/back head direction.
+    this.sprite.scale.x = Math.abs(this.sprite.scale.x) * this.facing;
     this.body.position.set(transform.x, transform.y);
     this.body.rotation = transform.rotation;
     this.updateLayers(progress, pose.glowAlpha, pose.glowScale);
+    this.updateChargeAura();
+    this.updateChoreographyOutline(progress);
     this.alpha = this.alive ? 1 : 0.25;
   }
 
-  private setMotion(motion: BattleArtMotionId): void {
-    if (this.motion === motion) return;
+  /** Snapshot interpolation makes grid movement continuous. This generic detector
+   * turns that already-rendered movement into a real locomotion clip instead of
+   * visually sliding a static bitmap. It deliberately knows no model, species,
+   * or terrain details; profiles/sequence assets define how locomotion looks. */
+  private updateLocomotionIntent(combatant: BattleCombatant): void {
+    const point = combatant.pixel;
+    if (this.snapshotPosition) {
+      const travelled = Math.hypot(point.x - this.snapshotPosition.x, point.y - this.snapshotPosition.y);
+      if (travelled > 0.012) this.locomotionHoldSeconds = 0.15;
+    }
+    this.snapshotPosition = { x: point.x, y: point.y };
+    this.moving = this.locomotionHoldSeconds > 0;
+  }
+
+  private syncLocomotionMotion(): void {
+    this.moving = this.locomotionHoldSeconds > 0;
+    if (this.motion === 'faint' || this.casting || this.queuedMotions.length > 0) return;
+    // Locomotion may only own the neutral visual lane. A cast, attack, recovery,
+    // or hit cue remains readable until its configured duration is complete.
+    if (this.motion !== 'idle' && this.motion !== 'locomotion') return;
+    const desired: BattleArtMotionId = this.moving && this.alive ? 'locomotion' : 'idle';
+    if (this.motion !== desired) this.setMotion(desired);
+  }
+
+  private setMotion(motion: BattleArtMotionId, durationMs?: number, choreography?: BattleActorChoreography, target?: { x: number; y: number }, element?: TypeName): void {
+    if (this.motion === motion) {
+      if (durationMs !== undefined) {
+        this.motionDurationOverrideMs = durationMs;
+        this.motionElapsedMs = 0;
+        this.activeChoreography = choreography && target ? { spec: choreography, target, theme: choreographyThemeFor(element) } : null;
+      }
+      return;
+    }
     this.transitionFrom = {
       scaleX: this.body.scale.x,
       scaleY: this.body.scale.y,
@@ -136,7 +283,9 @@ export class CombatantView extends Container {
     this.transitionElapsedMs = 0;
     this.transitionDurationMs = this.transitionDurationFor(this.motion, motion);
     this.motion = motion;
+    this.motionDurationOverrideMs = durationMs ?? null;
     this.motionElapsedMs = 0;
+    this.activeChoreography = choreography && target ? { spec: choreography, target, theme: choreographyThemeFor(element) } : null;
     this.clipFrames = null;
     this.clipMotion = null;
     this.clipElapsedMs = 0;
@@ -150,7 +299,13 @@ export class CombatantView extends Container {
     // Keep the last valid frame visible through an action change. On the first
     // load the procedural fallback remains visible; a full sprite sheet is
     // never assigned to the Sprite while metadata/frames are still loading.
-    void Promise.all([this.assets.loadClip(asset, motion), this.assets.loadMetadata(asset)]).then(([frames, metadata]) => {
+    const framesForMotion = this.assets.loadClip(asset, motion).then((frames) => {
+      // A sequence may intentionally omit a bespoke recover frame. Reusing its
+      // declared idle clip lets the generic pose/transition perform recovery
+      // without a model-specific renderer branch or a bitmap fallback.
+      return frames?.length || motion === 'idle' ? frames : this.assets.loadClip(asset, 'idle');
+    });
+    void Promise.all([framesForMotion, this.assets.loadMetadata(asset)]).then(([frames, metadata]) => {
       if (requestToken !== this.clipRequestToken || this.destroyed || this.motion !== motion || !frames?.length) return;
       this.spriteSheetMetadata = metadata;
       this.clipFrames = frames;
@@ -162,6 +317,19 @@ export class CombatantView extends Container {
       this.fallback.visible = false;
       this.sizeSprite(this.sprite.texture);
     });
+  }
+
+  private shouldQueueAction(): boolean {
+    if (this.motion === 'idle' || this.motion === 'locomotion' || this.motion === 'faint') return false;
+    // A gameplay-timed cast enters charge with no visual work behind it; its
+    // release cue must replace charge immediately. A generic visual windup has
+    // already queued action/recover, so later ready skills serialize after it.
+    if (this.motion === 'charge') return this.queuedMotions.length > 0;
+    return true;
+  }
+
+  private activeMotionDurationMs(): number {
+    return this.motionDurationOverrideMs ?? this.presentation.profile.motions[this.motion].durationMs;
   }
 
   private transitionDurationFor(from: BattleArtMotionId, to: BattleArtMotionId): number {
@@ -202,6 +370,67 @@ export class CombatantView extends Container {
     };
   }
 
+  /** Local-only traversal: the snapshot container remains at the engine-owned
+   * position while this body departs, approaches, reveals, and returns. */
+  private choreographyTransform(progress: number): { x: number; y: number } {
+    const active = this.activeChoreography;
+    if (!active || active.spec.kind !== 'target-dive') return { x: 0, y: 0 };
+    const spec = active.spec;
+    const origin = this.position;
+    const dx = active.target.x - origin.x;
+    const dy = active.target.y - origin.y;
+    const distance = Math.max(0.001, Math.hypot(dx, dy));
+    const approach = Math.max(0, Math.min(distance, distance - spec.approachDistance));
+    const nx = dx / distance;
+    const ny = dy / distance;
+    let travel = 0;
+    if (progress < spec.arrivalAt) {
+      travel = approach * cubicInOut(progress / spec.arrivalAt);
+    } else if (progress < spec.returnAt) {
+      travel = approach;
+    } else {
+      travel = approach * (1 - cubicInOut((progress - spec.returnAt) / Math.max(0.001, 1 - spec.returnAt)));
+    }
+    // A small generic arc reads as a plunge rather than a horizontal slide.
+    const arc = Math.sin(Math.min(1, progress / spec.returnAt) * Math.PI) * Math.min(58, distance * 0.16);
+    return { x: nx * travel, y: ny * travel - arc };
+  }
+
+  private updateChoreographyOutline(progress: number): void {
+    const active = this.activeChoreography;
+    if (!active || active.spec.kind !== 'target-dive') {
+      this.choreographyOutline.clear();
+      this.sprite.alpha = 1;
+      this.fallback.alpha = 1;
+      return;
+    }
+    const spec = active.spec;
+    const wrapped = progress < spec.revealAt;
+    this.sprite.alpha = wrapped ? 0.10 : 1;
+    this.fallback.alpha = wrapped ? 0 : 1;
+    const color = colorNumber(active.theme.primary, 0xff824e);
+    const highlight = colorNumber(active.theme.highlight, 0xffeea8);
+    const phase = progress * Math.PI * 7;
+    const swell = 1 + Math.sin(phase) * 0.10;
+    const width = 37 * swell;
+    const height = 49 * swell;
+    this.choreographyOutline.clear();
+    if (!wrapped) return;
+    // The outline hugs the current model bounds using only its neutral local
+    // center; art profiles still own model scale, pose and bitmap selection.
+    this.choreographyOutline
+      .ellipse(0, -8, width, height).stroke({ color, alpha: 0.82, width: 5 })
+      .ellipse(0, -8, width * 0.76, height * 0.78).stroke({ color: highlight, alpha: 0.75, width: 3 });
+    const tongues = 6;
+    for (let index = 0; index < tongues; index++) {
+      const angle = phase + index / tongues * Math.PI * 2;
+      const x = Math.cos(angle) * width * 0.78;
+      const y = -8 + Math.sin(angle) * height * 0.78;
+      this.choreographyOutline.moveTo(x, y + 6).lineTo(x + Math.cos(angle) * 8, y - 10 - (index % 2) * 5)
+        .stroke({ color, alpha: 0.68, width: 3.5 });
+    }
+  }
+
   private rebuildLayers(): void {
     this.behindLayers.removeChildren().forEach((child) => child.destroy());
     this.frontLayers.removeChildren().forEach((child) => child.destroy());
@@ -225,6 +454,32 @@ export class CombatantView extends Container {
       const pulse = motionPulse * (spec.pulse ?? 0);
       graphic.scale.set(spec.scale * glowScale * (1 + pulse));
       graphic.alpha = Math.min(1, spec.alpha + glowAlpha * 0.55 + Math.max(0, pulse) * 0.22);
+    }
+  }
+
+  /** Persistent, configuration-themed windup feedback. It makes a gameplay
+   * castProgress visible for its entire lifetime rather than relying on one
+   * brief cue at cast start. */
+  private updateChargeAura(): void {
+    if (!this.casting || !this.alive) {
+      this.chargeAura.clear();
+      return;
+    }
+    const progress = clamp01(this.chargeProgress);
+    const primary = colorNumber(this.presentation.theme.primary, 0xffe3a3);
+    const highlight = colorNumber(this.presentation.theme.highlight, 0xffffff);
+    const phase = (this.motionElapsedMs / 1000) * 7.5;
+    const radius = 26 + progress * 19 + Math.sin(phase) * 2;
+    const alpha = 0.22 + progress * 0.43;
+    this.chargeAura.clear()
+      .ellipse(0, 8, radius * 1.2, radius * 0.34).stroke({ color: primary, alpha, width: 2 + progress * 2 })
+      .circle(0, -7, radius * 0.72).stroke({ color: highlight, alpha: alpha * 0.5, width: 1.4 });
+    const sparkRadius = radius * (0.55 + progress * 0.25);
+    for (let index = 0; index < 4; index++) {
+      const angle = phase + index * Math.PI / 2;
+      const x = Math.cos(angle) * sparkRadius;
+      const y = -7 + Math.sin(angle) * sparkRadius * 0.62;
+      this.chargeAura.circle(x, y, 2.2 + progress * 2.4).fill({ color: highlight, alpha: 0.3 + progress * 0.5 });
     }
   }
 
@@ -275,12 +530,34 @@ export class CombatantView extends Container {
   }
 }
 
+interface ActiveActorChoreography {
+  spec: BattleActorChoreography;
+  target: { x: number; y: number };
+  theme: BattleVisualTheme;
+}
+
+interface QueuedMotion {
+  motion: BattleArtMotionId;
+  durationMs?: number;
+  choreography?: BattleActorChoreography;
+  target?: { x: number; y: number };
+  element?: TypeName;
+}
+
 interface MotionTransform {
   scaleX: number;
   scaleY: number;
   x: number;
   y: number;
   rotation: number;
+}
+
+function isActionMotion(motion: BattleArtMotionId): boolean {
+  return motion === 'attack' || motion === 'cast' || motion === 'charge' || motion === 'channel';
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 function lerp(from: number, to: number, amount: number): number {
@@ -295,4 +572,9 @@ function colorNumber(value: string, fallback: number): number {
   const normalized = value.replace('#', '');
   const parsed = Number.parseInt(normalized, 16);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+
+function choreographyThemeFor(element?: TypeName): BattleVisualTheme {
+  return BATTLE_VISUAL_THEMES[`type:${element ?? 'normal'}`] ?? BATTLE_VISUAL_THEMES['type:normal']!;
 }

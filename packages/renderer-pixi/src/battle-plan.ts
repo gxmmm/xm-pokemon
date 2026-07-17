@@ -2,7 +2,7 @@ import type { BattleCue } from '@pokemon-online/renderer';
 import type { TypeName } from '@pokemon-online/shared';
 import type { SkillRecipeVariant } from '@pokemon-online/config';
 
-export type BattleStagePrimitive = 'projectile' | 'impact' | 'beam' | 'burst' | 'ring' | 'environment';
+export type BattleStagePrimitive = 'projectile' | 'dive' | 'impact' | 'beam' | 'burst' | 'ring' | 'environment';
 
 export interface BattleStageVfxPlan {
   primitive: BattleStagePrimitive;
@@ -34,6 +34,10 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     particleBudget: cue.recipe.particleBudget,
   };
   if (delivery === 'projectile') return [{ ...base, primitive: 'projectile' }];
+  // A configured dive is a source-to-target fire/energy plunge, not a generic
+  // rectangular melee flash at the target. The renderer still receives only a
+  // recipe variant and generic anchors; it never sees a skill ID.
+  if (delivery === 'melee' && base.variant === 'dive') return [{ ...base, primitive: 'dive' }];
   if (delivery === 'beam') return [{ ...base, primitive: 'beam' }];
   if (delivery === 'area') return [{ ...base, primitive: 'burst' }, { ...base, primitive: 'ring' }];
   if (cue.recipe.id.startsWith('impact:') || cue.recipe.id === 'faint') return [{ ...base, primitive: 'impact' }];

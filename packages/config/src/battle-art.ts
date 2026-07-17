@@ -183,9 +183,13 @@ export interface SkillCastPresentationSpec {
   delivery: DeliveryKind;
   /** Gameplay remains authoritative: this mirrors Skill.castTime for presentation planning only. */
   windupMs: number;
+  /** A short visual prepare used only when gameplay has no timed cast. */
+  visualWindupMs: number;
   releaseAt: number;
   charge: boolean;
   channel: boolean;
+  /** Presentation-only finite hold for looped channel clips before recovery. */
+  channelMs: number;
   recoveryMs: number;
   actorMotion: BattleArtMotionId;
   projectileAnchor: BattleArtAnchorId;
@@ -202,6 +206,9 @@ export interface ReactiveVisualRecipe {
 export interface BattleArtResolutionInput {
   speciesId: number;
   side: BattleArtSide;
+  /** Runtime target direction selects the corresponding front/back source view.
+   * Omitted inputs retain the deployment-side default for config/preload callers. */
+  facing?: 1 | -1;
   skillId?: string;
   motion?: BattleArtMotionId;
 }
@@ -330,6 +337,33 @@ export const BATTLE_ASSET_SOURCES: readonly BattleAssetSourceRecord[] = [
     attribution: 'Sprites © PokeAPI / Pokémon rights holders；由 Pokemon Online 脚本以无损帧封装形式生成。',
     reviewStatus: 'recorded-existing',
   },
+  {
+    id: 'pokemon-online-pokeapi-derived-spectral-caster-v1',
+    label: 'Pokemon Online 序列帧封装 — #094 PokeAPI 静态 sprite v1 审核候选',
+    sourceUrl: 'https://github.com/PokeAPI/sprites',
+    licenseLabel: '基于项目已记录的 PokeAPI 静态 sprite 逐像素复制生成序列帧封装；适用上游仓库条款与 Pokémon IP 权利，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'https://github.com/PokeAPI/sprites',
+    attribution: 'Sprites © PokeAPI / Pokémon rights holders；由 Pokemon Online 脚本以无损帧封装形式生成。',
+    reviewStatus: 'recorded-existing',
+  },
+  {
+    id: 'pokemon-online-code-authored-flame-wing-v5-motion',
+    label: 'Pokemon Online 关键帧运动封装 — #006 火翼飞龙 v5',
+    sourceUrl: 'internal://pokemon-online/scripts/generate-showcase-motion-sequences.py',
+    licenseLabel: '项目脚本基于已记录来源的本地 PokeAPI 静态 sprite，以 nearest-neighbour 位移、缩放、旋转和压缩生成关键帧；不导入外部动画 sheet。角色相关 Pokémon IP 仍归其权利人，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'scripts/generate-showcase-motion-sequences.py',
+    attribution: 'Sprites © PokeAPI / Pokémon rights holders；动作关键帧由 Pokemon Online 离线脚本从已记录本地基底派生。',
+    reviewStatus: 'code-authored',
+  },
+  {
+    id: 'pokemon-online-code-authored-spectral-caster-v2-motion',
+    label: 'Pokemon Online 关键帧运动封装 — #094 幽影施法者 v2',
+    sourceUrl: 'internal://pokemon-online/scripts/generate-showcase-motion-sequences.py',
+    licenseLabel: '项目脚本基于已记录来源的本地 PokeAPI 静态 sprite，以 nearest-neighbour 位移、缩放、旋转和压缩生成关键帧；不导入外部动画 sheet。角色相关 Pokémon IP 仍归其权利人，项目仅作非商业同人使用。',
+    licenseEvidenceUrl: 'scripts/generate-showcase-motion-sequences.py',
+    attribution: 'Sprites © PokeAPI / Pokémon rights holders；动作关键帧由 Pokemon Online 离线脚本从已记录本地基底派生。',
+    reviewStatus: 'code-authored',
+  },
 ];
 
 export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourceRecord>> = Object.fromEntries(
@@ -402,6 +436,54 @@ export const BATTLE_ASSET_MANIFEST: readonly BattleAssetManifestEntry[] = [
     sourceId: 'pokemon-online-pokeapi-derived-flame-wing-v4',
     quality: 'all',
   },
+  {
+    id: 'battle:spectral-caster:v1:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/spectral-caster-v1/front-sheet.png',
+    metadataUrl: '/sprites/battle/spectral-caster-v1/front-sheet.json',
+    sourceId: 'pokemon-online-pokeapi-derived-spectral-caster-v1',
+    quality: 'all',
+  },
+  {
+    id: 'battle:spectral-caster:v1:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/spectral-caster-v1/back-sheet.png',
+    metadataUrl: '/sprites/battle/spectral-caster-v1/back-sheet.json',
+    sourceId: 'pokemon-online-pokeapi-derived-spectral-caster-v1',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v5:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v5/front-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v5/front-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v5-motion',
+    quality: 'all',
+  },
+  {
+    id: 'battle:flame-wing:v5:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/flame-wing-v5/back-sheet.png',
+    metadataUrl: '/sprites/battle/flame-wing-v5/back-sheet.json',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v5-motion',
+    quality: 'all',
+  },
+  {
+    id: 'battle:spectral-caster:v2:front:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/spectral-caster-v2/front-sheet.png',
+    metadataUrl: '/sprites/battle/spectral-caster-v2/front-sheet.json',
+    sourceId: 'pokemon-online-code-authored-spectral-caster-v2-motion',
+    quality: 'all',
+  },
+  {
+    id: 'battle:spectral-caster:v2:back:sequence',
+    kind: 'sprite-sheet',
+    url: '/sprites/battle/spectral-caster-v2/back-sheet.png',
+    metadataUrl: '/sprites/battle/spectral-caster-v2/back-sheet.json',
+    sourceId: 'pokemon-online-code-authored-spectral-caster-v2-motion',
+    quality: 'all',
+  },
   ...SPECIES_LIST.flatMap((species) => [
     { id: `pokemon:${species.id}:front`, kind: 'static-sprite' as const, url: `/sprites/pokemon/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
     { id: `pokemon:${species.id}:back`, kind: 'static-sprite' as const, url: `/sprites/pokemon/back/${species.id}.png`, sourceId: 'pokeapi-sprites', quality: 'all' as const },
@@ -437,50 +519,95 @@ export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = [
     profileId: 'species:6',
     modelId: 'showcase:flame-wing',
     status: 'integrated',
-    sourceId: 'pokemon-online-pokeapi-derived-flame-wing-v4',
+    sourceId: 'pokemon-online-code-authored-flame-wing-v5-motion',
     format: 'png-sequence-json',
     sequence: {
       frameWidth: 96,
       frameHeight: 96,
-      fps: 12,
+      fps: 16,
       chromaKey: 'transparent-alpha',
-      requiredClips: ['idle', 'attack', 'cast', 'charge', 'channel', 'hit', 'faint'],
+      requiredClips: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
       transitions: [
-        { from: 'idle', to: 'attack', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'attack', to: 'idle', durationMs: 160, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'cast', durationMs: 140, easing: 'cubic-in-out' },
-        { from: 'cast', to: 'idle', durationMs: 160, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'charge', durationMs: 180, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'channel', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'channel', to: 'idle', durationMs: 180, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'hit', durationMs: 70, easing: 'cubic-in-out' },
-        { from: 'hit', to: 'idle', durationMs: 140, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'locomotion', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'locomotion', to: 'idle', durationMs: 110, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'attack', durationMs: 100, easing: 'cubic-in-out' },
+        { from: 'attack', to: 'recover', durationMs: 70, easing: 'cubic-in-out' },
+        { from: 'recover', to: 'idle', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'cast', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'cast', to: 'recover', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'charge', durationMs: 160, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'attack', durationMs: 80, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'cast', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'channel', durationMs: 100, easing: 'cubic-in-out' },
+        { from: 'channel', to: 'recover', durationMs: 110, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'hit', durationMs: 60, easing: 'cubic-in-out' },
+        { from: 'hit', to: 'idle', durationMs: 130, easing: 'cubic-in-out' },
+        { from: 'hit', to: 'faint', durationMs: 40, easing: 'cubic-in-out' },
       ],
     },
-    generationPromptRevision: 'pokeapi-derived-flame-wing-v4-lossless-frame-wrapper',
-    plannedFrontAssetId: 'battle:flame-wing:v4:front:sequence',
-    plannedBackAssetId: 'battle:flame-wing:v4:back:sequence',
+    generationPromptRevision: 'showcase-motion-v1-nearest-neighbour-keyframe-derivation',
+    plannedFrontAssetId: 'battle:flame-wing:v5:front:sequence',
+    plannedBackAssetId: 'battle:flame-wing:v5:back:sequence',
     fallbackAssetId: FALLBACK_ASSET_ID,
-    requiredMotions: ['idle', 'attack', 'cast', 'charge', 'channel', 'hit', 'faint'],
+    requiredMotions: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
+  },
+  {
+    id: 'vertical-slice:spectral-caster-2d-sequence',
+    profileId: 'species:94',
+    modelId: 'showcase:spectral-caster',
+    status: 'integrated',
+    sourceId: 'pokemon-online-code-authored-spectral-caster-v2-motion',
+    format: 'png-sequence-json',
+    sequence: {
+      frameWidth: 96,
+      frameHeight: 96,
+      fps: 16,
+      chromaKey: 'transparent-alpha',
+      requiredClips: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
+      transitions: [
+        { from: 'idle', to: 'locomotion', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'locomotion', to: 'idle', durationMs: 110, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'attack', durationMs: 100, easing: 'cubic-in-out' },
+        { from: 'attack', to: 'recover', durationMs: 70, easing: 'cubic-in-out' },
+        { from: 'recover', to: 'idle', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'cast', durationMs: 120, easing: 'cubic-in-out' },
+        { from: 'cast', to: 'recover', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'charge', durationMs: 160, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'attack', durationMs: 80, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'cast', durationMs: 90, easing: 'cubic-in-out' },
+        { from: 'charge', to: 'channel', durationMs: 100, easing: 'cubic-in-out' },
+        { from: 'channel', to: 'recover', durationMs: 110, easing: 'cubic-in-out' },
+        { from: 'idle', to: 'hit', durationMs: 60, easing: 'cubic-in-out' },
+        { from: 'hit', to: 'idle', durationMs: 130, easing: 'cubic-in-out' },
+        { from: 'hit', to: 'faint', durationMs: 40, easing: 'cubic-in-out' },
+      ],
+    },
+    generationPromptRevision: 'showcase-motion-v1-nearest-neighbour-keyframe-derivation',
+    plannedFrontAssetId: 'battle:spectral-caster:v2:front:sequence',
+    plannedBackAssetId: 'battle:spectral-caster:v2:back:sequence',
+    fallbackAssetId: FALLBACK_ASSET_ID,
+    requiredMotions: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
   },
 ];
 
 const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeBattleArtTuning>> = {
   6: {
     modelId: 'showcase:flame-wing',
-    frontAssetId: 'battle:flame-wing:v4:front:sequence',
-    backAssetId: 'battle:flame-wing:v4:back:sequence',
+    frontAssetId: 'battle:flame-wing:v5:front:sequence',
+    backAssetId: 'battle:flame-wing:v5:back:sequence',
     scale: 1.16, shadowScale: 1.22,
     layers: [
       { id: 'ember-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.20, scale: 1.15, pulse: 0.18 },
       { id: 'wing-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.16, scale: 0.92, pulse: 0.12 },
     ],
     motionPoses: {
-      idle: { offsetY: -5, glowAlpha: 0.20, glowScale: 1.04 },
-      attack: { offsetX: 19, offsetY: -3, rotationDeg: 8, scaleX: 1.10, scaleY: 0.92 },
-      cast: { offsetX: 8, offsetY: -6, rotationDeg: -5, glowAlpha: 0.35, glowScale: 1.22 },
+      idle: { offsetY: -8, glowAlpha: 0.20, glowScale: 1.04 },
+      locomotion: { offsetY: -10, rotationDeg: -3, scaleX: 1.04, scaleY: 0.96, glowAlpha: 0.30, glowScale: 1.16 },
+      attack: { offsetX: 21, offsetY: 4, rotationDeg: 15, scaleX: 1.12, scaleY: 0.90 },
+      cast: { offsetX: 10, offsetY: 3, rotationDeg: 11, scaleX: 1.08, scaleY: 0.94, glowAlpha: 0.35, glowScale: 1.22 },
       charge: { offsetY: -7, glowAlpha: 0.46, glowScale: 1.30 },
       channel: { offsetY: -6, glowAlpha: 0.42, glowScale: 1.24 },
+      recover: { offsetX: -7, offsetY: -2, rotationDeg: -4, scaleX: 0.96, scaleY: 1.04, glowAlpha: 0.12, glowScale: 0.98 },
       hit: { offsetX: -12, rotationDeg: -8, scaleX: 0.92 },
       faint: { offsetY: 10, rotationDeg: 18, scaleY: 0.72 },
     },
@@ -501,16 +628,21 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
     },
   },
   94: {
-    modelId: 'showcase:spectral-caster', scale: 1.04, shadowScale: 0.92,
+    modelId: 'showcase:spectral-caster',
+    frontAssetId: 'battle:spectral-caster:v2:front:sequence',
+    backAssetId: 'battle:spectral-caster:v2:back:sequence',
+    scale: 1.04, shadowScale: 0.92,
     layers: [
       { id: 'spectral-mist', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.26, scale: 1.22, pulse: 0.20 },
       { id: 'rune-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.14, scale: 1.02, pulse: 0.18 },
     ],
     motionPoses: {
       idle: { offsetY: -7, rotationDeg: -2, glowAlpha: 0.28, glowScale: 1.12 },
+      locomotion: { offsetY: -10, rotationDeg: 3, scaleX: 1.05, scaleY: 0.95, glowAlpha: 0.34, glowScale: 1.20 },
       cast: { offsetY: -10, rotationDeg: 7, glowAlpha: 0.48, glowScale: 1.42 },
       charge: { offsetY: -12, glowAlpha: 0.54, glowScale: 1.48 },
       channel: { offsetY: -11, rotationDeg: 4, glowAlpha: 0.46, glowScale: 1.40 },
+      recover: { offsetY: -5, rotationDeg: -3, scaleX: 0.97, scaleY: 1.03, glowAlpha: 0.14, glowScale: 1.02 },
       hit: { offsetX: -10, rotationDeg: -9, scaleX: 0.90 },
       faint: { offsetY: 14, rotationDeg: 20, scaleY: 0.68 },
     },
@@ -618,9 +750,11 @@ function castPresentationFor(skill: Skill, recipe: SkillVisualRecipe | undefined
     skillId: skill.id,
     delivery,
     windupMs,
+    visualWindupMs: windupMs > 0 ? windupMs : delivery === 'melee' ? 100 : 130,
     releaseAt: charge ? 1 : 0.48,
     charge,
     channel,
+    channelMs: channel ? 520 : 0,
     recoveryMs: delivery === 'melee' ? 180 : channel ? 240 : 160,
     actorMotion: delivery === 'melee' ? 'attack' : 'cast',
     projectileAnchor: delivery === 'melee' ? 'body' : 'muzzle',
@@ -639,9 +773,10 @@ export const DEFAULT_SKILL_CAST_PRESENTATION: SkillCastPresentationSpec = castPr
 export function battleArtMotionForAnimation(animation: string): BattleArtMotionId {
   switch (animation) {
     case 'windup': return 'charge';
-    case 'melee': return 'attack';
+    case 'melee':
+    case 'dive': return 'attack';
+    case 'beam': return 'channel';
     case 'projectile':
-    case 'beam':
     case 'burst':
     case 'cast': return 'cast';
     case 'recoil': return 'recover';
@@ -706,7 +841,11 @@ export function resolveBattleArtPresentation(input: BattleArtResolutionInput): R
   const skillRecipe = input.skillId ? SKILL_VISUAL_RECIPE_MAP[input.skillId] : undefined;
   const cast = input.skillId ? SKILL_CAST_PRESENTATION_BY_SKILL_ID[input.skillId] ?? DEFAULT_SKILL_CAST_PRESENTATION : DEFAULT_SKILL_CAST_PRESENTATION;
   const motionId = input.motion ?? (cast.charge ? 'charge' : cast.actorMotion);
-  const assetId = input.side === 'player' ? profile.backAssetId : profile.frontAssetId;
+  // A source view represents whether the combatant faces toward (+1, back) or
+  // away from (-1, front) the viewer. Renderer mirroring remains independent,
+  // so this works for either deployment side and never identifies a species.
+  const facing = input.facing ?? (input.side === 'player' ? 1 : -1);
+  const assetId = facing === 1 ? profile.backAssetId : profile.frontAssetId;
   const asset = BATTLE_ASSET_BY_ID[assetId] ?? BATTLE_ASSET_BY_ID[profile.fallbackAssetId] ?? BATTLE_ASSET_BY_ID[FALLBACK_ASSET_ID]!;
   return {
     profile,

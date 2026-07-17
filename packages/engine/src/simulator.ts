@@ -349,8 +349,8 @@ export class BattleSim {
   }
 
   private isCellFree(cell: { x: number; y: number }, exceptUid: string): boolean {
-    if (!isCellInArena(cell.x, cell.y)) return false; // outside the oval = stands
-    return !this.state.combatants.some((o) => o.alive && o.uid !== exceptUid && o.position.x === cell.x && o.position.y === cell.y);
+    return isCellInArena(cell.x, cell.y) && !this.state.combatants.some((other) => other.alive
+      && other.uid !== exceptUid && other.position.x === cell.x && other.position.y === cell.y);
   }
 
   /** Smooth the render position toward the logical cell center (visual only).

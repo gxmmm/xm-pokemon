@@ -20,6 +20,7 @@ export const router = createRouter({
     { path: '/renderer-spike', name: 'renderer-spike', component: () => import('./views/RendererSpikeView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/battle-stage-sandbox', name: 'battle-stage-sandbox', component: () => import('./views/BattleStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/battle-sandbox', name: 'battle-sandbox', component: () => import('./views/BattleSandboxView.vue') },
+
     { path: '/world-stage-sandbox', name: 'world-stage-sandbox', component: () => import('./views/WorldStageSandboxView.vue'), meta: { requiresAuth: true, requiresSave: true } },
     { path: '/:pathMatch(.*)*', redirect: '/world' },
   ],

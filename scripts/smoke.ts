@@ -2,20 +2,63 @@ import { existsSync, readFileSync } from 'node:fs';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
-import { skillFxProfile } from '../apps/web/src/battle/BattleEffects.ts';
-import { BattleActionTimeline } from '../apps/web/src/battle/BattleActions.ts';
+
 import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
 import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
-import { CanvasCueAdapter } from '../apps/web/src/battle/CanvasCueAdapter.ts';
+
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, CombatantView, isSpriteAsset, planBattleCue } from '@pokemon-online/renderer-pixi';
+
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
+}
+
+// Pixi is the sole supported battle renderer. Three/GLB experiments must not
+// leave a route, package, asset cache, or runtime dependency in this project.
+{
+  const removedThreePaths = [
+    'packages/renderer-three',
+    'packages/config/src/three-battle-art.ts',
+    'apps/web/src/components/ThreeBattleViewport.vue',
+    'apps/web/src/views/ThreeBattleProbeView.vue',
+    'apps/web/public/models',
+    'apps/web/public/three-draco',
+    'doc/THREE_BATTLE_HANDOFF.md',
+    'scripts/probe-battle-models.mjs',
+  ];
+  assert(removedThreePaths.every((path) => !existsSync(path)), 'Three/GLB battle experiment has no remaining project files or local runtime assets');
+  const webManifest = readFileSync('apps/web/package.json', 'utf8');
+  assert(!webManifest.includes('"three"') && !webManifest.includes('@types/three'), 'web runtime has no Three.js dependencies');
+  console.log('✓ Pixi is the only supported battle renderer');
+}
+
+// Archived Canvas implementations are intentionally deleted. This does not
+// prohibit Pixi's browser canvas surface; it forbids the former Canvas game
+// renderer, its cue adapter, and its archive-only source tree from returning.
+{
+  const removedCanvasPaths = [
+    'apps/web/src/battle/BattleField.ts',
+    'apps/web/src/battle/BattleSprite.ts',
+    'apps/web/src/battle/BattleEffects.ts',
+    'apps/web/src/battle/BattleActions.ts',
+    'apps/web/src/battle/CanvasCueAdapter.ts',
+    'apps/web/src/battle/canvas',
+    'apps/web/src/components/BattleCanvas.vue',
+    'apps/web/src/components/WorldCanvas.vue',
+    'apps/web/src/world/Tileset.ts',
+    'apps/web/src/world/CharacterSprite.ts',
+    'apps/web/src/world/Camera.ts',
+    'scripts/check-canvas-archive.mjs',
+  ];
+  assert(removedCanvasPaths.every((path) => !existsSync(path)), 'legacy Canvas renderer and archive-only sources have been removed');
+  const packageManifest = readFileSync('package.json', 'utf8');
+  assert(!packageManifest.includes('canvas:archive-check') && !packageManifest.includes('check-canvas-archive'), 'build scripts do not retain Canvas archive checks');
+  console.log('✓ legacy Canvas renderer removed');
 }
 
 // Long-run renderer observation stays outside rules: route handoffs retain
@@ -86,6 +129,13 @@ function assert(cond: boolean, msg: string): void {
   bridgeSim.tick(0.05);
   const heldFrame = bridge.advance(bridgeSim, 0.05);
   assert(heldFrame.presentation.time === heldAt, 'presentation bridge hit-stop holds only the visual cursor');
+  const actionWindowBridge = new BattlePresentationBridge();
+  const actionWindowSource = { isOver: false, state: { time: 0.5, combatants: bridgeSim.state.combatants, events: [{ t: 0.1, seq: 999, type: 'attack', actor: bridgeSim.state.combatants[0]?.uid, target: bridgeSim.state.combatants[1]?.uid, skillId: '__normal__' }] } };
+  actionWindowBridge.reset(actionWindowSource);
+  const actionWindowFrame = actionWindowBridge.advance(actionWindowSource, 0.5);
+  const actionWindowAt = actionWindowFrame.presentation.time;
+  const heldActionFrame = actionWindowBridge.advance({ ...actionWindowSource, state: { ...actionWindowSource.state, time: 0.7 } }, 0.1);
+  assert(actionWindowFrame.cues.some((entry) => entry.cue.type === 'action-window') && heldActionFrame.presentation.time === actionWindowAt, 'presentation bridge owns the action playback window instead of renderer catch-up');
   console.log('✓ BattlePresentationBridge delayed cue contract:', cueIds.size);
 }
 
@@ -120,7 +170,11 @@ function assert(cond: boolean, msg: string): void {
   assert(SKILL_CAST_PRESENTATIONS.length === SKILLS.length && ABILITY_VISUAL_RECIPES.length > 0 && PASSIVE_VISUAL_RECIPES.length === PASSIVE_SKILLS.length && Object.keys(STATUS_VISUAL_RECIPES).length === 6, 'battle art catalogs expose complete static presentation data');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
-  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'battle:flame-wing:v4:back:sequence' && charizardSwift.asset.metadataUrl?.endsWith('/flame-wing-v4/back-sheet.json') && pikachuSwift.asset.url.endsWith('/25.png'), '共享技能通过配置化的玩家/敌方模型资产解析，不需要 renderer 分支');
+  const charizardFacingLeft = resolveBattleArtPresentation({ speciesId: 6, side: 'player', facing: -1 });
+  const gengarFacingRight = resolveBattleArtPresentation({ speciesId: 94, side: 'enemy', facing: 1 });
+  const gengarFacingLeft = resolveBattleArtPresentation({ speciesId: 94, side: 'enemy', facing: -1 });
+  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'battle:flame-wing:v5:back:sequence' && charizardSwift.asset.metadataUrl?.endsWith('/flame-wing-v5/back-sheet.json') && pikachuSwift.asset.url.endsWith('/25.png'), '共享技能通过配置化的玩家/敌方模型资产解析，不需要 renderer 分支');
+  assert(charizardFacingLeft.asset.id === 'battle:flame-wing:v5:front:sequence' && gengarFacingRight.asset.id === 'battle:spectral-caster:v2:back:sequence' && gengarFacingLeft.asset.id === 'battle:spectral-caster:v2:front:sequence', 'combatant.facing 通用选择前后视源图，左右换位后不再把背视镜像成正面');
   assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'cast', 'one shared skill receives model-configured theme, anchor, and motion differences');
   const unknown = resolveBattleArtPresentation({ speciesId: -1, side: 'enemy', skillId: '__missing__', motion: 'hit' });
   assert(unknown.profile.id === 'generic:fallback' && unknown.asset.kind === 'fallback-shape' && unknown.motion.id === 'hit', 'battle art resolver has a configuration-owned missing model/skill fallback');
@@ -130,16 +184,20 @@ function assert(cond: boolean, msg: string): void {
   });
   assert(manifestFilesExist, 'every static battle-art manifest entry resolves to a bundled public asset');
   const flameWingImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:flame-wing-2d-sequence');
+  const spectralCasterImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:spectral-caster-2d-sequence');
   assert(BATTLE_ASSET_SOURCES.every((source) => source.sourceUrl && source.licenseLabel && source.licenseEvidenceUrl && source.attribution), 'every battle asset source has auditable provenance, licence evidence, and attribution');
-  assert(flameWingImport?.status === 'integrated' && flameWingImport.sourceId === 'pokemon-online-pokeapi-derived-flame-wing-v4' && flameWingImport.format === 'png-sequence-json' && flameWingImport.sequence.frameWidth === 96 && flameWingImport.sequence.frameHeight === 96 && flameWingImport.sequence.fps === 12 && flameWingImport.sequence.chromaKey === 'transparent-alpha' && flameWingImport.requiredMotions.includes('charge') && flameWingImport.sequence.requiredClips.includes('channel') && flameWingImport.sequence.transitions.some((transition) => transition.from === 'idle' && transition.to === 'attack' && transition.durationMs === 120) && flameWingImport.sequence.transitions.some((transition) => transition.from === 'attack' && transition.to === 'idle' && transition.durationMs === 160), '火翼飞龙代码生成序列契约记录来源、尺寸、动作与平滑 clip 过渡');
-  const flameWingAssets = [flameWingImport!.plannedFrontAssetId, flameWingImport!.plannedBackAssetId].map((id) => BATTLE_ASSET_MANIFEST.find((asset) => asset.id === id)!);
-  assert(flameWingAssets.every((asset) => asset.kind === 'sprite-sheet' && !!asset.metadataUrl && existsSync(`apps/web/public/${asset.url.replace(/^\//, '')}`) && existsSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`)), '火翼飞龙序列图与 JSON 元数据均通过 manifest 进入 public 资产目录');
-  const flameWingMetadata = flameWingAssets.map((asset) => JSON.parse(readFileSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`, 'utf8')) as { frameWidth: number; frameHeight: number; columns: number; fps: number; clips: Record<string, { frames: number[]; loop: boolean }>; transitions: Array<{ from: string; to: string; durationMs: number; easing: string }> });
-  assert(flameWingMetadata.every((metadata) => metadata.frameWidth === 96 && metadata.frameHeight === 96 && metadata.columns === 8 && metadata.fps === 12 && metadata.clips.idle.frames.length === 4 && metadata.clips.attack.frames.length === 5 && metadata.transitions.some((transition) => transition.from === 'idle' && transition.to === 'attack' && transition.durationMs === 120 && transition.easing === 'cubic-in-out')), '火翼飞龙前后视元数据包含可播放帧、待机到攻击补间与统一节奏');
+  assert(flameWingImport?.status === 'integrated' && flameWingImport.sourceId === 'pokemon-online-code-authored-flame-wing-v5-motion' && flameWingImport.format === 'png-sequence-json' && flameWingImport.sequence.frameWidth === 96 && flameWingImport.sequence.frameHeight === 96 && flameWingImport.sequence.fps === 16 && flameWingImport.sequence.chromaKey === 'transparent-alpha' && flameWingImport.requiredMotions.includes('locomotion') && flameWingImport.sequence.requiredClips.includes('recover') && flameWingImport.sequence.transitions.some((transition) => transition.from === 'idle' && transition.to === 'locomotion' && transition.durationMs === 90) && flameWingImport.sequence.transitions.some((transition) => transition.from === 'attack' && transition.to === 'recover' && transition.durationMs === 70), '火翼飞龙无损序列契约记录来源、尺寸、动作与平滑 clip 过渡');
+  assert(spectralCasterImport?.status === 'integrated' && spectralCasterImport.sourceId === 'pokemon-online-code-authored-spectral-caster-v2-motion' && spectralCasterImport.format === 'png-sequence-json' && spectralCasterImport.sequence.frameWidth === 96 && spectralCasterImport.sequence.frameHeight === 96 && spectralCasterImport.sequence.fps === 16 && spectralCasterImport.sequence.requiredClips.includes('locomotion') && spectralCasterImport.sequence.requiredClips.includes('recover') && spectralCasterImport.requiredMotions.includes('faint'), '耿鬼无损序列契约记录已下载 PokeAPI 基底、悬浮施法动作与公共 fallback');
+  const sequenceAssets = [flameWingImport!, spectralCasterImport!].flatMap((contract) => [contract.plannedFrontAssetId, contract.plannedBackAssetId]).map((id) => BATTLE_ASSET_MANIFEST.find((asset) => asset.id === id)!);
+  assert(sequenceAssets.every((asset) => asset.kind === 'sprite-sheet' && !!asset.metadataUrl && existsSync(`apps/web/public/${asset.url.replace(/^\//, '')}`) && existsSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`)), '代表模型的序列图与 JSON 元数据均通过 manifest 进入 public 资产目录');
+  const sequenceMetadata = sequenceAssets.map((asset) => JSON.parse(readFileSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`, 'utf8')) as { frameWidth: number; frameHeight: number; columns: number; fps: number; clips: Record<string, { frames: number[]; loop: boolean }>; transitions: Array<{ from: string; to: string; durationMs: number; easing: string }> });
+  assert(sequenceMetadata.every((metadata) => metadata.frameWidth === 96 && metadata.frameHeight === 96 && metadata.columns === 8 && metadata.fps === 16 && metadata.clips.idle?.frames.length === 6 && metadata.clips.locomotion?.frames.length === 8 && metadata.clips.recover?.frames.length === 4 && metadata.clips.faint?.frames.length === 10 && metadata.transitions.some((transition) => transition.from === 'idle' && transition.to === 'locomotion' && transition.durationMs === 90 && transition.easing === 'cubic-in-out')), '代表模型前后视元数据包含真实移动、恢复、倒下关键帧与统一补间');
   const representativeProfiles = REPRESENTATIVE_BATTLE_ART_SPECIES.map((speciesId) => resolveBattleArtPresentation({ speciesId, side: 'enemy' }).profile);
   assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length > 0 && Object.keys(profile.motionPoses).length >= 4), 'six representative models declare layered 2.5D art and distinct motion poses in configuration');
   assert(new Set(representativeProfiles.map((profile) => profile.modelId)).size === representativeProfiles.length, 'representative model identities remain explicit profile data rather than renderer branches');
   console.log(`✓ battle art config and resolver: ${BATTLE_ART_PROFILES.length} profiles, ${BATTLE_ASSET_MANIFEST.length} assets`);
+  const officialBattleView = readFileSync('apps/web/src/views/BattleView.vue', 'utf8');
+  assert(officialBattleView.includes("import PixiBattleViewport from '../components/PixiBattleViewport.vue'"), 'official battle entry uses the Pixi 2D sequence renderer');
 }
 
 // Stage B keeps the GPU asset boundary manifest-driven. Browser decoding is
@@ -154,10 +212,34 @@ function assert(cond: boolean, msg: string): void {
   combatantView.playAnimation('windup');
   combatantView.update(0.12);
   const viewDiagnostics = combatantView.getDiagnostics();
-  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1 && !viewDiagnostics.spriteReady, 'CombatantView keeps a sprite-sheet combatant on its generic fallback until a cropped clip frame is ready');
+  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1, 'CombatantView resolves a sprite-sheet windup through its generic configuration contract');
   combatantView.refresh({ ...viewCombatant, facing: -1 });
   combatantView.update(0.12);
-  assert(combatantView.getDiagnostics().facing === -1, 'CombatantView mirrors the complete model hierarchy from generic battle-snapshot facing');
+  const reversedViewDiagnostics = combatantView.getDiagnostics();
+  assert(reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView keeps generic pose geometry directional while counter-mirroring the selected bitmap source view');
+  combatantView.refresh({ ...viewCombatant });
+  combatantView.refresh({ ...viewCombatant, pixel: { x: viewCombatant.pixel.x + 0.5, y: viewCombatant.pixel.y } });
+  combatantView.update(0.04);
+  assert(combatantView.getDiagnostics().moving && combatantView.getDiagnostics().motion === 'locomotion', 'CombatantView turns delayed snapshot movement into the generic locomotion clip instead of sliding a static bitmap');
+  combatantView.refresh({ ...viewCombatant, pixel: { x: viewCombatant.pixel.x + 0.5, y: viewCombatant.pixel.y }, castProgress: { skillId: 'hyper-beam', remaining: 0.6 } });
+  assert(combatantView.getDiagnostics().casting && combatantView.getDiagnostics().motion === 'charge', 'CombatantView enters and holds a visible charge pose directly from the authoritative castProgress DTO');
+  combatantView.playAnimation('windup', 'immediate', 130);
+  combatantView.playAnimation('projectile', 'after-current-motion');
+  combatantView.playAnimation('recoil', 'after-current-motion', 180);
+  assert(combatantView.getDiagnostics().motion === 'charge', 'CombatantView keeps the visible windup motion independent from snapshot position following');
+  combatantView.update(0.14);
+  assert(combatantView.getDiagnostics().motion === 'cast', 'CombatantView releases the queued action only after its windup duration');
+  combatantView.playAnimation('projectile');
+  combatantView.playAnimation('recoil', 'after-current-motion', 180);
+  assert(combatantView.getDiagnostics().queuedMotionCount === 3, 'CombatantView serializes a newly ready skill and its recovery behind the current cast chain');
+  combatantView.update(0.47);
+  assert(combatantView.getDiagnostics().motion === 'recover', 'CombatantView preserves recovery until the active attack motion completes');
+  combatantView.update(0.19);
+  assert(combatantView.getDiagnostics().motion === 'cast', 'CombatantView plays the next ready skill only after the preceding recovery');
+  combatantView.update(0.47);
+  assert(combatantView.getDiagnostics().motion === 'recover', 'CombatantView gives each queued skill its own recovery');
+  combatantView.update(0.19);
+  assert(combatantView.getDiagnostics().motion === 'idle', 'CombatantView returns to idle after the full queued action chain');
   combatantView.destroy({ children: true });
   assetLoader.clear();
   console.log('✓ Pixi manifest asset loader and CombatantView contract');
@@ -176,6 +258,7 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ standalone N-vs-N battle acceptance sandbox contract');
 }
 
+
 // Stage 2 presentation direction: the same structured fixture must yield a
 // deterministic, serializable cue score without DOM/Pixi/Canvas dependencies.
 {
@@ -185,9 +268,26 @@ function assert(cond: boolean, msg: string): void {
   const second = direct();
   assert(first.length > 0 && JSON.stringify(first) === JSON.stringify(second), 'BattleDirector cue output is deterministic');
   assert(first.some((entry) => entry.cue.type === 'animation') && first.some((entry) => entry.cue.type === 'vfx'), 'BattleDirector emits action and VFX cues');
+  const castStart = new BattleDirector().direct([{ id: 'cast-start', sequence: 3, type: 'cast-start', actorId: 'caster', targetIds: ['target'], skillId: 'blazing-dive', element: 'fire', at: 14 }]);
+  const castAura = castStart.find((entry) => entry.cue.type === 'vfx')?.cue;
+  assert(castAura?.type === 'vfx' && castAura.recipe.variant === 'dive' && castAura.recipe.delivery === 'aura' && castAura.anchors.actorId === 'caster' && !castAura.anchors.targetIds?.length, 'cast-start aura stays on the caster while preserving the configuration-owned skill variant');
+  const diveAction = new BattleDirector().direct([{ id: 'dive-action', sequence: 4, type: 'skill', actorId: 'caster', targetIds: ['target'], skillId: 'blazing-dive', element: 'fire', at: 14.5 }]);
+  const diveActor = diveAction.find((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'dive')?.cue;
+  assert(diveActor?.type === 'animation' && diveActor.actorChoreography?.kind === 'target-dive' && diveActor.actorChoreography.durationMs === 460 && diveActor.actorChoreography.revealAt < diveActor.actorChoreography.impactAt && diveActor.targetIds?.[0] === 'target', 'configured dive choreography travels the actor toward its target without a skill/model renderer branch');
+  assert(!diveAction.some((entry) => entry.cue.type === 'vfx' && entry.cue.eventType === 'skill'), 'target-dive action defers its explosion to the authoritative damage cue');
+  const diveDamage = new BattleDirector().direct([{ id: 'dive-damage', sequence: 5, type: 'damage', actorId: 'caster', targetIds: ['target'], skillId: 'blazing-dive', element: 'fire', at: 15, outcome: { damage: 120 } }]);
+  const diveImpact = diveDamage.find((entry) => entry.cue.type === 'vfx')?.cue;
+  const diveHit = diveDamage.find((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'hit')?.cue;
+  assert(diveImpact?.type === 'vfx' && diveImpact.recipe.variant === 'dive' && diveImpact.delayMs === 386 && diveHit?.type === 'animation' && diveHit.delayMs === 386, 'configured dive restores the actor before a synchronized delayed fire impact');
+  assert(first.some((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'recoil' && entry.cue.schedule === 'after-current-motion' && (entry.cue.durationMs ?? 0) > 0), 'BattleDirector appends a configuration-owned recovery cue after each action motion');
+  const beamRecovery = new BattleDirector().direct([{ id: 'beam-recovery', sequence: 1, type: 'skill', actorId: 'actor', targetIds: ['target'], skillId: 'hyper-beam', element: 'normal', at: 12 }]);
+  const beamAnimation = beamRecovery.find((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'beam')?.cue;
+  const beamRecoil = beamRecovery.find((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'recoil')?.cue;
+  assert(beamAnimation?.type === 'animation' && beamAnimation.durationMs === 520 && beamRecoil?.type === 'animation' && beamRecoil.schedule === 'after-current-motion' && beamRecoil.durationMs === 240, 'beam actions channel for a config-owned finite hold before their recovery cue');
+  const visualWindup = new BattleDirector().direct([{ id: 'visual-windup', sequence: 2, type: 'move', actorId: 'actor', targetIds: ['target'], skillId: '__normal__', element: 'normal', at: 13 }]);
+  const windupVfx = visualWindup.find((entry) => entry.cue.type === 'vfx')?.cue;
+  assert(visualWindup.some((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'windup' && entry.cue.durationMs === 100) && windupVfx?.type === 'vfx' && windupVfx.delayMs === 100, 'instant actions receive a visible configuration-owned prepare before their VFX release');
   assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');
-  const adapted = new CanvasCueAdapter().consume(first);
-  assert(adapted.length > 0 && adapted.every((event) => !!event.vfx), 'Canvas adapter consumes director cues without engine state');
   console.log('✓ BattleDirector deterministic cue contract:', first.length);
 }
 // White Night remains available as a friendly test rematch after the opening
@@ -267,9 +367,9 @@ function assert(cond: boolean, msg: string): void {
 // gives each supported BattleStage biome a renderer-ready environment grammar.
 {
   const recipeReport = validateSkillVisualRecipes();
-  assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0, 'skill visual recipe coverage and budget validation');
+  assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0 && recipeReport.invalidActorChoreographyRecipeIds.length === 0, 'skill visual recipe coverage and budget validation');
   assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune', 'BattleStage biome environment grammar configured');
-  assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor', 'signature skills select config variants without renderer skill branches');
+  assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'blazing-dive')?.variant === 'dive' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'shadow-trap')?.variant === 'bind' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'chilling-snare')?.variant === 'snare', 'signature skills select config variants without renderer skill branches');
   console.log('✓ Stage 6 visual recipe and battle biome contract');
 }
 
@@ -300,7 +400,7 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ Illusion Tower parameterized WorldSceneSpec contract');
 }
 
-// Stage 4 config keeps Mist Bay landmarks outside legacy WorldCanvas map-id
+// Stage 4 config keeps Mist Bay landmarks outside the former map-id gate
 // branches, while retaining the authoritative map geometry separately.
 {
   const mistBay = WORLD_SCENE_BY_MAP_ID.pallet;
@@ -389,10 +489,11 @@ function assert(cond: boolean, msg: string): void {
 // can be tested without Pixi, DOM, or BattleSim internals.
 {
   const projectile = planBattleCue({ type: 'vfx', recipe: { id: 'ember', element: 'fire', delivery: 'projectile' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const dive = planBattleCue({ type: 'vfx', recipe: { id: 'blazing-dive', element: 'fire', delivery: 'melee', variant: 'dive' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 1 });
   const beam = planBattleCue({ type: 'vfx', recipe: { id: 'beam', element: 'electric', delivery: 'beam' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
   const area = planBattleCue({ type: 'vfx', recipe: { id: 'surf', element: 'water', delivery: 'area' }, anchors: { targetIds: ['target-a', 'target-b'] }, intensity: 0.7 });
   const environment = planBattleCue({ type: 'environment', reaction: 'scorch' });
-  assert(projectile[0]?.primitive === 'projectile' && beam[0]?.primitive === 'beam', 'BattleStage maps delivery cues to distinct primitives');
+  assert(projectile[0]?.primitive === 'projectile' && dive[0]?.primitive === 'dive' && beam[0]?.primitive === 'beam', 'BattleStage maps configured delivery motifs to distinct primitives');
   assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment', 'BattleStage maps area and environment cues');
   console.log('✓ BattleStage primitive cue policy');
 }
@@ -860,11 +961,6 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   console.log('✓ spread skill Surf:', hits.length, 'targets');
 }
 
-// 3ab. Every configured move has a visual direction. This prevents future skill
-// additions from silently falling back to a generic anonymous projectile.
-const FX_FAMILIES = new Set(['orb', 'bolt', 'beam', 'wave', 'storm', 'meteor', 'blade', 'dash', 'fang', 'drain', 'curse', 'guard', 'heal', 'powder', 'rune']);
-for (const skill of Object.values(SKILL_MAP)) assert(FX_FAMILIES.has(skillFxProfile(skill.id, skill.type).family), `skill visual profile: ${skill.id}`);
-console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
 
 // 3ab1. Player-facing passive names and descriptions must never expose internal
 // English type ids such as p-electricres / bug / electric.
@@ -891,27 +987,6 @@ console.log('✓ skill visual profiles:', Object.keys(SKILL_MAP).length);
   console.log('✓ battle tactical presentation labels');
 }
 
-// 3ac. Static sprites receive short, event-driven action poses rather than
-// continuous idle bobbing: melee gets anticipation/lunge; projectiles get a
-// local launch anchor in front of the caster.
-{
-  const timeline = new BattleActionTimeline();
-  const points: Record<string, { x: number; y: number }> = { actor: { x: 100, y: 120 }, target: { x: 220, y: 120 } };
-  timeline.consume([{ t: 0, seq: 1, type: 'skill', actor: 'actor', target: 'target', skillId: 'dragon-claw', vfx: { kind: 'melee', type: 'dragon' } }], (uid) => uid ? points[uid] ?? null : null);
-  timeline.update(0.18);
-  const pose = timeline.poseOf('actor');
-  assert(Math.abs(pose.dx) > 0.1 && timeline.isActive(), 'melee action has a bounded lunge pose');
-  const anchor = timeline.anchorOf('actor', 'projectile', points.actor)!;
-  assert(anchor.x > points.actor.x, 'projectile anchor is in front of caster');
-  timeline.clear();
-  timeline.consumeCues([{
-    id: 'cue-action', eventId: 'event-action', sequence: 2, at: 1,
-    cue: { type: 'animation', subjectId: 'actor', animation: 'projectile', skillId: 'ember', targetIds: ['target'], delivery: 'projectile' },
-  }], (uid) => uid ? points[uid] ?? null : null);
-  timeline.update(0.1);
-  assert(timeline.isActive() && timeline.labelOf('actor')?.skillId === 'ember', 'Canvas action adapter consumes BattleDirector animation cues');
-  console.log('✓ event-driven action timeline');
-}
 
 // 3ad. Casts are committed, readable actions: starting a windup immediately
 // locks both logical and rendered positions until the skill resolves or is interrupted.

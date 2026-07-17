@@ -5,7 +5,9 @@
 
 本项目所有开发由 AI 与开发者协同完成，遵循 **Design First（设计优先）** 原则。前端负责战斗、AI、炼妖等全部计算，Cloudflare Workers + D1 仅作为存档与认证服务器。
 
- Sprites © [PokeAPI](https://github.com/PokeAPI/sprites) — 本项目为非商业同人作品，不用于商业用途。
+Sprites © [PokeAPI](https://github.com/PokeAPI/sprites) — 本项目为非商业同人作品，不用于商业用途。
+
+宝可梦相关角色、名称、设计、商标及其他 IP 仍属于 Nintendo / Creatures Inc. / GAME FREAK inc. / The Pokémon Company 等相应权利方。
 
 ---
 
@@ -21,7 +23,7 @@
 - **梦幻式炼妖**：两只宝可梦炼妖产出一只新个体，种族随机继承主/副宠（不融合），资质与成长重新随机，被动技能随机继承（多技能上限），特性极低概率变异，保留家谱。
 - **统一四维**：生命/攻击/防御/速度（攻特攻合一、防特防合一）。
 - **配置驱动**：151 只初代宝可梦、技能、特性、性格、地图全部为静态配置；新增世代/地图优先只加配置，不改核心规则。
-- **GPU 战斗运行时**：世界与战斗正式使用 Pixi GPU 渲染；旧 Canvas 源码保留在仓库用于历史兼容与回归，但不再参与正式运行时。
+- **Pixi GPU 战斗**：世界与战斗统一由 PixiJS 渲染；角色通过配置化的静态图与序列帧资产表现待机、移动、蓄力、攻击、施法、受击与倒下。
 - **云端存档**：Cloudflare D1 关系型数据库 + Workers 存档服务器，前端计算，随时跨设备继续冒险。
 
 ---
@@ -31,7 +33,7 @@
 | 层 | 技术 |
 |---|---|
 | 前端 | Vue 3 + Vite + Pinia + Vue Router（TypeScript） |
-| 视觉运行时 | PixiJS（GPU-only 正式世界/战斗渲染；Canvas 源码保留但不挂载） |
+| 视觉运行时 | PixiJS（世界与战斗 GPU renderer） |
 | 后端 | Cloudflare Workers（TypeScript，仅存档/认证/PVP 队列查询） |
 | 数据库 | Cloudflare D1（SQLite） |
 | 部署 | 单个 Worker：静态资源（SPA）+ `/api/*` + D1 绑定 |
@@ -41,6 +43,26 @@
 
 ---
 
+## 🎯 当前开发目标：Pixi 序列帧战斗
+
+当前阶段聚焦一条主线：**完善 Pixi GPU 战斗的配置化 2D 序列帧表现，并保持世界与战斗的一致渲染链路。**
+
+```text
+Pixi 世界探索
+  → 遭遇 / 战斗入口
+  → BattleSim（AI、伤害、状态、移动、空间碰撞权威）
+  → presentation（snapshot / cue）
+  → Pixi BattleRenderer
+  → 战斗结果回到世界
+```
+
+### Pixi 战斗当前约束
+
+- `packages/engine` / `BattleSim` 始终决定 AI、伤害、命中、状态、死亡、移动和目标距离；Pixi 不重算玩法。
+- `packages/renderer-pixi` 只消费 renderer-neutral DTO，负责 2D 角色、序列帧、镜头、VFX、材质和资源释放。
+- 每种战斗资产必须经过 manifest 审计：来源、许可证、帧尺寸、动作 clip、挂点与质量预算。
+- 正式战斗入口仅挂载 Pixi，不提供玩家 renderer 切换。
+
 ## 📂 项目结构
 
 ```
@@ -49,6 +71,7 @@ xm-pokemon/
 │   ├── shared/          # 前后端共享类型与常量
 │   ├── config/          # 全部静态配置（151宝可梦/技能/特性/性格/地图/剧情/道具/经验曲线/属性相克）
 │   ├── engine/          # 游戏引擎（战斗模拟/AI/炼妖/属性计算/遇敌/捕获）
+│   ├── renderer-pixi/   # Pixi GPU 世界与战斗 renderer（2D 角色、序列帧、VFX、资源生命周期）
 │   └── utils/           # 通用工具
 ├── apps/
 │   ├── web/             # Vue 3 前端（views/components/stores）
@@ -246,20 +269,19 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 
 ### 战斗美术的配置规则
 
-战斗美术升级以 `doc/BATTLE_ART_UPGRADE_PLAN.md` 为唯一计划。模型/皮肤、动作集、挂点、调色主题、技能特效、被动/特性/状态特效、环境反应、资源 manifest 和品质预算都必须配置化，并由通用 resolver 组合：
+Pixi 战斗角色、序列帧 clip、挂点、调色主题、技能特效、被动/特性/状态特效、环境反应、资源 manifest 和品质预算都必须配置化，并由通用 resolver 组合：
 
 - **一个技能只有一份玩法与通用视觉定义。** 修改技能数据后，所有学习该技能的宝可梦自动生效。
-- **同一技能可因模型配置而有不同表现。** 颜色、发射挂点、动作片段、特效变体和皮肤差异使用模型 art profile/theme/override 配置表达，不复制技能，也不在 Pixi/Vue 中按物种或技能 ID 写分支。
+- **同一技能可因角色配置而有不同表现。** 颜色、发射挂点、序列帧动作片段、特效变体和皮肤差异使用 art profile/theme/override 配置表达，不复制技能，也不在 Pixi/Vue 中按物种或技能 ID 写分支。
 - `castTime` 是玩法权威前摇；攻击前摇、后摇、施放、吟唱/蓄力、持续施法、命中与受击等流畅性表现由 presentation + 动作配置驱动，不改变 engine 的结算事实。
-- 世界和战斗正式运行于 GPU/Pixi。`WorldCanvas.vue`、`BattleCanvas.vue` 与 Canvas adapter 源码必须保留，但不重新挂回正式路径或作为 fallback。
+- 当前世界与战斗正式运行于 Pixi GPU。
 
-**新增世代/地图示例**：在 `pokemon.ts` 的 `RAW` 数组追加新条目，在 `maps.ts` 加新地图与遇敌表；新增模型或特效时同步添加 art config、资源 manifest、引用校验与回归基线，而不是修改模型绑定代码。
+**新增世代/地图示例**：在 `pokemon.ts` 的 `RAW` 数组追加新条目，在 `maps.ts` 加新地图与遇敌表；新增序列帧资产或特效时同步添加 art config、资源 manifest、引用校验与回归基线，而不是修改角色绑定代码。
 
 ### 当前交接文档
 
 - `PROJECT_RULES.md` — 冻结设计、技术边界与 AI 开发最高规则
-- `doc/VISUAL_RUNTIME_HANDOFF.md` — 已完成 GPU 运行时的当前状态与最短接力入口
-- `doc/BATTLE_ART_UPGRADE_PLAN.md` — 下一阶段：配置优先的模型、动作、技能与特效升级计划
+
 
 ---
 

@@ -1,4 +1,4 @@
-import type { Skill, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, Skill, TypeName } from '@pokemon-online/shared';
 import { SKILLS } from './skills.ts';
 import type { DeliveryKind, EnvironmentReaction, SkillRecipeVariant, SkillVisualImpact, SkillVisualRecipe, SkillVisualTier } from './visuals.ts';
 
@@ -13,19 +13,19 @@ export interface SkillVisualGrammar {
  * signature overrides. It deliberately stays outside renderer-pixi. */
 export const SKILL_VISUAL_GRAMMAR: Readonly<Record<TypeName, SkillVisualGrammar>> = {
   normal: { element: 'normal', defaultImpact: 'spark', variants: ['default', 'cross'] },
-  fire: { element: 'fire', defaultImpact: 'burst', reaction: 'scorch', variants: ['default', 'meteor', 'surge'] },
+  fire: { element: 'fire', defaultImpact: 'burst', reaction: 'scorch', variants: ['default', 'meteor', 'surge', 'dive'] },
   water: { element: 'water', defaultImpact: 'wave', reaction: 'splash', variants: ['default', 'surge', 'hymn'] },
   grass: { element: 'grass', defaultImpact: 'burst', reaction: 'spore', variants: ['default', 'surge', 'hymn'] },
   electric: { element: 'electric', defaultImpact: 'spark', reaction: 'spark', variants: ['default', 'chain', 'crown'] },
-  ice: { element: 'ice', defaultImpact: 'burst', reaction: 'frost', variants: ['default', 'hymn', 'meteor'] },
+  ice: { element: 'ice', defaultImpact: 'burst', reaction: 'frost', variants: ['default', 'hymn', 'meteor', 'snare'] },
   fighting: { element: 'fighting', defaultImpact: 'spark', variants: ['default', 'cross'] },
-  poison: { element: 'poison', defaultImpact: 'burst', variants: ['default', 'surge'] },
+  poison: { element: 'poison', defaultImpact: 'burst', variants: ['default', 'surge', 'bind'] },
   ground: { element: 'ground', defaultImpact: 'wave', reaction: 'debris', variants: ['default', 'meteor'] },
   flying: { element: 'flying', defaultImpact: 'wave', variants: ['default', 'cross'] },
   psychic: { element: 'psychic', defaultImpact: 'rune', reaction: 'rune-pulse', variants: ['default', 'hymn', 'meteor'] },
   bug: { element: 'bug', defaultImpact: 'spark', variants: ['default', 'cross'] },
   rock: { element: 'rock', defaultImpact: 'burst', reaction: 'debris', variants: ['default', 'meteor'] },
-  ghost: { element: 'ghost', defaultImpact: 'rune', reaction: 'rune-pulse', variants: ['default', 'hymn'] },
+  ghost: { element: 'ghost', defaultImpact: 'rune', reaction: 'rune-pulse', variants: ['default', 'hymn', 'bind'] },
   dragon: { element: 'dragon', defaultImpact: 'rune', reaction: 'rune-pulse', variants: ['default', 'meteor', 'surge'] },
   dark: { element: 'dark', defaultImpact: 'burst', variants: ['default', 'cross'] },
   steel: { element: 'steel', defaultImpact: 'spark', variants: ['default', 'cross'] },
@@ -36,6 +36,23 @@ const SIGNATURE_VARIANTS: Readonly<Record<string, SkillRecipeVariant>> = {
   'hyper-beam': 'meteor', 'solar-beam': 'surge', 'draco-meteor': 'meteor', 'volt-chain': 'chain',
   'thunder-crown': 'crown', 'frostbound-hymn': 'hymn', 'renewal-chant': 'chant', 'genesis-pulse': 'hymn',
   'psyonic-annihilation': 'meteor', 'sunfire-pursuit': 'surge', 'tempest-breaker': 'surge',
+  'blazing-dive': 'dive', 'shadow-trap': 'bind', 'chilling-snare': 'snare', 'toxic-bind': 'bind',
+};
+
+/** Signature choreography remains a property of one shared skill recipe. Any
+ * model can consume it through the same actor/target anchors and its own art
+ * profile; no renderer branch may infer this from a skill or species ID. */
+const SIGNATURE_ACTOR_CHOREOGRAPHIES: Readonly<Record<string, BattleActorChoreography>> = {
+  'blazing-dive': {
+    kind: 'target-dive',
+    durationMs: 460,
+    arrivalAt: 0.64,
+    revealAt: 0.74,
+    impactAt: 0.84,
+    returnAt: 0.88,
+    approachDistance: 42,
+    silhouette: 'element-outline',
+  },
 };
 
 function deliveryFor(skill: Skill): DeliveryKind {
@@ -66,6 +83,7 @@ function recipeFor(skill: Skill): SkillVisualRecipe {
     camera: tier === 'finisher' ? 'finisher' : delivery === 'projectile' || delivery === 'beam' ? 'track' : delivery === 'area' ? 'impact' : 'light',
     environmentReaction: grammar.reaction,
     variant: SIGNATURE_VARIANTS[skill.id] ?? 'default',
+    actorChoreography: SIGNATURE_ACTOR_CHOREOGRAPHIES[skill.id],
     particleBudget: budgetFor(tier, delivery),
   };
 }
@@ -76,7 +94,7 @@ export const SKILL_VISUAL_RECIPES: readonly SkillVisualRecipe[] = SKILLS.map(rec
 export const SKILL_VISUAL_RECIPE_MAP: Readonly<Record<string, SkillVisualRecipe>> = Object.fromEntries(SKILL_VISUAL_RECIPES.map((recipe) => [recipe.skillId, recipe]));
 export function skillVisualRecipeFor(skillId: string): SkillVisualRecipe | undefined { return SKILL_VISUAL_RECIPE_MAP[skillId]; }
 
-export interface SkillVisualValidationReport { missingSkillIds: readonly string[]; duplicateSkillIds: readonly string[]; overBudgetRecipeIds: readonly string[]; invalidSignatureSkillIds: readonly string[]; }
+export interface SkillVisualValidationReport { missingSkillIds: readonly string[]; duplicateSkillIds: readonly string[]; overBudgetRecipeIds: readonly string[]; invalidSignatureSkillIds: readonly string[]; invalidActorChoreographyRecipeIds: readonly string[]; }
 export const SKILL_VISUAL_PARTICLE_BUDGET = 36;
 export function validateSkillVisualRecipes(recipes: readonly SkillVisualRecipe[] = SKILL_VISUAL_RECIPES): SkillVisualValidationReport {
   const knownSkillIds = new Set(SKILLS.map((skill) => skill.id));
@@ -87,6 +105,21 @@ export function validateSkillVisualRecipes(recipes: readonly SkillVisualRecipe[]
     missingSkillIds: SKILLS.filter((skill) => !seen.has(skill.id)).map((skill) => skill.id),
     duplicateSkillIds,
     overBudgetRecipeIds: recipes.filter((recipe) => recipe.particleBudget > SKILL_VISUAL_PARTICLE_BUDGET).map((recipe) => recipe.id),
-    invalidSignatureSkillIds: Object.keys(SIGNATURE_VARIANTS).filter((skillId) => !knownSkillIds.has(skillId)),
+    invalidSignatureSkillIds: [...Object.keys(SIGNATURE_VARIANTS), ...Object.keys(SIGNATURE_ACTOR_CHOREOGRAPHIES)].filter((skillId) => !knownSkillIds.has(skillId)),
+    invalidActorChoreographyRecipeIds: recipes.filter((recipe) => !isValidActorChoreography(recipe.actorChoreography)).map((recipe) => recipe.id),
   };
+}
+
+
+function isValidActorChoreography(choreography: BattleActorChoreography | undefined): boolean {
+  if (!choreography) return true;
+  return choreography.kind === 'target-dive'
+    && choreography.durationMs > 0
+    && choreography.arrivalAt > 0
+    && choreography.arrivalAt < choreography.revealAt
+    && choreography.revealAt < choreography.impactAt
+    && choreography.impactAt <= choreography.returnAt
+    && choreography.returnAt < 1
+    && choreography.approachDistance >= 0
+    && choreography.silhouette === 'element-outline';
 }

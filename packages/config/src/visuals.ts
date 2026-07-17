@@ -1,4 +1,4 @@
-import type { TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, TypeName } from '@pokemon-online/shared';
 
 /** Shared world/battle visual vocabulary. These are static data contracts;
  * renderer implementations must not add map- or skill-id branches to replace
@@ -126,7 +126,7 @@ export type SkillVisualTier = 'basic' | 'signature' | 'finisher';
 export type DeliveryKind = 'melee' | 'projectile' | 'beam' | 'area' | 'aura';
 export type SkillVisualImpact = 'spark' | 'burst' | 'wave' | 'rune' | 'heal' | 'status';
 export type EnvironmentReaction = 'scorch' | 'frost' | 'spark' | 'splash' | 'spore' | 'debris' | 'rune-pulse';
-export type SkillRecipeVariant = 'default' | 'cross' | 'meteor' | 'chain' | 'surge' | 'hymn' | 'crown' | 'chant';
+export type SkillRecipeVariant = 'default' | 'cross' | 'meteor' | 'chain' | 'surge' | 'hymn' | 'crown' | 'chant' | 'dive' | 'bind' | 'snare';
 
 export interface SkillVisualRecipe {
   id: string;
@@ -140,6 +140,9 @@ export interface SkillVisualRecipe {
   /** Renderer-neutral primitive detail; it selects an existing generic motif,
    * never names an individual skill in renderer-pixi. */
   variant?: SkillRecipeVariant;
+  /** Optional actor-side motion/visibility choreography. It is static recipe
+   * data; presentation forwards it and renderer consumers only execute the DTO. */
+  actorChoreography?: BattleActorChoreography;
   /** Upper bound for the cinematic burst primitive before quality reduction. */
   particleBudget: number;
 }

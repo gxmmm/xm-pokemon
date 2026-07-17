@@ -1,4 +1,4 @@
-import type { BattleCombatant, BattleEvent, BattleVfx, StatusKind, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCombatant, BattleEvent, BattleVfx, StatusKind, TypeName } from '@pokemon-online/shared';
 
 export type BattlePresentationEventType =
   | 'move'
@@ -49,12 +49,18 @@ export interface CameraPlan {
 /** Includes the legacy action forms so Canvas can remain a compatibility
  * consumer while a future renderer maps the same semantic action to its own
  * CombatantView animation system. */
-export type CombatantAnimation = 'idle' | 'windup' | 'melee' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';
+export type CombatantAnimation = 'idle' | 'windup' | 'melee' | 'dive' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';
 
 export interface VfxRecipeRef {
   id: string;
   element?: TypeName;
   delivery?: 'melee' | 'projectile' | 'beam' | 'area' | 'aura';
+  /** Configuration-owned generic motif detail; never a renderer-side skill branch. */
+  variant?: string;
+  /** Configuration-owned actor-side traversal/contour choreography. */
+  actorChoreography?: BattleActorChoreography;
+  /** Configuration-owned ceiling for generic particle/shape density. */
+  particleBudget?: number;
 }
 
 export interface VfxAnchors {
@@ -78,10 +84,15 @@ export interface SoundCue {
 }
 
 /** A renderer may schedule these cues but may not reinterpret battle rules. */
+export type AnimationSchedule = 'immediate' | 'after-current-motion';
+
 export type BattleCue =
   | { type: 'camera'; plan: CameraPlan }
-  | { type: 'vfx'; recipe: VfxRecipeRef; anchors: VfxAnchors; intensity: number; eventType: BattlePresentationEventType; skillId?: string; vfxKind?: BattleVfx['kind']; outcome?: BattlePresentationOutcome; status?: StatusKind }
-  | { type: 'animation'; subjectId: string; animation: CombatantAnimation; skillId?: string; targetIds?: readonly string[]; delivery?: VfxRecipeRef['delivery'] }
+  | { type: 'vfx'; recipe: VfxRecipeRef; anchors: VfxAnchors; intensity: number; eventType: BattlePresentationEventType; skillId?: string; vfxKind?: BattleVfx['kind']; outcome?: BattlePresentationOutcome; status?: StatusKind; /** Presentation-only delay used to release VFX after a visual windup. */ delayMs?: number }
+  | { type: 'animation'; subjectId: string; animation: CombatantAnimation; skillId?: string; targetIds?: readonly string[]; delivery?: VfxRecipeRef['delivery']; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: AnimationSchedule; /** Presentation-only clip hold; never changes simulation timing. */ durationMs?: number; /** Presentation-only release delay for impact reactions. */ delayMs?: number }
+  /** Timeline-owned playback window. The bridge pauses its visual cursor while
+   * renderer consumers play the matching action; no game facts are changed. */
+  | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
   | { type: 'environment'; reaction: EnvironmentReaction }

@@ -17,6 +17,7 @@ export default defineConfig({
       '@pokemon-online/presentation': fileURLToPath(new URL('../../packages/presentation/src/index.ts', import.meta.url)),
       '@pokemon-online/renderer': fileURLToPath(new URL('../../packages/renderer/src/index.ts', import.meta.url)),
       '@pokemon-online/renderer-pixi': fileURLToPath(new URL('../../packages/renderer-pixi/src/index.ts', import.meta.url)),
+
     },
   },
   build: {

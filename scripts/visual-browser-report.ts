@@ -76,7 +76,7 @@ async function worldDiagnostics(page: Page): Promise<Record<string, unknown>> {
   return diagnostics as Record<string, unknown>;
 }
 
-async function assertSingleWorldCanvas(page: Page, label: string): Promise<void> {
+async function assertSingleWorldSurface(page: Page, label: string): Promise<void> {
   assert(await page.locator('[data-testid="world-stage-viewport"] canvas').count() === 1, `${label}: expected exactly one WorldStage canvas`);
 }
 
@@ -99,7 +99,7 @@ async function lifecycleObservation(page: Page, expectedEntries: readonly Matrix
       await page.waitForFunction((sceneId) => window.__WORLD_STAGE_DIAGNOSTICS__?.().sceneId === sceneId, sceneIdFor(mapId));
       const diagnostics = await worldDiagnostics(page);
       assert(diagnostics.motionEnabled === false && diagnostics.preloadKeyCount === 1, `cycle ${cycle}/${mapId}: scene-local visual mode drifted`);
-      await assertSingleWorldCanvas(page, `cycle ${cycle}/${mapId}`);
+      await assertSingleWorldSurface(page, `cycle ${cycle}/${mapId}`);
       switchChecks.push({ cycle, mapId, diagnostics });
     }
     // Navigate through the separate BattleStage sandbox so the WorldStage unmount
@@ -108,7 +108,7 @@ async function lifecycleObservation(page: Page, expectedEntries: readonly Matrix
     await page.getByText('Pixi BattleStage 垂直切片').waitFor();
     await page.goto(`${BASE_URL}/world-stage-sandbox?${baseQuery}`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => document.documentElement.dataset.visualRegressionReady === 'true');
-    await assertSingleWorldCanvas(page, `world-battle-world ${cycle}`);
+    await assertSingleWorldSurface(page, `world-battle-world ${cycle}`);
   }
   const afterHeap = await heapUsed();
   const deltaBytes = afterHeap - beforeHeap;

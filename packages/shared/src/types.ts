@@ -107,6 +107,29 @@ export interface SkillEffect {
  * applied to each target's final damage. */
 export type SkillTargetMode = 'single' | 'all-enemies';
 
+/** Renderer-neutral actor choreography selected by a static visual recipe.
+ * It describes presentation only: BattleSim still owns all movement, damage,
+ * targeting and timing facts. */
+export interface TargetDiveActorChoreography {
+  kind: 'target-dive';
+  /** Full local-model traversal, including the visible return before recovery. */
+  durationMs: number;
+  /** Normalized traversal point at which the actor reaches the target approach. */
+  arrivalAt: number;
+  /** Model becomes readable again before the delayed impact. */
+  revealAt: number;
+  /** Target hit/VFX delay relative to the release of the actor traversal. */
+  impactAt: number;
+  /** Local traversal begins returning to the snapshot-owned position. */
+  returnAt: number;
+  /** Pixels kept between the local model and the target center at arrival. */
+  approachDistance: number;
+  /** Generic element-tinted contour; never identifies a model or skill. */
+  silhouette: 'element-outline';
+}
+
+export type BattleActorChoreography = TargetDiveActorChoreography;
+
 export interface Skill {
   id: string;
   name: string;
