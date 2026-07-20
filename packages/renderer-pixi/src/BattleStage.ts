@@ -3,6 +3,8 @@ import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation,
 import { Application, Container, Graphics } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { battleContactPoint, projectBattleGroundPoint } from './battle-ground.ts';
+import { movementPressurePlan, terrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
 
@@ -34,12 +36,21 @@ export class BattleStage implements BattleRenderer {
   private app: Application | null = null;
   private root: Container | null = null;
   private environment = new Container();
+  private readonly farBackdrop = new Container();
+  private readonly horizonLayer = new Container();
+  private readonly groundLayer = new Container();
+  private readonly terrainOcclusion = new Container();
+  private readonly foreground = new Container();
   private combatants = new Container();
   private effects = new Container();
   private overlay = new Container();
   private views = new Map<string, CombatantView>();
   private readonly battleArtAssets = new BattleArtAssetLoader();
   private positions = new Map<string, Point>();
+  private contactGraphics = new Map<string, Graphics>();
+  private contactPositions = new Map<string, Point>();
+  private contactCooldowns = new Map<string, number>();
+  private pressureCooldowns = new Map<string, number>();
   private activeEffects: TimedEffect[] = [];
   private delayedCues: DelayedBattleCue[] = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -92,6 +103,10 @@ export class BattleStage implements BattleRenderer {
     this.delayedCues = [];
     this.views.clear();
     this.positions.clear();
+    this.contactGraphics.clear();
+    this.contactPositions.clear();
+    this.contactCooldowns.clear();
+    this.pressureCooldowns.clear();
     this.battleArtAssets.clear();
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
@@ -126,9 +141,9 @@ export class BattleStage implements BattleRenderer {
       biomeId: this.biomeId,
       combatantCount: this.views.size,
       activeEffectCount: this.activeEffects.length,
-      environmentChildCount: this.environment.children.length,
+      environmentChildCount: this.environment.children.length + this.farBackdrop.children.length + this.horizonLayer.children.length + this.groundLayer.children.length + this.terrainOcclusion.children.length + this.foreground.children.length,
       effectChildCount: this.effects.children.length,
-      totalChildCount: this.environment.children.length + this.combatants.children.length + this.effects.children.length + this.overlay.children.length,
+      totalChildCount: this.environment.children.length + this.farBackdrop.children.length + this.horizonLayer.children.length + this.groundLayer.children.length + this.combatants.children.length + this.terrainOcclusion.children.length + this.foreground.children.length + this.effects.children.length + this.overlay.children.length,
       canvasCount: canvas ? 1 : 0,
       canvasPixels: canvas ? canvas.width * canvas.height : 0,
       drawCallTotal: drawCalls.total,
@@ -182,6 +197,12 @@ export class BattleStage implements BattleRenderer {
         view.destroy();
         this.views.delete(uid);
         this.positions.delete(uid);
+        this.contactPositions.delete(uid);
+        this.contactCooldowns.delete(uid);
+        this.pressureCooldowns.delete(uid);
+        const contact = this.contactGraphics.get(uid);
+        contact?.destroy();
+        this.contactGraphics.delete(uid);
       }
     }
     for (const combatant of snapshot.combatants) {
@@ -200,7 +221,93 @@ export class BattleStage implements BattleRenderer {
       // adds its action offsets locally, avoiding a catch-up teleport after a
       // visual prepare, cast, or recovery pose finishes.
       view.position.set(point.x, point.y);
+      this.updateTerrainContact(combatant.uid, combatant.speciesId, point);
     }
+  }
+
+  private updateTerrainContact(uid: string, speciesId: number, point: Point): void {
+    const spec = battleEnvironmentFor(this.biomeId);
+    const profile = resolveBattleArtPresentation({ speciesId, side: 'player' }).profile;
+    const plan = terrainContactPlan(spec.contactVisual, profile.locomotionMode, this.quality);
+    const previous = this.contactPositions.get(uid);
+    this.contactPositions.set(uid, point);
+    const travel = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
+    const pressure = movementPressurePlan(this.quality);
+    const moved = travel > pressure.minTravelPixels;
+    if (moved && (this.pressureCooldowns.get(uid) ?? 0) <= 0 && previous) {
+      this.spawnMovementPressure(point, { x: point.x - previous.x, y: point.y - previous.y });
+      this.pressureCooldowns.set(uid, pressure.intervalSeconds);
+    }
+    const existing = this.contactGraphics.get(uid);
+    if (!plan.occludesFeet) {
+      existing?.clear();
+      return;
+    }
+    const graphic = existing ?? new Graphics();
+    if (!existing) {
+      this.contactGraphics.set(uid, graphic);
+      this.terrainOcclusion.addChild(graphic);
+    }
+    const groundedStep = travel > 1.4;
+    this.drawFootOcclusion(graphic, point, spec, groundedStep ? 3 : 0);
+    const cooldown = this.contactCooldowns.get(uid) ?? 0;
+    if (groundedStep && cooldown <= 0) {
+      this.spawnTerrainContact(point, plan.particleKind, plan.particleBudget, spec);
+      this.contactCooldowns.set(uid, 0.10);
+    }
+  }
+
+  private drawFootOcclusion(graphic: Graphics, point: Point, spec: BattleEnvironmentSpec, sway: number): void {
+    const { groundDetail, accent } = spec.palette;
+    graphic.clear();
+    // Small local clumps live above characters, never a global overlay. Their
+    // baseline follows each projected unit root, preserving combat readability.
+    for (let index = 0; index < 5; index++) {
+      const x = point.x + (index - 2) * 9;
+      const h = 9 + (index % 3) * 3 + (index === 2 ? sway : 0);
+      graphic.moveTo(x - 3, point.y + 18).lineTo(x + (index - 2) * 1.4, point.y + 18 - h).lineTo(x + 4, point.y + 18)
+        .fill({ color: index % 2 ? groundDetail : accent, alpha: 0.46 });
+    }
+  }
+
+  private spawnMovementPressure(at: Point, velocity: Point): void {
+    const length = Math.hypot(velocity.x, velocity.y);
+    if (length < 0.001) return;
+    const direction = { x: velocity.x / length, y: velocity.y / length };
+    const normal = { x: -direction.y, y: direction.x };
+    const plan = movementPressurePlan(this.quality);
+    const graphic = new Graphics({ blendMode: 'add' });
+    this.addEffect(graphic, plan.durationSeconds, (progress) => {
+      const alpha = (1 - progress) * 0.30;
+      graphic.clear();
+      for (let index = 0; index < plan.lineCount; index++) {
+        const side = (index - (plan.lineCount - 1) / 2) * 8;
+        const lead = 28 + index * 9 + progress * 16;
+        const start = { x: at.x + direction.x * lead + normal.x * side, y: at.y + direction.y * lead + normal.y * side };
+        const end = { x: start.x - direction.x * (15 + index * 4), y: start.y - direction.y * (15 + index * 4) };
+        graphic.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color: 0xdff7ff, alpha: alpha * (1 - index * 0.14), width: 1.5 + (index % 2) * 0.5 });
+      }
+    });
+  }
+
+  private spawnTerrainContact(at: Point, kind: 'grass' | 'mud' | 'dust' | 'ripples' | 'runes' | 'none', budget: number, spec: BattleEnvironmentSpec): void {
+    if (kind === 'none' || budget <= 0) return;
+    const graphic = new Graphics({ blendMode: kind === 'dust' ? 'normal' : 'add' });
+    const color = kind === 'grass' ? colorNumber(spec.palette.groundDetail) : kind === 'ripples' ? colorNumber(spec.palette.mote) : kind === 'runes' ? colorNumber(spec.palette.accent) : colorNumber(spec.palette.groundDetail);
+    this.addEffect(graphic, kind === 'ripples' ? 0.34 : 0.24, (progress) => {
+      graphic.clear();
+      if (kind === 'ripples') {
+        graphic.ellipse(at.x, at.y + 19, 13 + progress * 24, 3 + progress * 5).stroke({ color, alpha: (1 - progress) * 0.58, width: 2 });
+        return;
+      }
+      for (let index = 0; index < budget; index++) {
+        const direction = index - (budget - 1) / 2;
+        const x = at.x + direction * 9 + progress * direction * 10;
+        const y = at.y + 19 - progress * (12 + (index % 2) * 7);
+        if (kind === 'runes') graphic.star(x, y, 4, 3.5, 1.4).fill({ color, alpha: (1 - progress) * 0.6 });
+        else graphic.rect(x - 2, y - 2, 4, 4 + index % 2 * 2).fill({ color, alpha: (1 - progress) * 0.60 });
+      }
+    });
   }
 
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
@@ -229,68 +336,194 @@ export class BattleStage implements BattleRenderer {
     if (!this.app) return;
     this.root = new Container();
     this.app.stage.addChild(this.root);
-    this.root.addChild(this.environment, this.combatants, this.effects, this.overlay);
+    this.root.addChild(this.environment, this.farBackdrop, this.horizonLayer, this.groundLayer, this.combatants, this.terrainOcclusion, this.foreground, this.effects, this.overlay);
     this.transitionLayer = new Graphics();
     this.overlay.addChild(this.transitionLayer);
     this.drawEnvironment();
   }
 
-  private drawEnvironment(): void {
-    this.environment.removeChildren().forEach((child) => child.destroy());
-    const spec = battleEnvironmentFor(this.biomeId);
-    const palette = spec.palette;
-    const sky = new Graphics().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: palette.sky });
-    const horizon = new Graphics().ellipse(640, 310, 650, 220).fill({ color: palette.horizon, alpha: 0.48 });
-    const ground = new Graphics().rect(0, 250, DESIGN_WIDTH, DESIGN_HEIGHT - 250).fill({ color: palette.ground });
-    this.environment.addChild(sky, horizon, ground);
-    this.drawTerrainGrammar(spec);
-    this.drawAmbientGrammar(spec);
+  private clearEnvironmentLayers(): void {
+    for (const layer of [this.environment, this.farBackdrop, this.horizonLayer, this.groundLayer, this.terrainOcclusion, this.foreground]) {
+      layer.removeChildren().forEach((child) => child.destroy());
+    }
+    this.contactGraphics.clear();
+    // A biome redraw invalidates prior terrain contact state. The next snapshot
+    // must establish fresh feet positions and particle cadence for this stage.
+    this.contactPositions.clear();
+    this.contactCooldowns.clear();
+    this.pressureCooldowns.clear();
   }
 
-  private drawTerrainGrammar(spec: BattleEnvironmentSpec): void {
-    const { groundDetail, accent } = spec.palette;
-    const density = this.quality === 'cinematic' ? 1 : this.quality === 'standard' ? 0.62 : 0.3;
-    const count = Math.max(6, Math.round(52 * spec.density * density));
-    for (let index = 0; index < count; index++) {
-      const x = (index * 97) % DESIGN_WIDTH;
-      const y = 340 + ((index * 53) % 340);
-      const graphic = new Graphics();
-      if (spec.terrain === 'grass') {
-        graphic.moveTo(x, y).lineTo(x + 3, y - 12 - index % 8).stroke({ color: groundDetail, alpha: 0.42, width: 2 });
-      } else if (spec.terrain === 'stone') {
-        const size = 6 + index % 8;
-        graphic.poly([x - size, y + size * 0.5, x - size * 0.45, y - size, x + size * 0.65, y - size * 0.5, x + size, y + size * 0.55]).fill({ color: groundDetail, alpha: 0.34 });
-      } else if (spec.terrain === 'water') {
-        const width = 24 + index % 4 * 9;
-        graphic.moveTo(x, y).lineTo(x + width, y).stroke({ color: groundDetail, alpha: 0.36, width: 2 + index % 2 });
-      } else if (spec.terrain === 'rune') {
-        const radius = 7 + index % 7;
-        graphic.circle(x, y, radius).stroke({ color: accent, alpha: 0.22, width: 1.5 }).moveTo(x - radius, y).lineTo(x + radius, y).stroke({ color: groundDetail, alpha: 0.18, width: 1 });
-      } else {
-        graphic.rect(x, y, 14 + index % 4 * 5, 3).fill({ color: groundDetail, alpha: 0.23 });
+  /** A renderer-only 2.5D stage grammar. Environment config selects semantic
+   * forms; this code owns only reusable Pixi primitives and never battle rules. */
+  private drawEnvironment(): void {
+    this.clearEnvironmentLayers();
+    const spec = battleEnvironmentFor(this.biomeId);
+    const { palette } = spec;
+    const o = spec.overscan;
+    // Every camera-reactive layer has a configuration-owned safety margin, so
+    // bounded pan/zoom never reveals the renderer's unpainted design edge.
+    this.environment.addChild(new Graphics().rect(-o, -o, DESIGN_WIDTH + o * 2, DESIGN_HEIGHT + o * 2).fill({ color: palette.sky }));
+    this.drawBackdropGrammar(spec);
+    this.drawHorizonGrammar(spec);
+    this.drawPerspectiveGround(spec);
+    this.drawAmbientGrammar(spec);
+    this.drawForegroundGrammar(spec);
+  }
+
+  private detailDensity(): number {
+    return this.quality === 'cinematic' ? 1 : this.quality === 'standard' ? 0.62 : 0.30;
+  }
+
+  private drawBackdropGrammar(spec: BattleEnvironmentSpec): void {
+    const { horizon, groundDetail, accent } = spec.palette;
+    const graphic = new Graphics();
+    if (spec.backdrop === 'forest-canopy') {
+      for (let index = -3; index < 17; index++) {
+        const x = index * 104 - 46;
+        const height = 32 + (index * 29) % 34;
+        // Canopy is deliberately contained above the horizon. Trees are distant
+        // scenery, never obstacles in the unit's navigable battle plane.
+        graphic.ellipse(x + 58, 236 - height * 0.18, 78 + index % 3 * 20, height).fill({ color: horizon, alpha: 0.82 });
+        graphic.rect(x + 54, 244 - height * 0.10, 10, 42).fill({ color: groundDetail, alpha: 0.20 });
       }
-      this.environment.addChild(graphic);
+    } else if (spec.backdrop === 'cave-pillars') {
+      for (let index = 0; index < 9; index++) {
+        const x = index * 164 - 28;
+        const top = 106 + (index % 3) * 31;
+        graphic.poly([x, 290, x + 28, top, x + 68, 290]).fill({ color: horizon, alpha: 0.88 });
+        graphic.poly([x + 78, 290, x + 108, 155 + (index % 2) * 38, x + 146, 290]).fill({ color: groundDetail, alpha: 0.30 });
+      }
+    } else if (spec.backdrop === 'tide-cliffs') {
+      for (let index = 0; index < 8; index++) {
+        const x = index * 182 - 45;
+        const h = 36 + (index * 19) % 70;
+        graphic.poly([x, 291, x + 50, 291 - h, x + 132, 291]).fill({ color: horizon, alpha: 0.74 });
+      }
+      graphic.moveTo(0, 290).lineTo(DESIGN_WIDTH, 290).stroke({ color: accent, alpha: 0.32, width: 3 });
+    } else if (spec.backdrop === 'dragon-rift') {
+      for (let index = 0; index < 12; index++) {
+        const x = index * 115 - 35;
+        const h = 44 + (index * 17) % 85;
+        graphic.poly([x, 294, x + 24, 294 - h, x + 49, 294]).fill({ color: horizon, alpha: 0.76 });
+        graphic.moveTo(x + 24, 294 - h).lineTo(x + 30, 294 - h * 0.42).stroke({ color: accent, alpha: 0.34, width: 2 });
+      }
+    } else {
+      graphic.rect(0, 180, DESIGN_WIDTH, 112).fill({ color: horizon, alpha: 0.62 });
+      for (let index = 0; index < 9; index++) {
+        const x = 72 + index * 145;
+        graphic.rect(x, 176 + index % 2 * 20, 7, 116 - index % 3 * 17).fill({ color: groundDetail, alpha: 0.42 });
+        graphic.poly([x - 28, 204, x + 3, 184, x + 31, 204]).fill({ color: accent, alpha: 0.18 });
+      }
+    }
+    this.farBackdrop.addChild(graphic);
+  }
+
+  private drawHorizonGrammar(spec: BattleEnvironmentSpec): void {
+    const { horizon, mote } = spec.palette;
+    const o = spec.overscan;
+    const graphic = new Graphics();
+    graphic.ellipse(DESIGN_WIDTH / 2, 300, 660 + o, 82 + o * 0.16).fill({ color: horizon, alpha: 0.38 });
+    for (let index = 0; index < 7; index++) {
+      const y = 275 + index * 8;
+      graphic.moveTo(-o, y).lineTo(DESIGN_WIDTH + o, y).stroke({ color: mote, alpha: 0.035 + index * 0.012, width: 1 });
+    }
+    this.horizonLayer.addChild(graphic);
+  }
+
+  private drawPerspectiveGround(spec: BattleEnvironmentSpec): void {
+    const { groundDetail, accent } = spec.palette;
+    const o = spec.overscan;
+    const ground = new Graphics();
+    const topY = 294;
+    ground.poly([-o, topY, DESIGN_WIDTH + o, topY, DESIGN_WIDTH + o, DESIGN_HEIGHT + o, -o, DESIGN_HEIGHT + o]).fill({ color: spec.palette.ground });
+    // Successive bands widen toward camera, replacing the former uniform rectangle.
+    for (let index = 0; index < 7; index++) {
+      const t = (index + 1) / 7;
+      const y = topY + (DESIGN_HEIGHT - topY) * t * t;
+      const inset = 170 * (1 - t);
+      ground.moveTo(inset, y).lineTo(DESIGN_WIDTH - inset, y).stroke({ color: groundDetail, alpha: 0.10 + t * 0.11, width: 1 + t * 1.5 });
+    }
+    for (let index = 0; index < 6; index++) {
+      const x = 235 + index * 162;
+      ground.moveTo(DESIGN_WIDTH / 2 + (x - DESIGN_WIDTH / 2) * 0.22, topY).lineTo(x, DESIGN_HEIGHT).stroke({ color: accent, alpha: 0.08, width: 1 });
+    }
+    this.groundLayer.addChild(ground);
+
+    const count = spec.groundPattern === 'grass-lanes'
+      ? Math.max(62, Math.round(96 * spec.density * this.detailDensity()))
+      : Math.max(12, Math.round(42 * spec.density * this.detailDensity()));
+    for (let index = 0; index < count; index++) {
+      const depth = ((index * 37) % 100) / 100;
+      const y = topY + 42 + depth * depth * (DESIGN_HEIGHT - topY - 54);
+      const spread = 130 + depth * 570;
+      const x = DESIGN_WIDTH / 2 + (((index * 97) % 100) / 100 - 0.5) * 2 * spread;
+      const size = 1.5 + depth * 9;
+      const detail = new Graphics();
+      if (spec.groundPattern === 'grass-lanes') {
+        const bladeAlpha = 0.22 + depth * 0.30;
+        for (let blade = -1; blade <= 1; blade++) {
+          const baseX = x + blade * size * 0.55;
+          detail.moveTo(baseX, y).lineTo(baseX + blade * size * 0.18, y - size * (1.45 + (blade + 1) * 0.28))
+            .stroke({ color: blade === 0 ? accent : groundDetail, alpha: bladeAlpha, width: Math.max(1, size * 0.20) });
+        }
+      } else if (spec.groundPattern === 'stone-terraces') {
+        detail.poly([x - size, y + size * 0.4, x - size * 0.32, y - size, x + size, y - size * 0.3, x + size * 0.62, y + size * 0.55]).fill({ color: groundDetail, alpha: 0.14 + depth * 0.20 });
+      } else if (spec.groundPattern === 'shallow-ripples') {
+        detail.ellipse(x, y, size * 2.6, Math.max(1, size * 0.42)).stroke({ color: groundDetail, alpha: 0.18 + depth * 0.18, width: 1 });
+      } else if (spec.groundPattern === 'rune-rings') {
+        detail.circle(x, y, size * 1.35).stroke({ color: index % 3 ? groundDetail : accent, alpha: 0.12 + depth * 0.18, width: 1 });
+      } else {
+        detail.rect(x - size, y - size * 0.28, size * 2, Math.max(1, size * 0.48)).fill({ color: groundDetail, alpha: 0.16 + depth * 0.18 });
+      }
+      this.groundLayer.addChild(detail);
     }
   }
 
   private drawAmbientGrammar(spec: BattleEnvironmentSpec): void {
-    const density = this.quality === 'cinematic' ? 1 : this.quality === 'standard' ? 0.62 : 0.32;
-    const count = Math.max(4, Math.round(30 * spec.density * density));
+    const count = Math.max(4, Math.round(22 * spec.density * this.detailDensity()));
     for (let index = 0; index < count; index++) {
       const x = (index * 131 + 47) % DESIGN_WIDTH;
-      const y = 105 + ((index * 71) % 260);
+      const y = 108 + ((index * 71) % 224);
       const graphic = new Graphics({ blendMode: spec.ambience === 'dust' ? 'normal' : 'add' });
       if (spec.ambience === 'dust') graphic.ellipse(x, y, 4 + index % 3 * 2, 2).fill({ color: spec.palette.mote, alpha: 0.2 });
       else if (spec.ambience === 'spray') graphic.circle(x, y, 2 + index % 2).fill({ color: spec.palette.mote, alpha: 0.56 }).moveTo(x, y + 3).lineTo(x - 3, y + 10).stroke({ color: spec.palette.mote, alpha: 0.24, width: 1 });
       else if (spec.ambience === 'rune') graphic.star(x, y, 4, 4 + index % 4, 1.5).fill({ color: spec.palette.mote, alpha: 0.38 });
       else if (spec.ambience === 'sparks') graphic.rect(x, y, 2, 6 + index % 5).fill({ color: spec.palette.mote, alpha: 0.34 });
       else graphic.circle(x, y, 1.5 + index % 2).fill({ color: spec.palette.mote, alpha: 0.55 });
-      this.environment.addChild(graphic);
+      this.horizonLayer.addChild(graphic);
     }
   }
 
+  private drawForegroundGrammar(spec: BattleEnvironmentSpec): void {
+    const { groundDetail, accent, mote } = spec.palette;
+    const graphic = new Graphics();
+    if (spec.foregroundFrame === 'ferns') {
+      for (let index = 0; index < 18; index++) {
+        const x = index * 78 - 22;
+        const h = 20 + (index % 5) * 8;
+        graphic.moveTo(x, DESIGN_HEIGHT).lineTo(x + 10, DESIGN_HEIGHT - h).stroke({ color: groundDetail, alpha: 0.42, width: 3 });
+        graphic.moveTo(x + 9, DESIGN_HEIGHT - h * 0.6).lineTo(x + 26, DESIGN_HEIGHT - h * 0.82).stroke({ color: accent, alpha: 0.25, width: 2 });
+      }
+    } else if (spec.foregroundFrame === 'rock-ledge') {
+      graphic.poly([0, DESIGN_HEIGHT, 0, 560, 106, 600, 164, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.34 });
+      graphic.poly([DESIGN_WIDTH, DESIGN_HEIGHT, DESIGN_WIDTH, 548, DESIGN_WIDTH - 120, 604, DESIGN_WIDTH - 175, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.34 });
+    } else if (spec.foregroundFrame === 'spray') {
+      for (let index = 0; index < 14; index++) graphic.ellipse(index * 102, 694 - index % 3 * 7, 42, 8).stroke({ color: mote, alpha: 0.18, width: 2 });
+    } else if (spec.foregroundFrame === 'crystal-veils') {
+      for (const x of [0, 78, 1115, 1202]) graphic.poly([x, DESIGN_HEIGHT, x + 22, 572, x + 62, DESIGN_HEIGHT]).fill({ color: accent, alpha: 0.22 });
+    } else {
+      for (let index = 0; index < 6; index++) {
+        const x = 74 + index * 220;
+        graphic.rect(x, 612 + index % 2 * 12, 8, 108).fill({ color: groundDetail, alpha: 0.28 });
+        graphic.poly([x - 26, 622, x + 4, 595, x + 34, 622]).fill({ color: accent, alpha: 0.14 });
+      }
+    }
+    this.foreground.addChild(graphic);
+  }
+
   private project(pixelX: number, pixelY: number): Point {
-    return { x: 175 + pixelX * 47, y: 185 + pixelY * 31 };
+    return projectBattleGroundPoint(pixelX, pixelY);
   }
 
   private aimCamera(ids: readonly string[], zoom: number, shake: number): void {
@@ -331,7 +564,8 @@ export class BattleStage implements BattleRenderer {
 
   private spawnPlan(plan: BattleStageVfxPlan): void {
     const actor = plan.actorId ? this.positions.get(plan.actorId) : undefined;
-    const target = plan.targetIds.map((id) => this.positions.get(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT / 2 };
+    const targetRoot = plan.targetIds.map((id) => this.positions.get(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
+    const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 56 };
     const color = elementColor(plan.element);
     if (plan.primitive === 'projectile' && actor) {
       this.spawnProjectile(actor, target, color, plan.intensity, plan.variant);
@@ -344,7 +578,7 @@ export class BattleStage implements BattleRenderer {
     } else if (plan.primitive === 'ring') {
       this.spawnRing(target, color, plan.intensity, plan.variant);
     } else if (plan.primitive === 'environment') {
-      this.spawnEnvironmentReaction(target, plan.reaction);
+      if (plan.actorId || plan.targetIds.length > 0) this.spawnEnvironmentReaction(target, plan.reaction);
     } else {
       this.spawnImpact(target, color, plan.intensity, plan.variant);
     }
@@ -554,15 +788,34 @@ export class BattleStage implements BattleRenderer {
   private update(dt: number): void {
     const clock = this.hitStopSeconds > 0 ? 0 : dt;
     this.hitStopSeconds = Math.max(0, this.hitStopSeconds - dt);
+    for (const cooldowns of [this.contactCooldowns, this.pressureCooldowns]) {
+      for (const [uid, remaining] of cooldowns) {
+        const next = Math.max(0, remaining - dt);
+        if (next === 0) cooldowns.delete(uid);
+        else cooldowns.set(uid, next);
+      }
+    }
     this.cameraScale += (this.cameraTargetScale - this.cameraScale) * Math.min(1, dt * 8);
     this.cameraOffset.x += (this.cameraTargetOffset.x - this.cameraOffset.x) * Math.min(1, dt * 7);
     this.cameraOffset.y += (this.cameraTargetOffset.y - this.cameraOffset.y) * Math.min(1, dt * 7);
     this.cameraShake = Math.max(0, this.cameraShake - dt * 30);
     const shakeX = this.cameraShake ? Math.sin(performance.now() * 0.05) * this.cameraShake : 0;
     const shakeY = this.cameraShake ? Math.cos(performance.now() * 0.07) * this.cameraShake * 0.5 : 0;
-    for (const layer of [this.environment, this.combatants, this.effects]) {
-      layer.scale.set(this.cameraScale);
-      layer.position.set(this.cameraOffset.x + shakeX, this.cameraOffset.y + shakeY);
+    const spec = battleEnvironmentFor(this.biomeId);
+    const layers: ReadonlyArray<{ layer: Container; factor: number; shake: boolean }> = [
+      { layer: this.environment, factor: 0, shake: false },
+      { layer: this.farBackdrop, factor: spec.parallax.far, shake: false },
+      { layer: this.horizonLayer, factor: spec.parallax.horizon, shake: false },
+      { layer: this.groundLayer, factor: spec.parallax.ground, shake: true },
+      { layer: this.combatants, factor: 1, shake: true },
+      { layer: this.terrainOcclusion, factor: 1, shake: true },
+      { layer: this.foreground, factor: spec.parallax.foreground, shake: false },
+      { layer: this.effects, factor: 1, shake: true },
+    ];
+    for (const { layer, factor, shake } of layers) {
+      const scale = 1 + (this.cameraScale - 1) * factor;
+      layer.scale.set(scale);
+      layer.position.set(this.cameraOffset.x * factor + (shake ? shakeX : 0), this.cameraOffset.y * factor + (shake ? shakeY : 0));
     }
     if (!clock) return;
     for (const view of this.views.values()) view.update(clock);
@@ -593,4 +846,9 @@ export class BattleStage implements BattleRenderer {
     this.root.scale.set(scale);
     this.root.position.set((width - DESIGN_WIDTH * scale) / 2, (height - DESIGN_HEIGHT * scale) / 2);
   }
+}
+
+function colorNumber(value: string): number {
+  const parsed = Number.parseInt(value.replace('#', ''), 16);
+  return Number.isFinite(parsed) ? parsed : 0xffffff;
 }

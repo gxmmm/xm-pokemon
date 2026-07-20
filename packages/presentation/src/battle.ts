@@ -96,7 +96,7 @@ export type BattleCue =
   | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
-  | { type: 'environment'; reaction: EnvironmentReaction }
+  | { type: 'environment'; reaction: EnvironmentReaction; anchors?: VfxAnchors }
   | { type: 'sound'; cue: SoundCue };
 
 /** Converts the existing pure engine event DTO into the new presentation DTO.

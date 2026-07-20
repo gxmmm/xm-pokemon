@@ -1,4 +1,4 @@
-import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtMotionId, type BattleArtSpriteSheetMetadata, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
+import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleArtSpriteSheetMetadata, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -24,6 +24,12 @@ export interface CombatantViewDiagnostics {
   bitmapFacing: 1 | -1;
   transitioning: boolean;
   spriteReady: boolean;
+  locomotionMode: BattleArtLocomotionMode;
+  /** Negative values lift the model above its root/ground plane. */
+  visualHoverOffsetY: number;
+  movementBobOffsetY: number;
+  movementTiltDeg: number;
+  movementSpeed: number;
 }
 
 export class CombatantView extends Container {
@@ -64,6 +70,12 @@ export class CombatantView extends Container {
   private moving = false;
   /** Normalized engine-authoritative windup progress for the persistent charge halo. */
   private chargeProgress = 0;
+  private visualHoverOffsetY = 0;
+  private movementVelocity = { x: 0, y: 0 };
+  private movementSpeed = 0;
+  private movementBobOffsetY = 0;
+  private movementTiltRad = 0;
+  private movementPhase = 0;
   private baseScale: number;
 
   constructor(
@@ -180,12 +192,17 @@ export class CombatantView extends Container {
       bitmapFacing: this.sprite.scale.x < 0 ? -1 : 1,
       transitioning: this.transitionFrom !== null,
       spriteReady: this.sprite.visible,
+      locomotionMode: this.presentation.profile.locomotionMode,
+      visualHoverOffsetY: this.visualHoverOffsetY,
+      movementBobOffsetY: this.movementBobOffsetY,
+      movementTiltDeg: this.movementTiltRad * 180 / Math.PI,
+      movementSpeed: this.movementSpeed,
     };
   }
 
   update(dtSeconds: number): void {
     this.locomotionHoldSeconds = Math.max(0, this.locomotionHoldSeconds - dtSeconds);
-    if (!this.casting) this.syncLocomotionMotion();
+    this.updateMovementFeel(dtSeconds);
     const clip = this.presentation.profile.motions[this.motion];
     const elapsedMs = dtSeconds * 1000;
     this.motionElapsedMs += elapsedMs;
@@ -222,18 +239,21 @@ export class CombatantView extends Container {
       scaleX: this.facing * this.baseScale * (pose.scaleX ?? 1) * (1 + pulse) * faintScale,
       scaleY: this.baseScale * (pose.scaleY ?? 1) * (1 - pulse * 0.6) * faintScale,
       x: this.facing * ((pose.offsetX ?? 0) + recoil + actionAdvance) + choreography.x,
-      y: (pose.offsetY ?? 0) + choreography.y,
-      rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180,
+      y: (pose.offsetY ?? 0) + choreography.y + this.movementBobOffsetY,
+      rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + this.movementTiltRad,
     };
     this.advanceClip(elapsedMs);
     const transform = this.interpolateTransition(target, elapsedMs);
+    const hover = this.hoverTransform(elapsedMs);
+    this.visualHoverOffsetY = hover.offsetY;
     this.body.scale.set(transform.scaleX, transform.scaleY);
     // Parent scale still mirrors generic layers and pose geometry. Applying the
     // same sign on the selected bitmap cancels that mirror only for the source
     // sprite sheet, preserving its authored front/back head direction.
     this.sprite.scale.x = Math.abs(this.sprite.scale.x) * this.facing;
-    this.body.position.set(transform.x, transform.y);
+    this.body.position.set(transform.x, transform.y + hover.offsetY);
     this.body.rotation = transform.rotation;
+    this.updateShadowForHover(hover.heightRatio);
     this.updateLayers(progress, pose.glowAlpha, pose.glowScale);
     this.updateChargeAura();
     this.updateChoreographyOutline(progress);
@@ -244,11 +264,54 @@ export class CombatantView extends Container {
    * turns that already-rendered movement into a real locomotion clip instead of
    * visually sliding a static bitmap. It deliberately knows no model, species,
    * or terrain details; profiles/sequence assets define how locomotion looks. */
+  private updateMovementFeel(dtSeconds: number): void {
+    if (!this.casting) this.syncLocomotionMotion();
+    const velocity = this.movementVelocity;
+    const targetSpeed = Math.hypot(velocity.x, velocity.y);
+    this.movementSpeed += (targetSpeed - this.movementSpeed) * Math.min(1, dtSeconds * 15);
+    const active = this.moving && this.alive;
+    const cadence = 7 + Math.min(11, this.movementSpeed * 5);
+    this.movementPhase += dtSeconds * cadence;
+    const amplitude = active ? 2 + Math.min(2, this.movementSpeed * 0.65) : 0;
+    // The downward half of the cycle is slightly stronger, producing a readable
+    // footfall compression rather than a neutral hover.
+    const wave = Math.sin(this.movementPhase);
+    this.movementBobOffsetY = active ? wave * amplitude + Math.max(0, -wave) * amplitude * 0.28 : 0;
+    const directionTilt = active ? Math.max(-1, Math.min(1, velocity.x)) * -0.075 : 0;
+    // Damped response provides the start/stop lag: initial motion leans back,
+    // while deceleration carries the previous lean briefly into the stop.
+    this.movementTiltRad += (directionTilt - this.movementTiltRad) * Math.min(1, dtSeconds * (active ? 10 : 5));
+    this.movementVelocity.x *= Math.max(0, 1 - dtSeconds * 8);
+    this.movementVelocity.y *= Math.max(0, 1 - dtSeconds * 8);
+  }
+
+  private hoverTransform(elapsedMs: number): { offsetY: number; heightRatio: number } {
+    const profile = this.presentation.profile;
+    if (profile.locomotionMode === 'grounded') return { offsetY: 0, heightRatio: 0 };
+    const phase = this.motionElapsedMs / 1000 * (this.moving ? 9 : 5.2) + elapsedMs / 1000;
+    const bob = Math.sin(phase) * profile.hoverAmplitude;
+    return { offsetY: -profile.hoverHeight + bob, heightRatio: Math.min(1, profile.hoverHeight / 14) };
+  }
+
+  private updateShadowForHover(heightRatio: number): void {
+    const profile = this.presentation.profile;
+    const scale = profile.shadowScale * (1 - heightRatio * 0.28);
+    this.shadow.scale.set(scale, 1 - heightRatio * 0.16);
+    this.shadow.alpha = 1 - heightRatio * 0.42;
+  }
+
   private updateLocomotionIntent(combatant: BattleCombatant): void {
     const point = combatant.pixel;
     if (this.snapshotPosition) {
-      const travelled = Math.hypot(point.x - this.snapshotPosition.x, point.y - this.snapshotPosition.y);
-      if (travelled > 0.012) this.locomotionHoldSeconds = 0.15;
+      const dx = point.x - this.snapshotPosition.x;
+      const dy = point.y - this.snapshotPosition.y;
+      const travelled = Math.hypot(dx, dy);
+      if (travelled > 0.012) {
+        this.locomotionHoldSeconds = 0.15;
+        // Snapshot cadence is deliberately normalized: this is a visual intent,
+        // not simulation velocity, so renderer frame rate cannot alter gameplay.
+        this.movementVelocity = { x: dx * 7, y: dy * 7 };
+      }
     }
     this.snapshotPosition = { x: point.x, y: point.y };
     this.moving = this.locomotionHoldSeconds > 0;

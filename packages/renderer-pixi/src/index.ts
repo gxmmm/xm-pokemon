@@ -8,3 +8,5 @@ export * from './CharacterView.ts';
 export * from './draw-call-observer.ts';
 export * from './BattleArtAssets.ts';
 export * from './CombatantView.ts';
+export * from './terrain-contact-plan.ts';
+export * from './battle-ground.ts';

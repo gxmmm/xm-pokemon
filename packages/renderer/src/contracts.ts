@@ -74,7 +74,7 @@ export type BattleCue =
   | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
-  | { type: 'environment'; reaction: string }
+  | { type: 'environment'; reaction: string; anchors?: { actorId?: string; targetIds?: readonly string[] } }
   | { type: 'sound'; cue: { id: string; volume?: number } };
 
 export interface WorldRenderer extends GameRenderer {

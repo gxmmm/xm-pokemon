@@ -10,7 +10,7 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
-import { BattleArtAssetLoader, CombatantView, isSpriteAsset, planBattleCue } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, CombatantView, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
@@ -188,6 +188,18 @@ function assert(cond: boolean, msg: string): void {
   assert(artReport.missingAssetIds.length === 0 && artReport.invalidProfileIds.length === 0 && artReport.invalidMotionProfileIds.length === 0 && artReport.invalidAnchorProfileIds.length === 0 && artReport.invalidLayerProfileIds.length === 0 && artReport.duplicateAssetIds.length === 0 && artReport.invalidAssetIds.length === 0 && artReport.invalidAssetSourceIds.length === 0 && artReport.invalidImportContractIds.length === 0, 'battle art profiles reference declared assets, complete motion sets, anchors, valid 2.5D layers, and auditable asset/import contracts');
   assert(artReport.missingSkillCastIds.length === 0 && artReport.missingAbilityRecipeIds.length === 0 && artReport.missingPassiveRecipeIds.length === 0 && artReport.missingStatusRecipeIds.length === 0, 'skills, abilities, passives, and statuses have configuration-owned presentation coverage');
   assert(SKILL_CAST_PRESENTATIONS.length === SKILLS.length && ABILITY_VISUAL_RECIPES.length > 0 && PASSIVE_VISUAL_RECIPES.length === PASSIVE_SKILLS.length && Object.keys(STATUS_VISUAL_RECIPES).length === 6, 'battle art catalogs expose complete static presentation data');
+  const charizardProfile = resolveBattleArtPresentation({ speciesId: 6, side: 'player' }).profile;
+  const gengarProfile = resolveBattleArtPresentation({ speciesId: 94, side: 'player' }).profile;
+  const snorlaxProfile = resolveBattleArtPresentation({ speciesId: 143, side: 'player' }).profile;
+  assert(charizardProfile.locomotionMode === 'flight' && gengarProfile.locomotionMode === 'hover' && snorlaxProfile.locomotionMode === 'grounded', 'battle art profiles declare model-owned grounded, hover, and flight locomotion modes');
+  assert(BATTLE_ENVIRONMENTS.grass.contactVisual === 'grass-clumps' && BATTLE_ENVIRONMENTS.cave.contactVisual === 'dust' && BATTLE_ENVIRONMENTS.water.contactVisual === 'ripples', 'battle environments declare terrain contact and foreground-occlusion grammar');
+  assert(BATTLE_ENVIRONMENTS.grass.parallax.far < BATTLE_ENVIRONMENTS.grass.parallax.horizon && BATTLE_ENVIRONMENTS.grass.parallax.horizon < BATTLE_ENVIRONMENTS.grass.parallax.ground && BATTLE_ENVIRONMENTS.grass.parallax.ground < BATTLE_ENVIRONMENTS.grass.parallax.foreground && BATTLE_ENVIRONMENTS.grass.overscan >= 180, 'battle environment parallax is ordered from distant background through foreground with camera-safe canvas coverage');
+  const grassGrounded = terrainContactPlan('grass-clumps', 'grounded');
+  const grassFlight = terrainContactPlan('grass-clumps', 'flight');
+  const standardPressure = movementPressurePlan('standard');
+  const battleGroundNorth = projectBattleGroundPoint(10, 1);
+  const battleGroundSouth = projectBattleGroundPoint(10, 12);
+  assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y, 'terrain contact, intermittent wind pressure, and battle-ground projection stay within the visible arena plane');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
   const charizardFacingLeft = resolveBattleArtPresentation({ speciesId: 6, side: 'player', facing: -1 });
@@ -236,7 +248,11 @@ function assert(cond: boolean, msg: string): void {
   combatantView.refresh({ ...viewCombatant, facing: -1 });
   combatantView.update(0.12);
   const reversedViewDiagnostics = combatantView.getDiagnostics();
-  assert(reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView keeps generic pose geometry directional while counter-mirroring the selected bitmap source view');
+  assert(viewDiagnostics.locomotionMode === 'flight' && viewDiagnostics.visualHoverOffsetY < 0 && reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView keeps generic pose geometry directional while applying configuration-owned flight lift');
+  combatantView.refresh({ ...viewCombatant, pixel: { x: viewCombatant.pixel.x + 0.9, y: viewCombatant.pixel.y } });
+  combatantView.update(0.05);
+  const movingFeel = combatantView.getDiagnostics();
+  assert(movingFeel.movementBobOffsetY !== 0 && Math.abs(movingFeel.movementTiltDeg) > 0 && movingFeel.movementSpeed > 0, 'CombatantView adds speed-coupled bob and inertial tilt from snapshot movement');
   combatantView.refresh({ ...viewCombatant });
   combatantView.refresh({ ...viewCombatant, pixel: { x: viewCombatant.pixel.x + 0.5, y: viewCombatant.pixel.y } });
   combatantView.update(0.04);
@@ -519,8 +535,9 @@ function assert(cond: boolean, msg: string): void {
   const beam = planBattleCue({ type: 'vfx', recipe: { id: 'beam', element: 'electric', delivery: 'beam' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
   const area = planBattleCue({ type: 'vfx', recipe: { id: 'surf', element: 'water', delivery: 'area' }, anchors: { targetIds: ['target-a', 'target-b'] }, intensity: 0.7 });
   const environment = planBattleCue({ type: 'environment', reaction: 'scorch' });
+  const anchoredEnvironment = planBattleCue({ type: 'environment', reaction: 'rune-pulse', anchors: { actorId: 'actor', targetIds: ['target'] } });
   assert(projectile[0]?.primitive === 'projectile' && dive[0]?.primitive === 'dive' && beam[0]?.primitive === 'beam', 'BattleStage maps configured delivery motifs to distinct primitives');
-  assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment', 'BattleStage maps area and environment cues');
+  assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment' && environment[0]?.targetIds.length === 0 && anchoredEnvironment[0]?.actorId === 'actor' && anchoredEnvironment[0]?.targetIds[0] === 'target', 'BattleStage maps area and environment cues without inventing a central fallback anchor');
   console.log('✓ BattleStage primitive cue policy');
 }
 

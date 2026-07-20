@@ -20,6 +20,7 @@ export type BattleArtMotionId =
   | 'idle' | 'locomotion' | 'enter' | 'exit' | 'attack' | 'cast'
   | 'charge' | 'channel' | 'recover' | 'hit' | 'faint';
 export type BattleArtPaletteMode = 'element' | 'profile' | 'hybrid';
+export type BattleArtLocomotionMode = 'grounded' | 'hover' | 'flight';
 export type BattleArtSide = 'player' | 'enemy';
 /** Generic GPU decoration primitives. Their shapes are renderer capabilities;
  * profile data decides which ones a model uses. */
@@ -170,6 +171,11 @@ export interface BattleArtProfile {
   fallbackAssetId: string;
   themeId: string;
   paletteMode: BattleArtPaletteMode;
+  locomotionMode: BattleArtLocomotionMode;
+  /** Visual only: body height above its root/ground plane. */
+  hoverHeight: number;
+  /** Visual only: idle bob amplitude above the root/ground plane. */
+  hoverAmplitude: number;
   anchors: readonly BattleArtAnchor[];
   motions: BattleMotionSet;
   layers: readonly BattleArtLayerSpec[];
@@ -502,6 +508,9 @@ interface RepresentativeBattleArtTuning {
   shadowScale: number;
   layers: readonly BattleArtLayerSpec[];
   motionPoses: Partial<Readonly<Record<BattleArtMotionId, BattleArtMotionPose>>>;
+  locomotionMode?: BattleArtLocomotionMode;
+  hoverHeight?: number;
+  hoverAmplitude?: number;
 }
 
 /** The first six representative models cover aerial burst, small agile,
@@ -629,6 +638,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
   },
   94: {
     modelId: 'showcase:spectral-caster',
+    locomotionMode: 'hover', hoverHeight: 7, hoverAmplitude: 2,
     frontAssetId: 'battle:spectral-caster:v2:front:sequence',
     backAssetId: 'battle:spectral-caster:v2:back:sequence',
     scale: 1.04, shadowScale: 0.92,
@@ -708,6 +718,9 @@ function profileFor(species: Species): BattleArtProfile {
     themeId: `type:${type}`,
     /** The profile palette lets a shared move inherit model identity without cloning the skill. */
     paletteMode: 'hybrid',
+    locomotionMode: tuning?.locomotionMode ?? (species.types.includes('flying') ? 'flight' : 'grounded'),
+    hoverHeight: tuning?.hoverHeight ?? (species.types.includes('flying') ? 8 : 0),
+    hoverAmplitude: tuning?.hoverAmplitude ?? (species.types.includes('flying') ? 2 : 0),
     anchors: DEFAULT_ANCHORS,
     motions: DEFAULT_MOTIONS,
     layers: tuning?.layers ?? DEFAULT_LAYERS,
@@ -733,6 +746,9 @@ export const GENERIC_BATTLE_ART_PROFILE: BattleArtProfile = {
   fallbackAssetId: FALLBACK_ASSET_ID,
   themeId: 'type:normal',
   paletteMode: 'element',
+  locomotionMode: 'grounded',
+  hoverHeight: 0,
+  hoverAmplitude: 0,
   anchors: DEFAULT_ANCHORS,
   motions: DEFAULT_MOTIONS,
   layers: DEFAULT_LAYERS,

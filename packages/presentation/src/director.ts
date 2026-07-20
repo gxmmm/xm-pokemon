@@ -112,7 +112,7 @@ export class BattleDirector {
       );
       if (score.knockout) output.push({ type: 'hit-stop', milliseconds: 70 });
       const reaction = reactionFor(event.element);
-      if (reaction !== 'none') output.push({ type: 'environment', reaction });
+      if (reaction !== 'none') output.push({ type: 'environment', reaction, anchors: { actorId: event.actorId, targetIds: targets } });
     } else if (event.type === 'heal' || event.type === 'status') {
       const sourceRecipe = recipeFor(event);
       output.push({ type: 'vfx', recipe: { ...vfxRecipeFor(sourceRecipe, 'aura'), id: event.type === 'heal' ? 'heal' : `status:${event.status ?? 'generic'}` }, anchors: { actorId: event.actorId, targetIds: targets }, intensity: Math.max(0.3, score.intensity * 0.75), eventType: event.type, skillId: event.skillId, vfxKind: event.vfxKind, outcome: event.outcome, status: event.status });

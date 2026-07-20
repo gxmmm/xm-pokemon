@@ -19,7 +19,7 @@ export interface BattleStageVfxPlan {
  * it never reinterprets combat facts, computes outcomes, or reads a BattleSim. */
 export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
   if (cue.type === 'environment') {
-    return [{ primitive: 'environment', intensity: 0.7, targetIds: [], reaction: cue.reaction }];
+    return [{ primitive: 'environment', intensity: 0.7, actorId: cue.anchors?.actorId, targetIds: cue.anchors?.targetIds ?? [], reaction: cue.reaction }];
   }
   if (cue.type !== 'vfx') return [];
 
