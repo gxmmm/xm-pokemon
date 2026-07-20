@@ -358,6 +358,15 @@ export class BattleStage implements BattleRenderer {
       const y = from.y + (to.y - from.y) * progress;
       graphic.clear().moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
         .circle(x, y, 8 + intensity * 10).fill({ color, alpha: 0.9 });
+      if (variant === 'psychic-bolt') {
+        const orbit = 11 + intensity * 7;
+        for (let index = 0; index < 3; index++) {
+          const angle = progress * 18 + index * Math.PI * 2 / 3;
+          graphic.circle(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.58, 3 + intensity * 2).fill({ color: 0xffffff, alpha: (1 - progress) * 0.8 });
+        }
+      } else if (variant === 'elemental-bolt') {
+        graphic.star(x, y, 4, 10 + intensity * 7, 3 + intensity * 2).fill({ color: 0xffffff, alpha: (1 - progress) * 0.72 });
+      }
       if (variant === 'chain') graphic.moveTo(x, y).lineTo(x + Math.sin(progress * 19) * 18, y + Math.cos(progress * 13) * 12).stroke({ color: 0xffffff, alpha: (1 - progress) * 0.75, width: 2 });
       if (variant === 'bind' || variant === 'snare') {
         const twists = variant === 'bind' ? 3 : 2;
@@ -376,6 +385,27 @@ export class BattleStage implements BattleRenderer {
       const radius = 12 + progress * (34 + intensity * 28);
       graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.8, width: 5 * (1 - progress) + 1 })
         .star(at.x, at.y, variant === 'cross' ? 4 : 6, radius * 0.72, radius * 0.28).fill({ color, alpha: (1 - progress) * 0.36 });
+      // Normal-attack motifs are supplied by static config through the cue. This
+      // generic primitive only interprets a vocabulary; it never knows a species.
+      const alpha = (1 - progress) * 0.92;
+      if (variant === 'fist') {
+        graphic.circle(at.x - radius * 0.2, at.y, radius * 0.42).fill({ color, alpha })
+          .circle(at.x + radius * 0.22, at.y - radius * 0.14, radius * 0.28).fill({ color: 0xffffff, alpha: alpha * 0.58 });
+      } else if (variant === 'claw') {
+        for (let index = -1; index <= 1; index++) {
+          const offset = index * radius * 0.22;
+          graphic.moveTo(at.x - radius * 0.56, at.y + offset + radius * 0.42).lineTo(at.x + radius * 0.54, at.y + offset - radius * 0.42)
+            .stroke({ color: index === 0 ? 0xffffff : color, alpha, width: 3 + intensity * 2 });
+        }
+      } else if (variant === 'bite') {
+        for (const direction of [-1, 1]) {
+          graphic.poly([at.x + direction * radius * 0.58, at.y - radius * 0.42, at.x + direction * radius * 0.18, at.y, at.x + direction * radius * 0.58, at.y + radius * 0.42]).fill({ color, alpha });
+        }
+      } else if (variant === 'horn' || variant === 'tail') {
+        graphic.moveTo(at.x - radius * 0.7, at.y + radius * 0.3).lineTo(at.x + radius * 0.7, at.y - radius * 0.3).stroke({ color: 0xffffff, alpha, width: 5 + intensity * 3 });
+      } else if (variant === 'body-slam') {
+        graphic.ellipse(at.x, at.y, radius * 0.85, radius * 0.46).fill({ color, alpha: alpha * 0.58 });
+      }
       if (variant === 'dive') {
         // Independent impact burst: the release trail is drawn by spawnDive;
         // this target-local phase must read as a fireball detonation on its own.

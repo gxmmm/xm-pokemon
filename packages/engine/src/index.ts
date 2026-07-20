@@ -7,6 +7,7 @@ export * from './breeding.ts';
 export * from './encounter.ts';
 export * from './capture.ts';
 export * from './damage.ts';
+export * from './combat-numbers.ts';
 export * from './ai.ts';
 export * from './simulator.ts';
 export * from './pvp.ts';

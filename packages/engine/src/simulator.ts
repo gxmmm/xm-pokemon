@@ -1,9 +1,10 @@
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
-import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier } from '@pokemon-online/config';
+import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualStyleFor, NORMAL_ATTACK_RANGED_CELLS } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
+import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
 import { decide, isHardCc } from './ai.ts';
 import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena } from './grid.ts';
 
@@ -33,6 +34,13 @@ function dist(a: BattleCombatant, b: BattleCombatant): number {
 // are distributed over time instead of every cooldown becoming ready together.
 const SKILL_COOLDOWN_SCALE = 1.35;
 const OPENING_SKILL_COOLDOWN_FRACTION = 0.55;
+
+/** Seconds per grid cell from the effective speed stat. The expanded curve
+ * makes a 15-speed heavy model visibly lumber (0.32s) while a 150-speed model
+ * crosses cells in 0.14s; buffs can reach, but never exceed, a 0.10s floor. */
+export function movementStepIntervalForSpeed(speed: number): number {
+  return Math.round(clamp(0.34 - Math.max(0, speed) * 0.00135, 0.10, 0.34) * 100) / 100;
+}
 const HIT_CD_RELIEF_MIN = 0.10;
 const HIT_CD_RELIEF_MAX = 0.38;
 
@@ -61,16 +69,11 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     const sk = SKILL_MAP[sid];
     if (sk) cooldowns[sid] = sk.cooldown * SKILL_COOLDOWN_SCALE * OPENING_SKILL_COOLDOWN_FRACTION;
   }
-  // A ranged-type pokemon (owns any ranged skill) also fires its normal attack
-  // from range, so it keeps dealing damage while kiting at range -- otherwise a
-  // ranged fighter only acts when a skill is off CD and looks idle between CDs.
-  // Melee-only pokemon keep the 1.5-cell melee reach. This is the per-combatant
-  // "合适施法距离" for the normal attack; skill ranges still come from config.
-  const rangedSkills = activeSkills.map((id) => SKILL_MAP[id]).filter((s) => s?.range === 'ranged');
-  const normalIsRanged = rangedSkills.length > 0;
-  const normalRangeCells = normalIsRanged
-    ? Math.max(...rangedSkills.map((s) => rangeInCells(s!)))
-    : MELEE_RANGE_CELLS;
+  // Basic-attack delivery is fixed on the Species record. A newly caught or
+  // bred model keeps its own reach even when its temporary active skill loadout
+  // changes; active skills retain their independently configured ranges.
+  const normalIsRanged = species.normalAttackDelivery === 'ranged';
+  const normalRangeCells = normalIsRanged ? NORMAL_ATTACK_RANGED_CELLS : MELEE_RANGE_CELLS;
   return {
     uid: inst.uid,
     side,
@@ -93,6 +96,9 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     pressureUntil: 0,
     sturdyUsed: false,
     normalAttackCd: 0,
+    normalAttackInterval: species.normalAttackInterval,
+    normalAttackSpeedMultiplier: 1,
+    regenAccumulator: 0,
     normalRangeCells,
     normalIsRanged,
     status: inst.status ?? null,
@@ -280,14 +286,14 @@ export class BattleSim {
       const immuneIndirect = ABILITY_MAP[c.ability]?.effect.kind === 'indirectImmunity';
       // poison/burn status dot
       if (!immuneIndirect && (c.status === 'poison' || c.status === 'burn')) {
-        const dmg = Math.max(1, Math.floor(c.maxHp * 0.0625));
+        const dmg = roundCombatAmount(c.maxHp * 0.0625);
         c.currentHp -= dmg;
         this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到${c.status === 'burn' ? '灼伤' : '中毒'}伤害`, { kind: 'impact', type: c.status === 'burn' ? 'fire' : 'poison', amount: dmg });
       }
       // dot buffs
       if (!immuneIndirect) for (const b of c.buffs) {
         if (b.kind === 'dot' && b.magnitude) {
-          const dmg = Math.max(1, Math.floor(c.maxHp * b.magnitude));
+          const dmg = roundCombatAmount(c.maxHp * b.magnitude);
           c.currentHp -= dmg;
           this.emit('damage', undefined, c.uid, undefined, dmg, `${c.name} 受到持续伤害`, { kind: 'impact', amount: dmg });
         }
@@ -306,7 +312,7 @@ export class BattleSim {
         if (ab?.effect.kind === 'statusRecovery') {
           const cds = c.abilityCooldowns ??= {};
           if ((cds['natural-cure'] ?? 0) <= 0) {
-            const healed = Math.max(0, Math.min(Math.floor(c.maxHp * (ab.effect.magnitude ?? 0.12)), c.maxHp - c.currentHp));
+            const healed = clampCombatAmount(c.maxHp * (ab.effect.magnitude ?? 0.12), c.maxHp - c.currentHp);
             c.currentHp += healed;
             c.healingDone += healed;
             cds['natural-cure'] = ab.effect.cooldown ?? 8;
@@ -327,7 +333,13 @@ export class BattleSim {
     const ab = ABILITY_MAP[c.ability];
     if (ab?.effect.kind === 'hpRegen' && ab.effect.magnitude) frac += ab.effect.magnitude;
     if (frac > 0 && c.alive && c.currentHp > 0) {
-      c.currentHp = Math.min(c.maxHp, c.currentHp + c.maxHp * frac * dt);
+      c.regenAccumulator += c.maxHp * frac * dt;
+      const heal = Math.min(Math.max(0, Math.floor(c.regenAccumulator)), Math.max(0, c.maxHp - c.currentHp));
+      if (heal > 0) {
+        c.currentHp += heal;
+        c.healingDone += heal;
+        c.regenAccumulator -= heal;
+      }
     }
   }
 
@@ -344,8 +356,7 @@ export class BattleSim {
   }
 
   private stepDelay(c: BattleCombatant): number {
-    // seconds per grid step; faster Pokemon step sooner
-    return clamp(0.28 - effectiveStat(c, 'spd') * 0.0006, 0.12, 0.28);
+    return movementStepIntervalForSpeed(effectiveStat(c, 'spd'));
   }
 
   private isCellFree(cell: { x: number; y: number }, exceptUid: string): boolean {
@@ -519,8 +530,8 @@ export class BattleSim {
     switch (e.kind) {
       case 'heal':
         if (self) {
-          const requested = Math.floor(self.maxHp * (e.magnitude ?? 0.5));
-          const amt = Math.max(0, Math.min(requested, self.maxHp - self.currentHp));
+          const requested = roundCombatAmount(self.maxHp * (e.magnitude ?? 0.5));
+          const amt = clampCombatAmount(requested, self.maxHp - self.currentHp);
           self.currentHp += amt;
           caster.healingDone += amt;
           this.emit('heal', caster.uid, self.uid, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
@@ -529,8 +540,9 @@ export class BattleSim {
         break;
       case 'shield':
         if (self) {
-          self.shields += e.magnitude ?? 100;
-          self.buffs.push({ id: 'shield_' + Date.now(), kind: 'shield', remaining: e.duration ?? 3, magnitude: e.magnitude });
+          const shield = roundCombatAmount(e.magnitude ?? 100);
+          self.shields += shield;
+          self.buffs.push({ id: 'shield_' + Date.now(), kind: 'shield', remaining: e.duration ?? 3, magnitude: shield });
           this.emit('buff', self.uid, undefined, undefined, undefined, `${self.name} 张开了护盾`, { kind: 'shield' });
         }
         break;
@@ -586,8 +598,8 @@ export class BattleSim {
         break;
       case 'lifesteal':
         if (damageDealt > 0 && e.magnitude) {
-          const requested = Math.floor(damageDealt * e.magnitude);
-          const heal = Math.max(0, Math.min(requested, caster.maxHp - caster.currentHp));
+          const requested = roundCombatAmount(damageDealt * e.magnitude);
+          const heal = clampCombatAmount(requested, caster.maxHp - caster.currentHp);
           caster.currentHp += heal;
           caster.healingDone += heal;
           this.emit('heal', caster.uid, undefined, undefined, heal, `${caster.name} 吸取了生命`, { kind: 'heal', amount: heal });
@@ -650,7 +662,7 @@ export class BattleSim {
     }
     if (res.immune) {
       if (res.healed && res.healed > 0) {
-        const healed = Math.max(0, Math.min(res.healed, defender.maxHp - defender.currentHp));
+        const healed = clampCombatAmount(res.healed, defender.maxHp - defender.currentHp);
         defender.currentHp += healed;
         defender.healingDone += healed;
         this.emit('heal', defender.uid, undefined, undefined, healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: healed });
@@ -664,12 +676,12 @@ export class BattleSim {
     // Spread moves trade per-target damage for pressure across the opposing
     // formation. The multiplier is applied before shields, so protection still
     // absorbs the actual incoming hit correctly.
-    if (areaMultiplier !== 1) dmg = Math.max(1, Math.floor(dmg * areaMultiplier));
+    if (areaMultiplier !== 1) dmg = roundCombatAmount(dmg * areaMultiplier);
     // Ranged normal attacks fire from a safe distance, so they hit softer than
     // melee normal attacks -- a balance lever so kiting isn't free DPS. Skills
     // (the ranged type's real weapons, with CDs) are unaffected.
     if (skillId === NORMAL_ATTACK.id && attacker.normalIsRanged) {
-      dmg = Math.max(1, Math.floor(dmg * 0.8));
+      dmg = roundCombatAmount(dmg * 0.8);
     }
     // shield absorb
     const shieldBefore = defender.shields;
@@ -683,7 +695,7 @@ export class BattleSim {
     if (shieldBefore > 0 && defender.shields <= 0 && defenderAbilityBeforeHit?.effect.kind === 'shieldRecovery') {
       const cds = defender.abilityCooldowns ??= {};
       if ((cds['shield-recovery'] ?? 0) <= 0) {
-        const healed = Math.max(0, Math.min(Math.floor(defender.maxHp * (defenderAbilityBeforeHit.effect.magnitude ?? 0.06)), defender.maxHp - defender.currentHp));
+        const healed = clampCombatAmount(defender.maxHp * (defenderAbilityBeforeHit.effect.magnitude ?? 0.06), defender.maxHp - defender.currentHp);
         defender.currentHp += healed;
         defender.healingDone += healed;
         cds['shield-recovery'] = defenderAbilityBeforeHit.effect.cooldown ?? 6;
@@ -736,7 +748,7 @@ export class BattleSim {
     if (skillId !== NORMAL_ATTACK.id && skill.range === 'melee' && attackerAbility?.effect.kind === 'contactShield' && dmg > 0) {
       const cds = attacker.abilityCooldowns ??= {};
       if ((cds['rock-head'] ?? 0) <= 0) {
-        const shield = Math.floor(attacker.maxHp * (attackerAbility.effect.magnitude ?? 0.04));
+        const shield = roundCombatAmount(attacker.maxHp * (attackerAbility.effect.magnitude ?? 0.04));
         attacker.shields += shield;
         attacker.buffs.push({ id: 'rock-head_' + Date.now(), kind: 'shield', remaining: attackerAbility.effect.duration ?? 2.5, magnitude: shield });
         cds['rock-head'] = attackerAbility.effect.cooldown ?? 4;
@@ -847,9 +859,10 @@ export class BattleSim {
   private normalAttack(c: BattleCombatant, target: BattleCombatant): void {
     c.normalAttacks += 1;
     this.skillRecap(c, NORMAL_ATTACK.id).casts += 1;
-    c.normalAttackCd = NORMAL_ATTACK.cooldown;
+    c.normalAttackCd = c.normalAttackInterval / Math.max(0.1, c.normalAttackSpeedMultiplier);
     const ranged = !!c.normalIsRanged;
-    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: NORMAL_ATTACK.type });
+    const normalAttackStyle = normalAttackVisualStyleFor(c.speciesId, ranged ? 'ranged' : 'melee');
+    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: NORMAL_ATTACK.type, normalAttackStyle });
     this.dealDamage(c, target, NORMAL_ATTACK.id);
   }
 
@@ -978,7 +991,7 @@ export class BattleSim {
         }
         if (c.status === 'confuse' && this.rng() < 0.33) {
           // self hit
-          const dmg = ABILITY_MAP[c.ability]?.effect.kind === 'indirectImmunity' ? 0 : Math.max(1, Math.floor(c.maxHp * 0.08));
+          const dmg = ABILITY_MAP[c.ability]?.effect.kind === 'indirectImmunity' ? 0 : roundCombatAmount(c.maxHp * 0.08);
           if (dmg > 0) {
             c.currentHp -= dmg;
             this.emit('damage', c.uid, c.uid, undefined, dmg, `${c.name} 因混乱攻击了自己`, { kind: 'impact', amount: dmg });

@@ -28,6 +28,14 @@
 - type/fighting, type/poison, type/ground, type/flying, type/psychic, type/bug,
 - type/rock, type/ghost, type/dragon, type/dark, type/steel, type/fairy
 
+### 普攻分类（程序化，无需贴图）
+普通攻击由静态配置以 `normalAttackStyle` 解析并透传 `engine → presentation → renderer`。渲染器只解释通用词汇，绝不按物种或技能 ID 分支：
+
+- 近战：`fist`（拳手）、`claw`（爪击）、`bite`（咬击）、`horn`（角击）、`tail`（尾击）、`body-slam`（撞击）
+- 远程：`psychic-bolt`（超能念波弹）、`elemental-bolt`（元素能量弹）
+
+拳、爪等近战在目标点绘制不同的程序化冲击轮廓；远程则沿施法者到目标的弹道绘制念波轨道或元素星形弹。该分类仅决定表现，不改变普通攻击的距离、伤害、命中或接触判定。
+
 ### 通用（shared/<名称>.png）
 - `shared/heal`   -- 治疗特效（绿色十字/光点），约 24px。
 - `shared/shield` -- 护盾特效（半透明罩），约 44px。

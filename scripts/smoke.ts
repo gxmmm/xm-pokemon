@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
+import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, movementStepIntervalForSpeed, roundCombatAmount, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 
 import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
+import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, normalAttackVisualStyleFor, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
@@ -156,6 +156,26 @@ function assert(cond: boolean, msg: string): void {
   assert(!!WORLD_SCENE_BY_MAP_ID.route1 && WORLD_SCENE_BY_MAP_ID.route1.biome === 'lumen-forest', 'Lumen Trail scene pack configured');
   assert(Object.keys(BIOME_VISUALS).length >= 8, 'biome visual catalog configured');
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
+  assert(getSpecies(6).normalAttackDelivery === 'melee' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
+  assert(normalAttackVisualStyleFor(68, 'melee') === 'fist' && normalAttackVisualStyleFor(6, 'melee') === 'claw' && normalAttackVisualStyleFor(65, 'ranged') === 'psychic-bolt', 'normal attacks resolve fighter, claw, and psychic-ranged styles from fixed species delivery configuration');
+  const meleeModelWithRangedSkills = createWildInstance(6, 20);
+  meleeModelWithRangedSkills.activeSkills = ['flamethrower'];
+  const rangedModelWithMeleeSkills = createWildInstance(65, 20);
+  rangedModelWithMeleeSkills.activeSkills = ['karate-chop'];
+  const deliveryFixture = new BattleSim({ mode: 'pve', player: [meleeModelWithRangedSkills], enemy: [rangedModelWithMeleeSkills], seed: 7162026 });
+  const fixedMelee = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 6)!;
+  const fixedRanged = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 65)!;
+  assert(!fixedMelee.normalIsRanged && fixedMelee.normalRangeCells === 1.5 && fixedRanged.normalIsRanged && fixedRanged.normalRangeCells === 6, 'learned active skills cannot change a model-fixed normal attack delivery or reach');
+  assert(getSpecies(6).normalAttackInterval === 1.1 && getSpecies(68).normalAttackInterval === 1.35 && getSpecies(65).normalAttackInterval === 1.2 && getSpecies(143).normalAttackInterval === 1.55, 'each model declares a fixed Pokédex basic-attack interval balanced by delivery and battle identity');
+  const intervalFixture = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 20)], enemy: [createWildInstance(143, 20)], seed: 7162027 });
+  const intervalCharizard = intervalFixture.state.combatants.find((combatant) => combatant.speciesId === 6)!;
+  const intervalSnorlax = intervalFixture.state.combatants.find((combatant) => combatant.speciesId === 143)!;
+  assert(intervalCharizard.normalAttackInterval === 1.1 && intervalSnorlax.normalAttackInterval === 1.55 && intervalCharizard.normalAttackSpeedMultiplier === 1 && intervalSnorlax.normalAttackSpeedMultiplier === 1, 'battle combatants retain model-owned base intervals and start with an extensible 1x attack-speed multiplier');
+  const slowStep = movementStepIntervalForSpeed(15);
+  const fastStep = movementStepIntervalForSpeed(150);
+  const buffedFastStep = movementStepIntervalForSpeed(150 * 2);
+  assert(slowStep === 0.32 && fastStep === 0.14 && fastStep <= slowStep * 0.45 && buffedFastStep === 0.10, 'speed produces a clearly visible low-vs-high movement gap while retaining a safe movement cadence floor');
+  assert(roundCombatAmount(1.49) === 1 && roundCombatAmount(1.5) === 2 && roundCombatAmount(0.01) === 1 && roundCombatAmount(-3) === 0, 'combat amounts are rounded to integers and a positive effective amount never falls below one');
   console.log('✓ visual scene and recipe config:', SKILL_VISUAL_RECIPES.length);
 }
 
@@ -287,6 +307,12 @@ function assert(cond: boolean, msg: string): void {
   const visualWindup = new BattleDirector().direct([{ id: 'visual-windup', sequence: 2, type: 'move', actorId: 'actor', targetIds: ['target'], skillId: '__normal__', element: 'normal', at: 13 }]);
   const windupVfx = visualWindup.find((entry) => entry.cue.type === 'vfx')?.cue;
   assert(visualWindup.some((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'windup' && entry.cue.durationMs === 100) && windupVfx?.type === 'vfx' && windupVfx.delayMs === 100, 'instant actions receive a visible configuration-owned prepare before their VFX release');
+  const fistNormal = new BattleDirector().direct([{ id: 'fist-normal', sequence: 40, type: 'move', actorId: 'fighter', targetIds: ['target'], skillId: '__normal__', element: 'normal', normalAttackStyle: 'fist', vfxKind: 'melee', at: 20 }]);
+  const psychicNormal = new BattleDirector().direct([{ id: 'psychic-normal', sequence: 41, type: 'move', actorId: 'caster', targetIds: ['target'], skillId: '__normal__', element: 'psychic', normalAttackStyle: 'psychic-bolt', vfxKind: 'projectile', at: 20 }]);
+  const fistVfx = fistNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
+  const psychicVfx = psychicNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
+  assert(fistVfx?.type === 'vfx' && fistVfx.recipe.id === 'normal-attack:fist' && fistVfx.recipe.variant === 'fist' && planBattleCue(fistVfx)[0]?.primitive === 'impact', 'fighter normal attacks carry a configuration-owned fist impact motif through presentation into Pixi planning');
+  assert(psychicVfx?.type === 'vfx' && psychicVfx.recipe.id === 'normal-attack:psychic-bolt' && psychicVfx.recipe.variant === 'psychic-bolt' && planBattleCue(psychicVfx)[0]?.primitive === 'projectile', 'psychic ranged normals carry a configuration-owned bolt motif through presentation into Pixi planning');
   assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');
   console.log('✓ BattleDirector deterministic cue contract:', first.length);
 }

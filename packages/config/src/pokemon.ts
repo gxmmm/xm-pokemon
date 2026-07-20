@@ -1,4 +1,4 @@
-import type { Species, TypeName, Stats, GrowthRate, Rarity, LearnsetEntry, CombatRole } from '@pokemon-online/shared';
+import type { Species, TypeName, Stats, GrowthRate, Rarity, LearnsetEntry, CombatRole, NormalAttackDelivery } from '@pokemon-online/shared';
 import { TYPE_LEARNSET, SKILL_MAP } from './skills.ts';
 import { TYPE_PASSIVE_POOL, GENERIC_PASSIVE_POOL } from './passive-skills.ts';
 
@@ -374,6 +374,62 @@ if (missingCombatRoles.length) {
 }
 
 /**
+ * Fixed basic-attack delivery for Pokédex and wild-battle balance. This belongs
+ * to the model, not its current learned skills: capture, breeding, evolution
+ * and sandbox instances of one species always retain the same basic reach.
+ * Ranged models trade the normal-attack damage multiplier for safe spacing.
+ */
+export const RANGED_NORMAL_ATTACK_SPECIES = new Set<number>([
+  // Plant / spore / vine casters.
+  1, 2, 3, 43, 44, 45, 69, 70, 71, 102, 103, 114,
+  // Water cannons, bubbles, spray and sea casters.
+  7, 8, 9, 54, 55, 60, 61, 72, 73, 86, 87, 90, 91, 116, 117, 118, 119, 120, 121, 131, 134,
+  // Elemental emitters and floating energy bodies.
+  25, 26, 37, 38, 81, 82, 100, 101, 109, 110, 125, 135, 145,
+  // Psychic, ghost and other explicit projection models.
+  63, 64, 65, 79, 80, 92, 93, 94, 96, 97, 122, 124, 137, 144, 150, 151,
+]);
+
+export const NORMAL_ATTACK_RANGED_CELLS = 6;
+
+/** Baseline cadence bands before model-specific tuning. Ranged models surrender
+ * some per-hit damage and therefore receive a slightly quicker default rhythm;
+ * heavy frontliners swing slower but retain their full contact damage. */
+const NORMAL_ATTACK_INTERVAL_BY_ROLE: Readonly<Record<CombatRole, number>> = {
+  burst: 1.18,
+  bruiser: 1.30,
+  tank: 1.48,
+  control: 1.28,
+  support: 1.30,
+  kite: 1.12,
+  area: 1.26,
+  balanced: 1.30,
+  growth: 1.34,
+};
+
+/** Explicit cadence tuning for silhouettes whose mass, limb count, or casting
+ * identity materially changes the readable basic-attack rhythm. All omitted
+ * models still receive a deterministic role/delivery balance value below. */
+const NORMAL_ATTACK_INTERVAL_OVERRIDES: Readonly<Partial<Record<number, number>>> = {
+  6: 1.10, 25: 1.08, 65: 1.20, 68: 1.35, 94: 1.16,
+  130: 1.42, 143: 1.55, 149: 1.18, 150: 1.28, 151: 1.16,
+};
+
+export function normalAttackIntervalFor(speciesId: number): number {
+  const override = NORMAL_ATTACK_INTERVAL_OVERRIDES[speciesId];
+  if (override !== undefined) return override;
+  const role = SPECIES_COMBAT_ROLES[speciesId];
+  const baseline = NORMAL_ATTACK_INTERVAL_BY_ROLE[role];
+  return normalAttackDeliveryFor(speciesId) === 'ranged'
+    ? Math.max(1.05, baseline - 0.08)
+    : baseline;
+}
+
+export function normalAttackDeliveryFor(speciesId: number): NormalAttackDelivery {
+  return RANGED_NORMAL_ATTACK_SPECIES.has(speciesId) ? 'ranged' : 'melee';
+}
+
+/**
  * Role-oriented skill groups. Every species receives a distinct mix of:
  * - 1--2 intrinsic moves that are immediately usable at level 1;
  * - role technique(s) that create its tactical identity;
@@ -528,6 +584,8 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
     learnset: buildLearnset(primary, id, combatRole, intrinsic),
     signatureSkill: SIGNATURE_SKILLS[id]?.skill,
     combatRole,
+    normalAttackDelivery: normalAttackDeliveryFor(id),
+    normalAttackInterval: normalAttackIntervalFor(id),
     intrinsic,
     passivePool,
     intrinsicPassives: buildIntrinsicPassives(passivePool, id),

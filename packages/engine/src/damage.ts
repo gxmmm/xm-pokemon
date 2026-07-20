@@ -2,6 +2,7 @@ import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
 import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, NORMAL_ATTACK, dmgTypeMult } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
+import { roundCombatAmount } from './combat-numbers.ts';
 
 export interface DamageResult {
   damage: number;
@@ -58,7 +59,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     result.effectiveness = 0;
     if (immuneAbility.effect.magnitude && immuneAbility.effect.magnitude > 0 && immuneAbility.effect.magnitude <= 1) {
       // absorb: heal defender by fraction of maxHp
-      result.healed = Math.floor(defender.maxHp * immuneAbility.effect.magnitude);
+      result.healed = roundCombatAmount(defender.maxHp * immuneAbility.effect.magnitude);
       log.push(`${defender.name} 吸收了${t}属性攻击，回复了HP！`);
     } else {
       log.push(`${defender.name} 免疫了${t}属性攻击！`);
@@ -89,15 +90,15 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   const def = Math.max(1, effectiveStat(defender, 'def'));
   const isNormalAttack = skill.id === NORMAL_ATTACK.id;
   let dmg = isNormalAttack
-    ? Math.floor(atk * 0.38 - def * 0.22 + 4 + level * 0.16)
+    ? Math.round(atk * 0.38 - def * 0.22 + 4 + level * 0.16)
     // Active skills build on the same attack-defense core as a normal attack;
     // configured power is a modest additive premium, not an attack multiplier.
-    : Math.floor(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
+    : Math.round(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
   dmg = Math.max(1, dmg);
 
   // Normal attacks are universal baseline damage: they do not receive STAB,
   // type advantage, or type-specific passive/ability bonuses.
-  if (!isNormalAttack && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.5);
+  if (!isNormalAttack && attacker.types?.includes(t)) dmg = Math.round(dmg * 1.5);
 
   if (!isNormalAttack) {
     // passive typeBoost on attacker
@@ -109,20 +110,20 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
         if (!p.effect.type || p.effect.type === t) typeBoost *= p.effect.mult ?? 1;
       }
     }
-    dmg = Math.floor(dmg * typeBoost);
+    dmg = Math.round(dmg * typeBoost);
 
     // ability: onLowHp type boost (blaze/overgrow/torrent/swarm)
     if (aab?.effect.kind === 'typeBoost' && aab.effect.type === t && aab.effect.mult) {
-      if (attacker.currentHp / attacker.maxHp <= 1 / 3) dmg = Math.floor(dmg * aab.effect.mult);
+      if (attacker.currentHp / attacker.maxHp <= 1 / 3) dmg = Math.round(dmg * aab.effect.mult);
     }
     // flash-fire boost (immune to fire earlier -> own fire moves stronger)
-    if (attacker.flashFireBoost && t === 'fire') dmg = Math.floor(dmg * 1.5);
+    if (attacker.flashFireBoost && t === 'fire') dmg = Math.round(dmg * 1.5);
     // adaptability: stronger STAB
-    if (attacker.ability === 'adaptability' && attacker.types?.includes(t)) dmg = Math.floor(dmg * 1.33);
+    if (attacker.ability === 'adaptability' && attacker.types?.includes(t)) dmg = Math.round(dmg * 1.33);
     // F: dream-eater is a setup finisher - bonus damage on a sleeping target
     // (combo with hypnosis / sleep-powder). No penalty off-sleep so it stays
     // usable, but sleeping first is the rewarding line.
-    if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg = Math.floor(dmg * 1.5);
+    if (skill.id === 'dream-eater' && defender.status === 'sleep') dmg = Math.round(dmg * 1.5);
   }
 
   // crit
@@ -134,22 +135,22 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   if (ABILITY_MAP[defender.ability]?.effect.kind === 'critImmunity') critChance = 0;
   if (rng() < critChance) {
     result.crit = true;
-    dmg = Math.floor(dmg * 1.5);
+    dmg = Math.round(dmg * 1.5);
   }
 
   // burn halves (unified: treat as attacker atk halved already; apply no extra)
   // random factor
-  dmg = Math.floor(dmg * (0.85 + rng() * 0.15));
+  dmg = Math.round(dmg * (0.85 + rng() * 0.15));
 
   // defender damage reduction: multiscale at full hp
-  if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.floor(dmg * 0.5);
+  if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.round(dmg * 0.5);
 
   // Type effectiveness applies only to active skills. It is damped via
   // dmgTypeMult so super-effective hits do not become overly swingy.
-  if (!isNormalAttack) dmg = Math.floor(dmg * dmgTypeMult(eff));
+  if (!isNormalAttack) dmg = Math.round(dmg * dmgTypeMult(eff));
   // Counter Instinct empowers only the next damaging active skill. The simulator
   // consumes the flag after a successful hit, keeping this function pure.
-  if (!isNormalAttack && (attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.floor(dmg * 1.15);
+  if (!isNormalAttack && (attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.round(dmg * 1.15);
 
   result.damage = Math.max(1, dmg);
   if (eff > 1) log.push(`效果绝佳！`);

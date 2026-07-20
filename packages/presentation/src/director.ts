@@ -141,7 +141,14 @@ interface RecipeLike { id: string; element?: TypeName; delivery: 'melee' | 'proj
 function recipeFor(event: BattlePresentationEvent): RecipeLike {
   if (event.skillId && SKILL_VISUAL_RECIPE_MAP[event.skillId]) return SKILL_VISUAL_RECIPE_MAP[event.skillId]!;
   const delivery = event.vfxKind === 'melee' ? 'melee' : event.vfxKind === 'beam' ? 'beam' : event.vfxKind === 'burst' ? 'area' : event.vfxKind === 'cast' ? 'aura' : 'projectile';
-  return { id: event.skillId === '__normal__' ? 'normal-attack' : `fallback:${event.element ?? 'normal'}`, element: event.element, delivery, camera: delivery === 'area' ? 'impact' : 'light' };
+  const normalStyle = event.skillId === '__normal__' ? event.normalAttackStyle : undefined;
+  return {
+    id: event.skillId === '__normal__' ? `normal-attack:${normalStyle ?? 'claw'}` : `fallback:${event.element ?? 'normal'}`,
+    element: event.element,
+    delivery,
+    camera: delivery === 'area' ? 'impact' : 'light',
+    variant: normalStyle,
+  };
 }
 
 function vfxRecipeFor(recipe: RecipeLike, delivery = recipe.delivery) {

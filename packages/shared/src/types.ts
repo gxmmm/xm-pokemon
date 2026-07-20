@@ -53,6 +53,8 @@ export interface Evolution {
  * The unified 4-stat system (Principle: unify atk/spAtk -> atk, def/spDef -> def)
  * means `base` already holds HP / Attack / Defense / Speed.
  */
+export type NormalAttackDelivery = 'melee' | 'ranged';
+
 export interface Species {
   id: number;
   name: string; // Chinese name
@@ -68,7 +70,11 @@ export interface Species {
   signatureSkill?: string;
   /** Broad battlefield identity; purely static species configuration. */
   combatRole?: CombatRole;
-  intrinsic: string[]; // 天生必带 active skills (always known, role-based signature, 1~2)
+  /** Fixed basic-attack delivery shown in the Pokédex and used by every instance. */
+  normalAttackDelivery: NormalAttackDelivery;
+  /** Model-owned base seconds between normal attacks before temporary attack-speed effects. */
+  normalAttackInterval: number;
+  intrinsic: string[];
   passivePool: string[]; // passives this species may roll (梦幻式 pool)
   intrinsicPassives: string[]; // 天生必带 passives (always held by wild / 100% retained when bred, 1~2)
   evolution?: Evolution[];
@@ -480,6 +486,12 @@ export interface BattleCombatant {
   /** Timestamp for the next active skill empowered by Counter Instinct. */
   counterInstinctUntil?: number;
   normalAttackCd: number;
+  /** Immutable per-species base interval; gameplay effects multiply its rate. */
+  normalAttackInterval: number;
+  /** Runtime attack-speed factor. Defaults to 1 and is reserved for future buffs/debuffs. */
+  normalAttackSpeedMultiplier: number;
+  /** Fractional passive regeneration accumulates until it resolves as whole HP. */
+  regenAccumulator: number;
   status: StatusKind | null;
   statusTimer: number;
   statStages: { atk: number; def: number; spd: number };
@@ -510,6 +522,8 @@ export interface BattleCombatant {
   displayLabel?: string;
 }
 
+export type NormalAttackVisualStyle = 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'psychic-bolt' | 'elemental-bolt';
+
 /** Visual-effect hint attached to a BattleEvent so the frontend renderer can
  *  spawn the right animation (projectile / burst / aura / floating number ...)
  *  without re-parsing the text log. `from`/`to` are grid-cell coordinates. */
@@ -519,6 +533,8 @@ export interface BattleVfx {
     | 'heal' | 'shield' | 'buff' | 'debuff'
     | 'status' | 'faint' | 'impact' | 'cast' | 'miss';
   type?: TypeName; // skill/element type, for color theming
+  /** Configuration-resolved motif for the always-available normal attack. */
+  normalAttackStyle?: NormalAttackVisualStyle;
   from?: { x: number; y: number };
   to?: { x: number; y: number };
   amount?: number;

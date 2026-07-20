@@ -1,4 +1,4 @@
-import type { BattleActorChoreography, BattleCombatant, BattleEvent, BattleVfx, StatusKind, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCombatant, BattleEvent, BattleVfx, NormalAttackVisualStyle, StatusKind, TypeName } from '@pokemon-online/shared';
 
 export type BattlePresentationEventType =
   | 'move'
@@ -33,6 +33,7 @@ export interface BattlePresentationEvent {
   skillId?: string;
   element?: TypeName;
   vfxKind?: BattleVfx['kind'];
+  normalAttackStyle?: NormalAttackVisualStyle;
   status?: StatusKind;
   outcome?: BattlePresentationOutcome;
   at: number;
@@ -124,6 +125,7 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
     skillId: event.skillId,
     element: vfx?.type,
     vfxKind: vfx?.kind,
+    normalAttackStyle: vfx?.normalAttackStyle,
     status: vfx?.status,
     outcome,
     at: event.t,
