@@ -4,6 +4,7 @@ import { Application, Container, Graphics } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { battleContactPoint, projectBattleGroundPoint } from './battle-ground.ts';
+import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { movementPressurePlan, terrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
@@ -565,18 +566,18 @@ export class BattleStage implements BattleRenderer {
   private spawnPlan(plan: BattleStageVfxPlan): void {
     const actor = plan.actorId ? this.positions.get(plan.actorId) : undefined;
     const targetRoot = plan.targetIds.map((id) => this.positions.get(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
-    const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 56 };
+    const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
     const color = elementColor(plan.element);
     if (plan.primitive === 'projectile' && actor) {
-      this.spawnProjectile(actor, target, color, plan.intensity, plan.variant);
+      this.spawnProjectile(actor, target, color, plan.intensity, plan.variant, plan.element);
     } else if (plan.primitive === 'dive' && actor) {
       this.spawnDive(actor, target, color, plan.intensity);
     } else if (plan.primitive === 'beam' && actor) {
-      this.spawnBeam(actor, target, color, plan.intensity, plan.variant);
+      this.spawnBeam(actor, target, color, plan.intensity, plan.variant, plan.element);
     } else if (plan.primitive === 'burst') {
-      this.spawnBurst(target, color, plan.intensity, plan.variant, plan.particleBudget);
+      this.spawnBurst(target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element);
     } else if (plan.primitive === 'ring') {
-      this.spawnRing(target, color, plan.intensity, plan.variant);
+      this.spawnRing(target, color, plan.intensity, plan.variant, plan.element);
     } else if (plan.primitive === 'environment') {
       if (plan.actorId || plan.targetIds.length > 0) this.spawnEnvironmentReaction(target, plan.reaction);
     } else {
@@ -584,21 +585,31 @@ export class BattleStage implements BattleRenderer {
     }
   }
 
-  private spawnProjectile(from: Point, to: Point, color: number, intensity: number, variant = 'default'): void {
+  private spawnProjectile(from: Point, to: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
+    const shape = elementalVfxShapeFor(element);
     this.addEffect(graphic, duration, (progress) => {
       const x = from.x + (to.x - from.x) * progress;
       const y = from.y + (to.y - from.y) * progress;
-      graphic.clear().moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const nx = dx / length;
+      const ny = dy / length;
+      const px = -ny;
+      const py = nx;
+      graphic.clear();
+      this.drawElementalProjectile(graphic, shape, { x, y }, { nx, ny, px, py }, color, intensity, progress);
+      if (shape === 'generic') graphic.moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
         .circle(x, y, 8 + intensity * 10).fill({ color, alpha: 0.9 });
-      if (variant === 'psychic-bolt') {
+      if (variant === 'psychic-bolt' && shape !== 'psychic-orbit') {
         const orbit = 11 + intensity * 7;
         for (let index = 0; index < 3; index++) {
           const angle = progress * 18 + index * Math.PI * 2 / 3;
           graphic.circle(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.58, 3 + intensity * 2).fill({ color: 0xffffff, alpha: (1 - progress) * 0.8 });
         }
-      } else if (variant === 'elemental-bolt') {
+      } else if (variant === 'elemental-bolt' && shape === 'generic') {
         graphic.star(x, y, 4, 10 + intensity * 7, 3 + intensity * 2).fill({ color: 0xffffff, alpha: (1 - progress) * 0.72 });
       }
       if (variant === 'chain') graphic.moveTo(x, y).lineTo(x + Math.sin(progress * 19) * 18, y + Math.cos(progress * 13) * 12).stroke({ color: 0xffffff, alpha: (1 - progress) * 0.75, width: 2 });
@@ -610,6 +621,64 @@ export class BattleStage implements BattleRenderer {
         }
       }
     });
+  }
+
+  private drawElementalProjectile(
+    graphic: Graphics,
+    shape: ReturnType<typeof elementalVfxShapeFor>,
+    at: Point,
+    basis: { nx: number; ny: number; px: number; py: number },
+    color: number,
+    intensity: number,
+    progress: number,
+  ): void {
+    const { nx, ny, px, py } = basis;
+    if (shape === 'flame') {
+      const length = 26 + intensity * 20;
+      const width = 9 + intensity * 8;
+      const tip = { x: at.x + nx * length, y: at.y + ny * length };
+      const left = { x: at.x + px * width, y: at.y + py * width };
+      const right = { x: at.x - px * width, y: at.y - py * width };
+      graphic.poly([at.x - nx * 10, at.y - ny * 10, left.x, left.y, tip.x, tip.y, right.x, right.y]).fill({ color, alpha: 0.82 })
+        .poly([at.x - nx * 4, at.y - ny * 4, at.x + px * width * 0.42, at.y + py * width * 0.42, tip.x - nx * 8, tip.y - ny * 8, at.x - px * width * 0.42, at.y - py * width * 0.42]).fill({ color: 0xffefad, alpha: 0.94 });
+      for (let index = 0; index < 3; index++) {
+        const trail = 10 + index * 9 + progress * 13;
+        graphic.circle(at.x - nx * trail + px * Math.sin(progress * 14 + index) * 5, at.y - ny * trail + py * Math.sin(progress * 14 + index) * 5, 3 + intensity * 2 - index * 0.45).fill({ color: index === 0 ? 0xffdb75 : color, alpha: 0.62 - index * 0.12 });
+      }
+    } else if (shape === 'lightning') {
+      const length = 32 + intensity * 22;
+      const segments = 5;
+      let previous = { x: at.x - nx * 10, y: at.y - ny * 10 };
+      for (let index = 1; index <= segments; index++) {
+        const travel = length * index / segments;
+        const zig = (index % 2 ? 1 : -1) * (6 + intensity * 5);
+        const next = { x: at.x + nx * travel + px * zig, y: at.y + ny * travel + py * zig };
+        graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe96a, alpha: 0.92, width: 4 + intensity * 2 })
+          .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha: 0.88, width: 1.4 });
+        if (index === 3) graphic.moveTo(next.x, next.y).lineTo(next.x + px * 13 - nx * 5, next.y + py * 13 - ny * 5).stroke({ color, alpha: 0.68, width: 2 });
+        previous = next;
+      }
+    } else if (shape === 'psychic-orbit') {
+      const orbit = 15 + intensity * 9;
+      for (let ring = 0; ring < 3; ring++) {
+        const angle = progress * 16 + ring * Math.PI * 2 / 3;
+        const cx = at.x + Math.cos(angle) * orbit;
+        const cy = at.y + Math.sin(angle) * orbit * 0.52;
+        graphic.ellipse(cx, cy, 10 + ring * 2, 4 + ring).stroke({ color, alpha: 0.78 - ring * 0.14, width: 2 })
+          .circle(cx, cy, 2.5 + intensity * 1.5).fill({ color: ring === 0 ? 0xffffff : color, alpha: 0.88 });
+      }
+      graphic.ellipse(at.x, at.y, 12 + intensity * 5, 7 + intensity * 3).stroke({ color: 0xffffff, alpha: 0.72, width: 2 });
+    } else if (shape === 'water-wave') {
+      graphic.moveTo(at.x - nx * 18 - px * 8, at.y - ny * 18 - py * 8).lineTo(at.x + nx * 20 + px * 10, at.y + ny * 20 + py * 10).stroke({ color, alpha: 0.78, width: 7 + intensity * 5 })
+        .moveTo(at.x - nx * 16 + px * 8, at.y - ny * 16 + py * 8).lineTo(at.x + nx * 22 - px * 8, at.y + ny * 22 - py * 8).stroke({ color: 0xd7fbff, alpha: 0.78, width: 2.5 });
+    } else if (shape === 'ice-shard') {
+      graphic.poly([at.x + nx * 22, at.y + ny * 22, at.x - nx * 10 + px * 10, at.y - ny * 10 + py * 10, at.x - nx * 10 - px * 10, at.y - ny * 10 - py * 10]).fill({ color, alpha: 0.88 });
+    } else if (shape === 'leaf') {
+      for (let index = 0; index < 3; index++) {
+        const a = progress * 12 + index * Math.PI * 2 / 3;
+        graphic.ellipse(at.x + Math.cos(a) * 12, at.y + Math.sin(a) * 8, 9, 4).fill({ color, alpha: 0.74 });
+      }
+    }
   }
 
   private spawnImpact(at: Point, color: number, intensity: number, variant = 'default'): void {
@@ -706,59 +775,171 @@ export class BattleStage implements BattleRenderer {
     });
   }
 
-  private spawnBeam(from: Point, to: Point, color: number, intensity: number, variant = 'default'): void {
+  private spawnBeam(from: Point, to: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
-    this.addEffect(graphic, 0.34, (progress) => {
-      const alpha = Math.sin(Math.PI * progress) * 0.8;
-      graphic.clear().moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color, alpha, width: 8 + intensity * 13 })
-        .moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: 0xffffff, alpha: alpha * 0.75, width: 2 });
-      if (variant === 'meteor') graphic.circle(to.x, to.y, 16 + progress * 12).stroke({ color, alpha: alpha * 0.45, width: 2 });
+    const shape = elementalVfxShapeFor(element);
+    const duration = 0.38 + intensity * 0.18;
+    this.addEffect(graphic, duration, (progress) => {
+      const alpha = Math.sin(Math.PI * progress) * 0.92;
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const nx = dx / length;
+      const ny = dy / length;
+      const px = -ny;
+      const py = nx;
+      const width = 10 + intensity * 22;
+      graphic.clear();
+      if (shape === 'flame') {
+        for (let lane = -1; lane <= 1; lane++) {
+          const offset = lane * width * 0.28;
+          graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset, to.y + py * offset).stroke({ color: lane === 0 ? 0xffefad : color, alpha: alpha * (lane === 0 ? 0.92 : 0.56), width: lane === 0 ? width * 0.46 : width * 0.38 });
+        }
+        for (let ember = 0; ember < 7; ember++) {
+          const t = (ember / 6 + progress * 0.42) % 1;
+          const sway = Math.sin(progress * 18 + ember * 2.2) * width * 0.34;
+          graphic.circle(from.x + dx * t + px * sway, from.y + dy * t + py * sway, 3 + intensity * 4).fill({ color: ember % 2 ? color : 0xffd56e, alpha: alpha * 0.78 });
+        }
+      } else if (shape === 'lightning') {
+        const segments = 9;
+        let previous = from;
+        for (let index = 1; index <= segments; index++) {
+          const t = index / segments;
+          const zig = index === segments ? 0 : (index % 2 ? 1 : -1) * width * (0.42 + Math.sin(progress * 15 + index) * 0.16);
+          const next = { x: from.x + dx * t + px * zig, y: from.y + dy * t + py * zig };
+          graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe96a, alpha, width: width * 0.42 })
+            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha, width: 2.5 });
+          if (index === 3 || index === 6) graphic.moveTo(next.x, next.y).lineTo(next.x + px * width * 1.1 - nx * 12, next.y + py * width * 1.1 - ny * 12).stroke({ color, alpha: alpha * 0.72, width: 3 });
+          previous = next;
+        }
+      } else if (shape === 'psychic-orbit') {
+        graphic.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color, alpha: alpha * 0.48, width: width * 0.42 });
+        for (let ring = 0; ring < 6; ring++) {
+          const t = ring / 5;
+          const phase = progress * 10 + ring * 1.7;
+          const cx = from.x + dx * t + px * Math.sin(phase) * width * 0.46;
+          const cy = from.y + dy * t + py * Math.sin(phase) * width * 0.46;
+          graphic.ellipse(cx, cy, width * 0.70, width * 0.28).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * 0.75, width: 2.4 });
+        }
+      } else {
+        graphic.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color, alpha, width })
+          .moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: 0xffffff, alpha: alpha * 0.75, width: 2 });
+      }
+      if (variant === 'meteor') graphic.circle(to.x, to.y, 22 + progress * (22 + intensity * 18)).stroke({ color, alpha: alpha * 0.48, width: 3 });
     });
   }
 
-  private spawnBurst(at: Point, color: number, intensity: number, variant = 'default', particleBudget?: number): void {
+  private spawnBurst(at: Point, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
-    const qualityCap = this.quality === 'cinematic' ? 18 : this.quality === 'standard' ? 11 : 6;
-    const particleCount = Math.min(particleBudget ?? qualityCap, qualityCap);
-    this.addEffect(graphic, 0.34, (progress) => {
+    const qualityCap = this.quality === 'cinematic' ? 24 : this.quality === 'standard' ? 16 : 9;
+    const particleCount = Math.min(Math.max(particleBudget ?? qualityCap, 9), qualityCap);
+    const shape = elementalVfxShapeFor(element);
+    const duration = 0.46 + intensity * 0.22;
+    this.addEffect(graphic, duration, (progress) => {
+      const blast = 46 + intensity * 78;
+      const alpha = (1 - progress) * 0.92;
       graphic.clear();
-      for (let index = 0; index < particleCount; index++) {
-        const angle = index / particleCount * Math.PI * 2;
-        const radius = progress * (30 + intensity * 55) * (0.65 + (index % 3) * 0.16);
-        graphic.circle(at.x + Math.cos(angle) * radius, at.y + Math.sin(angle) * radius * (variant === 'surge' ? 0.82 : 0.55), 4 + intensity * 4).fill({ color, alpha: (1 - progress) * 0.76 });
+      if (shape === 'flame') {
+        graphic.circle(at.x, at.y, blast * (0.22 + progress * 0.48)).fill({ color, alpha: alpha * 0.28 })
+          .circle(at.x, at.y, blast * (0.13 + progress * 0.25)).fill({ color: 0xffefad, alpha: alpha * 0.84 });
+        for (let flame = 0; flame < 10; flame++) {
+          const angle = flame / 10 * Math.PI * 2 + progress * 0.8;
+          const rise = blast * (0.34 + progress * 0.5);
+          const bx = at.x + Math.cos(angle) * rise;
+          const by = at.y + Math.sin(angle) * rise * 0.58;
+          graphic.poly([bx - 7, by + 12, bx + Math.cos(angle) * 14, by - 20 - intensity * 18, bx + 8, by + 12]).fill({ color: flame % 2 ? color : 0xffc95d, alpha: alpha * 0.86 });
+        }
+      } else if (shape === 'lightning') {
+        for (let bolt = 0; bolt < 5; bolt++) {
+          const angle = bolt / 5 * Math.PI * 2 + progress * 0.28;
+          const end = { x: at.x + Math.cos(angle) * blast * 0.72, y: at.y + Math.sin(angle) * blast * 0.44 };
+          let previous = { x: at.x, y: at.y - 72 - bolt * 6 };
+          for (let segment = 1; segment <= 5; segment++) {
+            const t = segment / 5;
+            const nx = previous.x + (end.x - previous.x) * t + Math.sin(segment * 3.2 + bolt) * 12;
+            const ny = previous.y + (end.y - previous.y) * t;
+            graphic.moveTo(previous.x, previous.y).lineTo(nx, ny).stroke({ color: 0xffe96a, alpha, width: 5 + intensity * 3 })
+              .moveTo(previous.x, previous.y).lineTo(nx, ny).stroke({ color: 0xffffff, alpha, width: 1.8 });
+            previous = { x: nx, y: ny };
+          }
+        }
+        graphic.circle(at.x, at.y, blast * 0.28).stroke({ color: 0xfff4a5, alpha: alpha * 0.76, width: 4 });
+      } else if (shape === 'psychic-orbit') {
+        for (let ring = 0; ring < 5; ring++) {
+          const radius = blast * (0.20 + ring * 0.13 + progress * 0.17);
+          const rotation = progress * 8 + ring * 0.64;
+          const cx = at.x + Math.cos(rotation) * ring * 8;
+          const cy = at.y + Math.sin(rotation) * ring * 5;
+          graphic.ellipse(cx, cy, radius, radius * 0.38).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * (0.80 - ring * 0.09), width: 3 });
+        }
+        for (let rune = 0; rune < 7; rune++) {
+          const angle = rune / 7 * Math.PI * 2 - progress * 5;
+          graphic.circle(at.x + Math.cos(angle) * blast * 0.52, at.y + Math.sin(angle) * blast * 0.28, 5 + intensity * 3).fill({ color, alpha: alpha * 0.82 });
+        }
+      } else {
+        for (let index = 0; index < particleCount; index++) {
+          const angle = index / particleCount * Math.PI * 2;
+          const radius = progress * blast * (0.65 + (index % 3) * 0.16);
+          graphic.circle(at.x + Math.cos(angle) * radius, at.y + Math.sin(angle) * radius * (variant === 'surge' ? 0.82 : 0.55), 4 + intensity * 5).fill({ color, alpha: alpha * 0.82 });
+        }
       }
     });
   }
 
-  private spawnRing(at: Point, color: number, intensity: number, variant = 'default'): void {
+  private spawnRing(at: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
-    const duration = variant === 'bind' || variant === 'snare' ? 0.56 : variant === 'dive' ? 0.72 : 0.38;
+    const shape = elementalVfxShapeFor(element);
+    const duration = variant === 'bind' || variant === 'snare' ? 0.64 : variant === 'dive' ? 0.80 : 0.48 + intensity * 0.16;
     this.addEffect(graphic, duration, (progress) => {
-      const radius = 15 + progress * (48 + intensity * 38);
-      graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.65, width: 2 + intensity * 3 });
-      if (variant === 'hymn' || variant === 'chant') graphic.star(at.x, at.y, 5, radius * 0.66, radius * 0.34).stroke({ color: 0xffffff, alpha: (1 - progress) * 0.4, width: 1.5 });
-      if (variant === 'crown') graphic.star(at.x, at.y, 7, radius * 0.86, radius * 0.4).stroke({ color: 0xffffff, alpha: (1 - progress) * 0.5, width: 2 });
+      const radius = 22 + progress * (62 + intensity * 58);
+      const alpha = (1 - progress) * 0.86;
+      graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: alpha * 0.68, width: 3 + intensity * 4 });
+      if (shape === 'flame') {
+        for (let flame = 0; flame < 7; flame++) {
+          const angle = flame / 7 * Math.PI * 2 + progress * 1.8;
+          const distance = radius * 0.58;
+          const x = at.x + Math.cos(angle) * distance;
+          const y = at.y + Math.sin(angle) * distance * 0.58;
+          graphic.poly([x - 6, y + 12, x + Math.cos(angle) * 12, y - 18 - intensity * 15, x + 7, y + 12]).fill({ color: flame % 2 ? color : 0xffe383, alpha: alpha * 0.88 });
+        }
+        graphic.circle(at.x, at.y, radius * 0.35).fill({ color: 0xffb353, alpha: alpha * 0.36 }).circle(at.x, at.y, radius * 0.17).fill({ color: 0xfff4b5, alpha: alpha * 0.86 });
+      } else if (shape === 'lightning') {
+        for (let bolt = 0; bolt < 4; bolt++) {
+          const angle = bolt / 4 * Math.PI * 2 + progress * 0.45;
+          const end = { x: at.x + Math.cos(angle) * radius, y: at.y + Math.sin(angle) * radius * 0.62 };
+          const middle = { x: at.x + Math.cos(angle + 0.6) * radius * 0.46, y: at.y + Math.sin(angle + 0.6) * radius * 0.30 };
+          graphic.moveTo(at.x, at.y).lineTo(middle.x, middle.y).lineTo(end.x, end.y).stroke({ color: 0xffe96a, alpha, width: 4 + intensity * 3 })
+            .moveTo(at.x, at.y).lineTo(middle.x, middle.y).lineTo(end.x, end.y).stroke({ color: 0xffffff, alpha, width: 1.6 });
+        }
+        graphic.circle(at.x, at.y, radius * 0.18).fill({ color: 0xfff4a5, alpha: alpha * 0.78 });
+      } else if (shape === 'psychic-orbit') {
+        for (let ring = 0; ring < 4; ring++) {
+          const orbit = radius * (0.34 + ring * 0.14);
+          const phase = progress * 9 + ring * 0.8;
+          graphic.ellipse(at.x + Math.cos(phase) * ring * 6, at.y + Math.sin(phase) * ring * 4, orbit, orbit * 0.36).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * (0.88 - ring * 0.13), width: 2.8 });
+        }
+        graphic.ellipse(at.x, at.y, radius * 0.24, radius * 0.12).fill({ color, alpha: alpha * 0.52 });
+      }
+      if (variant === 'hymn' || variant === 'chant') graphic.star(at.x, at.y, 5, radius * 0.66, radius * 0.34).stroke({ color: 0xffffff, alpha: alpha * 0.46, width: 1.8 });
+      if (variant === 'crown') graphic.star(at.x, at.y, 7, radius * 0.86, radius * 0.4).stroke({ color: 0xffffff, alpha: alpha * 0.56, width: 2.4 });
       if (variant === 'bind' || variant === 'snare') {
         const coils = variant === 'bind' ? 3 : 2;
         for (let index = 0; index < coils; index++) {
           const angle = progress * Math.PI * 3 + index * Math.PI * 2 / coils;
           const coilRadius = radius * (0.46 + index * 0.12);
-          graphic.ellipse(at.x + Math.cos(angle) * coilRadius * 0.32, at.y - 5 + Math.sin(angle) * coilRadius * 0.16, coilRadius * 0.78, coilRadius * 0.28).stroke({ color, alpha: (1 - progress) * 0.68, width: 2.2 });
+          graphic.ellipse(at.x + Math.cos(angle) * coilRadius * 0.32, at.y - 5 + Math.sin(angle) * coilRadius * 0.16, coilRadius * 0.78, coilRadius * 0.28).stroke({ color, alpha: alpha * 0.78, width: 2.6 });
         }
       }
       if (variant === 'dive') {
-        // Windup halo: three rising flame tongues plus a bright compressed core.
-        // It stays local to the caster and intentionally lasts longer than the
-        // 0.5s gameplay windup so the viewer can actually register the charge.
-        const core = 15 + intensity * 13 + Math.sin(progress * Math.PI * 5) * 3;
-        graphic.circle(at.x, at.y - 8, core).fill({ color, alpha: 0.24 + Math.sin(progress * Math.PI) * 0.18 })
-          .circle(at.x, at.y - 8, core * 0.52).fill({ color: 0xffefab, alpha: 0.55 });
-        for (let index = 0; index < 3; index++) {
-          const angle = progress * 7 + index * Math.PI * 2 / 3;
-          const orbit = 20 + intensity * 12;
+        const core = 18 + intensity * 16 + Math.sin(progress * Math.PI * 5) * 4;
+        graphic.circle(at.x, at.y - 8, core).fill({ color, alpha: 0.30 + Math.sin(progress * Math.PI) * 0.20 })
+          .circle(at.x, at.y - 8, core * 0.52).fill({ color: 0xffefab, alpha: 0.62 });
+        for (let index = 0; index < 4; index++) {
+          const angle = progress * 7 + index * Math.PI * 2 / 4;
+          const orbit = 24 + intensity * 15;
           const x = at.x + Math.cos(angle) * orbit;
-          const y = at.y - 12 + Math.sin(angle) * orbit * 0.46 - progress * 18;
-          graphic.moveTo(x, y + 10).lineTo(x + Math.cos(angle) * 6, y - 12 - intensity * 8).lineTo(x - Math.sin(angle) * 5, y + 4).fill({ color: index === 0 ? 0xfff0ae : color, alpha: 0.88 });
+          const y = at.y - 12 + Math.sin(angle) * orbit * 0.46 - progress * 20;
+          graphic.moveTo(x, y + 12).lineTo(x + Math.cos(angle) * 7, y - 15 - intensity * 9).lineTo(x - Math.sin(angle) * 6, y + 5).fill({ color: index === 0 ? 0xfff0ae : color, alpha: 0.90 });
         }
       }
     });

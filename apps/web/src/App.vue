@@ -18,7 +18,7 @@ const showChrome = computed(() => showNav.value && route.path !== '/battle');
 // validation sandboxes never unlock the playable world or account-bound routes.
 const standaloneSandboxMode = computed(() => {
   const path = window.location.pathname;
-  if (path.endsWith('/battle-sandbox')) return true;
+  if (path.endsWith('/battle-sandbox') || path.endsWith('/vfx-lab')) return true;
   return new URLSearchParams(window.location.search).get('visual-regression') === '1'
     && (path.endsWith('/world-stage-sandbox') || path.endsWith('/battle-stage-sandbox'));
 });

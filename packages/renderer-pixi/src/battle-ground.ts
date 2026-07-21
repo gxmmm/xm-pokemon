@@ -18,5 +18,5 @@ export function projectBattleGroundPoint(gridX: number, gridY: number): BattleGr
 export function battleContactPoint(target: BattleGroundPoint, actor: BattleGroundPoint): BattleGroundPoint {
   const dx = actor.x - target.x;
   const side = Math.abs(dx) < 0.001 ? 0 : Math.sign(dx);
-  return { x: target.x + side * 22, y: target.y - 56 };
+  return { x: target.x + side * 22, y: target.y - 30 };
 }

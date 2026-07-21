@@ -9,8 +9,9 @@ import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILE
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
+import { buildVfxLabEvents } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
-import { BattleArtAssetLoader, CombatantView, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, terrainContactPlan } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, battleContactPoint, CombatantView, elementalVfxShapeFor, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
@@ -199,6 +200,9 @@ function assert(cond: boolean, msg: string): void {
   const standardPressure = movementPressurePlan('standard');
   const battleGroundNorth = projectBattleGroundPoint(10, 1);
   const battleGroundSouth = projectBattleGroundPoint(10, 12);
+  const centeredImpact = battleContactPoint({ x: 640, y: 520 }, { x: 410, y: 520 });
+  assert(elementalVfxShapeFor('fire') === 'flame' && elementalVfxShapeFor('electric') === 'lightning' && elementalVfxShapeFor('psychic') === 'psychic-orbit', 'core elements resolve to concrete flame, lightning, and psychic visual silhouettes');
+  assert(centeredImpact.y === 490, 'combat impact anchors resolve at model visual center instead of the head');
   assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y, 'terrain contact, intermittent wind pressure, and battle-ground projection stay within the visible arena plane');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
@@ -536,6 +540,9 @@ function assert(cond: boolean, msg: string): void {
   const area = planBattleCue({ type: 'vfx', recipe: { id: 'surf', element: 'water', delivery: 'area' }, anchors: { targetIds: ['target-a', 'target-b'] }, intensity: 0.7 });
   const environment = planBattleCue({ type: 'environment', reaction: 'scorch' });
   const anchoredEnvironment = planBattleCue({ type: 'environment', reaction: 'rune-pulse', anchors: { actorId: 'actor', targetIds: ['target'] } });
+  const attackLabEvents = buildVfxLabEvents({ actorId: 'caster', targetId: 'dummy', skillId: 'flamethrower', sequence: 7 });
+  const selfLabEvents = buildVfxLabEvents({ actorId: 'caster', targetId: 'dummy', skillId: 'renewal-chant', sequence: 8 });
+  assert(attackLabEvents[0]?.targetIds?.[0] === 'dummy' && attackLabEvents[1]?.type === 'damage' && selfLabEvents.every((event) => event.targetIds?.[0] === 'caster'), 'VFX lab routes offensive skills to the dummy and self skills to the caster without simulation');
   assert(projectile[0]?.primitive === 'projectile' && dive[0]?.primitive === 'dive' && beam[0]?.primitive === 'beam', 'BattleStage maps configured delivery motifs to distinct primitives');
   assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment' && environment[0]?.targetIds.length === 0 && anchoredEnvironment[0]?.actorId === 'actor' && anchoredEnvironment[0]?.targetIds[0] === 'target', 'BattleStage maps area and environment cues without inventing a central fallback anchor');
   console.log('✓ BattleStage primitive cue policy');
