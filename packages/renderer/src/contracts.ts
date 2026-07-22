@@ -1,4 +1,4 @@
-import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCombatant, BattleWorldPosition, TypeName } from '@pokemon-online/shared';
 
 export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
 export type QualityPreference = 'auto' | QualityProfile;
@@ -50,6 +50,13 @@ export interface WorldRenderSnapshot {
   entities: readonly WorldEntityRenderSnapshot[];
 }
 
+/** Renderer input may carry a continuous world position directly. During the
+ * grid-to-world migration it remains optional so existing presentation frames
+ * cross the compatibility adapter without changing simulation facts. */
+export type BattleRenderCombatant = BattleCombatant & {
+  worldPosition?: BattleWorldPosition;
+};
+
 export type WorldCue =
   | { type: 'camera-focus'; entityId: string }
   | { type: 'entity-animation'; entityId: string; animation: 'idle' | 'walk' | 'run' | 'interact' }
@@ -57,12 +64,12 @@ export type WorldCue =
 
 export interface BattleRenderInput {
   biomeId: string;
-  combatants: readonly BattleCombatant[];
+  combatants: readonly BattleRenderCombatant[];
 }
 
 export interface BattleRenderSnapshot {
   time: number;
-  combatants: readonly BattleCombatant[];
+  combatants: readonly BattleRenderCombatant[];
 }
 
 /** Kept independent from presentation so a renderer package never has to

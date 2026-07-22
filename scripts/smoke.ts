@@ -11,7 +11,7 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
-import { BattleArtAssetLoader, battleContactPoint, CombatantView, elementalVfxShapeFor, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, terrainContactPlan } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
@@ -196,15 +196,21 @@ function assert(cond: boolean, msg: string): void {
   assert(charizardProfile.locomotionMode === 'flight' && gengarProfile.locomotionMode === 'hover' && snorlaxProfile.locomotionMode === 'grounded', 'battle art profiles declare model-owned grounded, hover, and flight locomotion modes');
   assert(BATTLE_ENVIRONMENTS.grass.contactVisual === 'grass-clumps' && BATTLE_ENVIRONMENTS.cave.contactVisual === 'dust' && BATTLE_ENVIRONMENTS.water.contactVisual === 'ripples', 'battle environments declare terrain contact and foreground-occlusion grammar');
   assert(BATTLE_ENVIRONMENTS.grass.parallax.far < BATTLE_ENVIRONMENTS.grass.parallax.horizon && BATTLE_ENVIRONMENTS.grass.parallax.horizon < BATTLE_ENVIRONMENTS.grass.parallax.ground && BATTLE_ENVIRONMENTS.grass.parallax.ground < BATTLE_ENVIRONMENTS.grass.parallax.foreground && BATTLE_ENVIRONMENTS.grass.overscan >= 180, 'battle environment parallax is ordered from distant background through foreground with camera-safe canvas coverage');
+  const grassEnvironmentAsset = BATTLE_ASSET_MANIFEST.find((asset) => asset.id === BATTLE_ENVIRONMENTS.grass.art?.backgroundAssetId);
+  const grassEnvironmentSource = BATTLE_ASSET_SOURCES.find((source) => source.id === grassEnvironmentAsset?.sourceId);
+  assert(grassEnvironmentAsset?.url === '/battle/environments/grass-clearing-v1.png' && grassEnvironmentSource?.reviewStatus === 'ai-generated' && existsSync('apps/web/public/battle/environments/grass-clearing-v1.png') && existsSync('doc/BATTLE_ENVIRONMENT_ASSETS.md'), 'formal grass environment art is manifest-owned, locally present, and provenance-audited');
   const grassGrounded = terrainContactPlan('grass-clumps', 'grounded');
   const grassFlight = terrainContactPlan('grass-clumps', 'flight');
   const standardPressure = movementPressurePlan('standard');
-  const battleGroundNorth = projectBattleGroundPoint(10, 1);
-  const battleGroundSouth = projectBattleGroundPoint(10, 12);
+  const battleGroundNorth = projectBattleGroundPoint(10, 1, BATTLE_ENVIRONMENTS.grass.camera);
+  const battleGroundSouth = projectBattleGroundPoint(10, 12, BATTLE_ENVIRONMENTS.grass.camera);
+  const raisedBattlePoint = projectBattleWorldPoint(battleWorldPositionFromGrid(10, 12, 2), BATTLE_ENVIRONMENTS.grass.camera);
+  const dampedStep = smoothBattlePresentationAxis(0, 100, 0, 0.12, 0.05);
+  const redirectedStep = smoothBattlePresentationAxis(dampedStep.value, 80, dampedStep.velocity, 0.12, 0.05);
   const centeredImpact = battleContactPoint({ x: 640, y: 520 }, { x: 410, y: 520 });
   assert(elementalVfxShapeFor('fire') === 'flame' && elementalVfxShapeFor('electric') === 'lightning' && elementalVfxShapeFor('psychic') === 'psychic-orbit', 'core elements resolve to concrete flame, lightning, and psychic visual silhouettes');
   assert(centeredImpact.y === 490, 'combat impact anchors resolve at model visual center instead of the head');
-  assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y, 'terrain contact, intermittent wind pressure, and battle-ground projection stay within the visible arena plane');
+  assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y && battleGroundNorth.scale < battleGroundSouth.scale && raisedBattlePoint.y < battleGroundSouth.y && dampedStep.value > 0 && redirectedStep.value > dampedStep.value && redirectedStep.value < 80, 'terrain contact, continuous damped steering, and configurable xyz battle-world projection stay within the visible arena plane');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
   const charizardFacingLeft = resolveBattleArtPresentation({ speciesId: 6, side: 'player', facing: -1 });
@@ -442,7 +448,7 @@ function assert(cond: boolean, msg: string): void {
 {
   const recipeReport = validateSkillVisualRecipes();
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0 && recipeReport.invalidActorChoreographyRecipeIds.length === 0, 'skill visual recipe coverage and budget validation');
-  assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune', 'BattleStage biome environment grammar configured');
+  assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune' && new Set(Object.values(BATTLE_ENVIRONMENTS).map((environment) => environment.camera.height)).size >= 3 && Object.values(BATTLE_ENVIRONMENTS).every((environment) => environment.atmosphere.keyLight.radius > 0 && environment.atmosphere.horizonHaze > 0), 'BattleStage biome environment, atmosphere, and camera grammar configured');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'ember')?.variant === 'default' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'flamethrower')?.variant === 'flame-stream' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'fire-blast')?.variant === 'fire-glyph', 'fire skills use distinct config-owned basic, sustained, and finisher visual motifs');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'blazing-dive')?.variant === 'dive' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'shadow-trap')?.variant === 'bind' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'chilling-snare')?.variant === 'snare', 'signature skills select config variants without renderer skill branches');
   console.log('✓ Stage 6 visual recipe and battle biome contract');

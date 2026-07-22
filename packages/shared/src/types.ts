@@ -526,6 +526,16 @@ export interface BattleCombatant {
   displayLabel?: string;
 }
 
+/** Renderer-neutral position on the battle ground plane. `x` is horizontal,
+ * `y` is ground depth, and `z` is elevation. The current simulator adapts its
+ * authoritative grid cells into this space with z=0; future airborne or raised
+ * presentation can use z without redefining screen coordinates as world data. */
+export interface BattleWorldPosition {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export type NormalAttackVisualStyle =
   | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'wing-slap' | 'beak-peck' | 'tusk-gore' | 'pincer-snap' | 'whip-lash' | 'kick' | 'shell-bash'
   | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star';

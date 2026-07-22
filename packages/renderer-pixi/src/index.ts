@@ -10,4 +10,5 @@ export * from './BattleArtAssets.ts';
 export * from './CombatantView.ts';
 export * from './terrain-contact-plan.ts';
 export * from './battle-ground.ts';
+export * from './battle-motion.ts';
 export * from './elemental-vfx.ts';

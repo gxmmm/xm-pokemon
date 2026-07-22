@@ -1,9 +1,10 @@
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type QualityProfile, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, type BattleEnvironmentSpec } from '@pokemon-online/config';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
+import { smoothBattlePresentationAxis } from './battle-motion.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
-import { battleContactPoint, projectBattleGroundPoint } from './battle-ground.ts';
+import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { movementPressurePlan, terrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
@@ -47,7 +48,12 @@ export class BattleStage implements BattleRenderer {
   private overlay = new Container();
   private views = new Map<string, CombatantView>();
   private readonly battleArtAssets = new BattleArtAssetLoader();
+  private environmentBackgroundTexture: Texture | null = null;
   private positions = new Map<string, Point>();
+  private targetPositions = new Map<string, Point>();
+  private positionVelocities = new Map<string, Point>();
+  private visualScales = new Map<string, number>();
+  private targetScales = new Map<string, number>();
   private contactGraphics = new Map<string, Graphics>();
   private contactPositions = new Map<string, Point>();
   private contactCooldowns = new Map<string, number>();
@@ -104,11 +110,16 @@ export class BattleStage implements BattleRenderer {
     this.delayedCues = [];
     this.views.clear();
     this.positions.clear();
+    this.targetPositions.clear();
+    this.positionVelocities.clear();
+    this.visualScales.clear();
+    this.targetScales.clear();
     this.contactGraphics.clear();
     this.contactPositions.clear();
     this.contactCooldowns.clear();
     this.pressureCooldowns.clear();
     this.battleArtAssets.clear();
+    this.environmentBackgroundTexture = null;
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
     this.app?.destroy(true, { children: true, texture: true, textureSource: true });
@@ -185,9 +196,15 @@ export class BattleStage implements BattleRenderer {
 
   async enterBattle(input: BattleRenderInput): Promise<void> {
     this.biomeId = input.biomeId;
-    this.drawEnvironment();
     const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).asset);
-    await this.battleArtAssets.preload(entries);
+    const spec = battleEnvironmentFor(input.biomeId);
+    const environmentEntry = spec.art ? BATTLE_ASSET_BY_ID[spec.art.backgroundAssetId] : undefined;
+    const [environmentTexture] = await Promise.all([
+      environmentEntry ? this.battleArtAssets.load(environmentEntry) : Promise.resolve(null),
+      this.battleArtAssets.preload(entries),
+    ]);
+    this.environmentBackgroundTexture = environmentTexture;
+    this.drawEnvironment();
     this.applyBattleSnapshot({ time: 0, combatants: input.combatants });
   }
 
@@ -198,6 +215,10 @@ export class BattleStage implements BattleRenderer {
         view.destroy();
         this.views.delete(uid);
         this.positions.delete(uid);
+        this.targetPositions.delete(uid);
+        this.positionVelocities.delete(uid);
+        this.visualScales.delete(uid);
+        this.targetScales.delete(uid);
         this.contactPositions.delete(uid);
         this.contactCooldowns.delete(uid);
         this.pressureCooldowns.delete(uid);
@@ -208,13 +229,21 @@ export class BattleStage implements BattleRenderer {
     }
     for (const combatant of snapshot.combatants) {
       const visualCombatant = { ...combatant, stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
-      const point = this.project(visualCombatant.pixel.x, visualCombatant.pixel.y);
-      this.positions.set(visualCombatant.uid, point);
+      const projection = projectBattleWorldPoint(
+        visualCombatant.worldPosition ?? battleWorldPositionFromGrid(visualCombatant.pixel.x, visualCombatant.pixel.y),
+        battleEnvironmentFor(this.biomeId).camera,
+      );
+      const point = { x: projection.x, y: projection.y };
+      this.targetPositions.set(visualCombatant.uid, point);
+      this.targetScales.set(visualCombatant.uid, projection.scale);
       let view = this.views.get(visualCombatant.uid);
       if (!view) {
         view = new CombatantView(visualCombatant, this.battleArtAssets);
         this.views.set(combatant.uid, view);
         this.combatants.addChild(view);
+        this.positions.set(visualCombatant.uid, point);
+        this.positionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
+        this.visualScales.set(visualCombatant.uid, projection.scale);
       } else {
         view.refresh(visualCombatant);
       }
@@ -222,8 +251,11 @@ export class BattleStage implements BattleRenderer {
       // castProgress remains the only authoritative movement lock; CombatantView
       // adds its action offsets locally, avoiding a catch-up teleport after a
       // visual prepare, cast, or recovery pose finishes.
-      view.position.set(point.x, point.y);
-      this.updateTerrainContact(combatant.uid, combatant.speciesId, point);
+      const visiblePoint = this.positions.get(visualCombatant.uid) ?? point;
+      view.position.set(visiblePoint.x, visiblePoint.y);
+      view.scale.set(this.visualScales.get(visualCombatant.uid) ?? projection.scale);
+      view.zIndex = visiblePoint.y;
+      this.updateTerrainContact(combatant.uid, combatant.speciesId, visiblePoint);
     }
   }
 
@@ -338,6 +370,7 @@ export class BattleStage implements BattleRenderer {
     if (!this.app) return;
     this.root = new Container();
     this.app.stage.addChild(this.root);
+    this.combatants.sortableChildren = true;
     this.root.addChild(this.environment, this.farBackdrop, this.horizonLayer, this.groundLayer, this.combatants, this.terrainOcclusion, this.foreground, this.effects, this.overlay);
     this.transitionLayer = new Graphics();
     this.overlay.addChild(this.transitionLayer);
@@ -366,11 +399,27 @@ export class BattleStage implements BattleRenderer {
     // Every camera-reactive layer has a configuration-owned safety margin, so
     // bounded pan/zoom never reveals the renderer's unpainted design edge.
     this.environment.addChild(new Graphics().rect(-o, -o, DESIGN_WIDTH + o * 2, DESIGN_HEIGHT + o * 2).fill({ color: palette.sky }));
-    this.drawBackdropGrammar(spec);
-    this.drawHorizonGrammar(spec);
-    this.drawPerspectiveGround(spec);
+    const formalBackground = this.environmentBackgroundTexture && spec.art
+      ? this.drawFormalEnvironmentBackground(this.environmentBackgroundTexture, spec)
+      : false;
+    if (!formalBackground) {
+      this.drawBackdropGrammar(spec);
+      this.drawHorizonGrammar(spec);
+    }
+    this.drawPerspectiveGround(spec, !formalBackground);
     this.drawAmbientGrammar(spec);
     this.drawForegroundGrammar(spec);
+  }
+
+  private drawFormalEnvironmentBackground(texture: Texture, spec: BattleEnvironmentSpec): boolean {
+    if (texture.width <= 0 || texture.height <= 0 || !spec.art) return false;
+    const sprite = new Sprite(texture);
+    const scale = Math.max(DESIGN_WIDTH / texture.width, DESIGN_HEIGHT / texture.height);
+    sprite.scale.set(scale);
+    sprite.position.set((DESIGN_WIDTH - texture.width * scale) / 2, (DESIGN_HEIGHT - texture.height * scale) / 2);
+    this.environment.addChild(sprite);
+    this.environment.addChild(new Graphics().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: spec.palette.sky, alpha: spec.art.toneAlpha }));
+    return true;
   }
 
   private detailDensity(): number {
@@ -380,42 +429,73 @@ export class BattleStage implements BattleRenderer {
   private drawBackdropGrammar(spec: BattleEnvironmentSpec): void {
     const { horizon, groundDetail, accent } = spec.palette;
     const graphic = new Graphics();
+    const light = spec.atmosphere.keyLight;
+    graphic.circle(light.x, light.y, light.radius).fill({ color: accent, alpha: light.alpha * 0.55 });
+    graphic.circle(light.x, light.y, light.radius * 0.56).fill({ color: spec.palette.mote, alpha: light.alpha * 0.72 });
+    graphic.circle(light.x, light.y, light.radius * 0.24).fill({ color: accent, alpha: light.alpha * 0.82 });
     if (spec.backdrop === 'forest-canopy') {
-      for (let index = -3; index < 17; index++) {
-        const x = index * 104 - 46;
-        const height = 32 + (index * 29) % 34;
-        // Canopy is deliberately contained above the horizon. Trees are distant
-        // scenery, never obstacles in the unit's navigable battle plane.
-        graphic.ellipse(x + 58, 236 - height * 0.18, 78 + index % 3 * 20, height).fill({ color: horizon, alpha: 0.82 });
-        graphic.rect(x + 54, 244 - height * 0.10, 10, 42).fill({ color: groundDetail, alpha: 0.20 });
+      // Forest benchmark: broad atmospheric silhouettes establish depth first;
+      // smaller trunks and canopy clusters then break the repeated-oval look.
+      graphic.poly([-80, 292, 150, 194, 318, 270, 480, 176, 690, 285, 870, 205, 1080, 278, 1360, 184, 1360, 306, -80, 306])
+        .fill({ color: horizon, alpha: 0.34 });
+      for (let index = -2; index < 14; index++) {
+        const x = index * 112 - 34;
+        const trunkHeight = 70 + (index * 37 + 90) % 74;
+        const crownY = 251 - trunkHeight * 0.42;
+        graphic.rect(x + 50, crownY + 18, 12 + index % 3 * 3, 292 - crownY).fill({ color: groundDetail, alpha: 0.16 });
+        graphic.ellipse(x + 42, crownY, 72 + index % 4 * 15, 28 + index % 3 * 9).fill({ color: horizon, alpha: 0.72 });
+        graphic.ellipse(x + 88, crownY - 13, 58 + index % 3 * 13, 25 + index % 2 * 8).fill({ color: groundDetail, alpha: 0.18 });
       }
+      graphic.moveTo(-120, 286).bezierCurveTo(250, 255, 448, 304, 700, 274).bezierCurveTo(930, 248, 1120, 282, 1400, 258)
+        .stroke({ color: spec.palette.mote, alpha: 0.09, width: 3 });
     } else if (spec.backdrop === 'cave-pillars') {
-      for (let index = 0; index < 9; index++) {
-        const x = index * 164 - 28;
-        const top = 106 + (index % 3) * 31;
-        graphic.poly([x, 290, x + 28, top, x + 68, 290]).fill({ color: horizon, alpha: 0.88 });
-        graphic.poly([x + 78, 290, x + 108, 155 + (index % 2) * 38, x + 146, 290]).fill({ color: groundDetail, alpha: 0.30 });
-      }
-    } else if (spec.backdrop === 'tide-cliffs') {
+      graphic.poly([-120, -40, 1400, -40, 1400, 68, 1250, 48, 1128, 116, 980, 70, 820, 132, 670, 82, 520, 126, 360, 64, 186, 118, -120, 62])
+        .fill({ color: horizon, alpha: 0.76 });
       for (let index = 0; index < 8; index++) {
-        const x = index * 182 - 45;
-        const h = 36 + (index * 19) % 70;
-        graphic.poly([x, 291, x + 50, 291 - h, x + 132, 291]).fill({ color: horizon, alpha: 0.74 });
+        const x = index * 184 - 42;
+        const shoulder = 146 + (index % 3) * 28;
+        graphic.poly([x, 298, x + 28, shoulder, x + 54, 112 + index % 2 * 34, x + 82, shoulder + 12, x + 116, 298])
+          .fill({ color: index % 2 ? horizon : groundDetail, alpha: index % 2 ? 0.80 : 0.36 });
+        graphic.moveTo(x + 54, 126).lineTo(x + 54, 266).stroke({ color: accent, alpha: 0.08, width: 3 });
       }
-      graphic.moveTo(0, 290).lineTo(DESIGN_WIDTH, 290).stroke({ color: accent, alpha: 0.32, width: 3 });
+      graphic.ellipse(1035, 246, 172, 54).fill({ color: accent, alpha: 0.055 });
+      graphic.moveTo(-80, 282).bezierCurveTo(260, 252, 430, 300, 710, 270).bezierCurveTo(930, 244, 1130, 284, 1380, 250)
+        .stroke({ color: spec.palette.mote, alpha: 0.07, width: 2 });
+    } else if (spec.backdrop === 'tide-cliffs') {
+      graphic.moveTo(-80, 248).bezierCurveTo(250, 224, 460, 268, 710, 236).bezierCurveTo(930, 208, 1130, 252, 1380, 220)
+        .lineTo(1380, 302).lineTo(-80, 302).closePath().fill({ color: horizon, alpha: 0.34 });
+      for (let index = 0; index < 7; index++) {
+        const x = index * 214 - 62;
+        const h = 42 + (index * 29) % 76;
+        graphic.poly([x, 293, x + 24, 278 - h * 0.35, x + 62, 291 - h, x + 106, 282 - h * 0.42, x + 168, 293])
+          .fill({ color: horizon, alpha: 0.72 });
+        graphic.poly([x + 38, 291 - h * 0.42, x + 62, 291 - h, x + 76, 290 - h * 0.48])
+          .fill({ color: groundDetail, alpha: 0.24 });
+      }
+      graphic.moveTo(-80, 289).bezierCurveTo(280, 282, 510, 300, 760, 287).bezierCurveTo(980, 276, 1160, 296, 1380, 284)
+        .stroke({ color: accent, alpha: 0.28, width: 3 });
+      graphic.moveTo(850, 174).lineTo(1010, 292).stroke({ color: spec.palette.mote, alpha: 0.055, width: 44 });
     } else if (spec.backdrop === 'dragon-rift') {
-      for (let index = 0; index < 12; index++) {
-        const x = index * 115 - 35;
-        const h = 44 + (index * 17) % 85;
-        graphic.poly([x, 294, x + 24, 294 - h, x + 49, 294]).fill({ color: horizon, alpha: 0.76 });
-        graphic.moveTo(x + 24, 294 - h).lineTo(x + 30, 294 - h * 0.42).stroke({ color: accent, alpha: 0.34, width: 2 });
+      graphic.poly([566, 294, 606, 210, 620, 78, 647, 146, 676, 52, 694, 214, 728, 294])
+        .fill({ color: accent, alpha: 0.095 });
+      graphic.moveTo(653, 40).bezierCurveTo(618, 102, 690, 146, 642, 214).bezierCurveTo(622, 244, 664, 266, 650, 298)
+        .stroke({ color: spec.palette.mote, alpha: 0.34, width: 5 });
+      for (let index = 0; index < 11; index++) {
+        const x = index * 126 - 38;
+        const h = 54 + (index * 23) % 112;
+        graphic.poly([x, 296, x + 18, 284 - h * 0.34, x + 38, 294 - h, x + 60, 279 - h * 0.38, x + 92, 296])
+          .fill({ color: horizon, alpha: 0.78 });
+        graphic.moveTo(x + 38, 294 - h).lineTo(x + 48, 284 - h * 0.38).stroke({ color: accent, alpha: 0.28, width: 2 });
       }
     } else {
-      graphic.rect(0, 180, DESIGN_WIDTH, 112).fill({ color: horizon, alpha: 0.62 });
-      for (let index = 0; index < 9; index++) {
-        const x = 72 + index * 145;
-        graphic.rect(x, 176 + index % 2 * 20, 7, 116 - index % 3 * 17).fill({ color: groundDetail, alpha: 0.42 });
-        graphic.poly([x - 28, 204, x + 3, 184, x + 31, 204]).fill({ color: accent, alpha: 0.18 });
+      graphic.ellipse(DESIGN_WIDTH / 2, 306, 790, 190).fill({ color: horizon, alpha: 0.58 });
+      graphic.ellipse(DESIGN_WIDTH / 2, 286, 666, 105).fill({ color: spec.palette.sky, alpha: 0.92 });
+      graphic.rect(-80, 228, 1440, 72).fill({ color: horizon, alpha: 0.52 });
+      for (let index = 0; index < 11; index++) {
+        const x = index * 126 - 22;
+        graphic.roundRect(x, 242, 72, 58, 30).fill({ color: spec.palette.sky, alpha: 0.56 });
+        graphic.rect(x + 33, 178 + index % 2 * 14, 7, 122 - index % 3 * 12).fill({ color: groundDetail, alpha: 0.34 });
+        graphic.poly([x + 8, 205, x + 36, 182, x + 64, 205]).fill({ color: accent, alpha: 0.15 });
       }
     }
     this.farBackdrop.addChild(graphic);
@@ -426,35 +506,62 @@ export class BattleStage implements BattleRenderer {
     const o = spec.overscan;
     const graphic = new Graphics();
     graphic.ellipse(DESIGN_WIDTH / 2, 300, 660 + o, 82 + o * 0.16).fill({ color: horizon, alpha: 0.38 });
-    for (let index = 0; index < 7; index++) {
-      const y = 275 + index * 8;
-      graphic.moveTo(-o, y).lineTo(DESIGN_WIDTH + o, y).stroke({ color: mote, alpha: 0.035 + index * 0.012, width: 1 });
+    graphic.ellipse(DESIGN_WIDTH / 2, 294, 610 + o, 42 + o * 0.08).fill({ color: mote, alpha: spec.atmosphere.horizonHaze });
+    if (spec.backdrop === 'forest-canopy') {
+      graphic.ellipse(DESIGN_WIDTH / 2, 304, 590, 42).fill({ color: mote, alpha: 0.055 });
+      graphic.ellipse(DESIGN_WIDTH / 2, 316, 510, 25).fill({ color: spec.palette.sky, alpha: 0.16 });
     }
+    graphic.ellipse(DESIGN_WIDTH / 2, 306, 520 + o, 24).fill({ color: spec.palette.sky, alpha: spec.atmosphere.horizonHaze * 0.42 });
     this.horizonLayer.addChild(graphic);
   }
 
-  private drawPerspectiveGround(spec: BattleEnvironmentSpec): void {
+  private drawPerspectiveGround(spec: BattleEnvironmentSpec, paintBase = true): void {
     const { groundDetail, accent } = spec.palette;
     const o = spec.overscan;
     const ground = new Graphics();
     const topY = 294;
-    ground.poly([-o, topY, DESIGN_WIDTH + o, topY, DESIGN_WIDTH + o, DESIGN_HEIGHT + o, -o, DESIGN_HEIGHT + o]).fill({ color: spec.palette.ground });
-    // Successive bands widen toward camera, replacing the former uniform rectangle.
-    for (let index = 0; index < 7; index++) {
-      const t = (index + 1) / 7;
-      const y = topY + (DESIGN_HEIGHT - topY) * t * t;
-      const inset = 170 * (1 - t);
-      ground.moveTo(inset, y).lineTo(DESIGN_WIDTH - inset, y).stroke({ color: groundDetail, alpha: 0.10 + t * 0.11, width: 1 + t * 1.5 });
+    if (paintBase) {
+      ground.poly([-o, topY, DESIGN_WIDTH + o, topY, DESIGN_WIDTH + o, DESIGN_HEIGHT + o, -o, DESIGN_HEIGHT + o]).fill({ color: spec.palette.ground });
+      ground.ellipse(DESIGN_WIDTH / 2, DESIGN_HEIGHT + 54, 820 + o, 176).fill({ color: spec.palette.sky, alpha: spec.atmosphere.groundShade });
     }
-    for (let index = 0; index < 6; index++) {
-      const x = 235 + index * 162;
-      ground.moveTo(DESIGN_WIDTH / 2 + (x - DESIGN_WIDTH / 2) * 0.22, topY).lineTo(x, DESIGN_HEIGHT).stroke({ color: accent, alpha: 0.08, width: 1 });
+    // Broad irregular value shapes communicate depth without drawing a board.
+    // The old evenly-spaced horizontal/radial strokes read as tactical cells
+    // even though they were presentation-only.
+    if (paintBase && spec.groundPattern === 'grass-lanes') {
+      ground.ellipse(356, 430, 360, 72).fill({ color: groundDetail, alpha: 0.035 });
+      ground.ellipse(930, 520, 510, 118).fill({ color: spec.palette.sky, alpha: 0.055 });
+      ground.ellipse(566, 665, 680, 126).fill({ color: accent, alpha: 0.025 });
+      ground.moveTo(-80, 482).bezierCurveTo(250, 444, 430, 520, 720, 484).bezierCurveTo(980, 452, 1130, 520, 1380, 474)
+        .stroke({ color: groundDetail, alpha: 0.065, width: 7 });
+    } else if (paintBase && spec.groundPattern === 'shallow-ripples') {
+      for (let index = 0; index < 5; index++) {
+        const t = (index + 1) / 6;
+        ground.ellipse(DESIGN_WIDTH / 2, topY + 72 + t * t * 330, 340 + t * 420, 18 + t * 16)
+          .stroke({ color: groundDetail, alpha: 0.05 + t * 0.06, width: 1.5 });
+      }
+    } else if (paintBase && spec.groundPattern === 'stone-terraces') {
+      for (let index = 0; index < 4; index++) {
+        const y = topY + 84 + index * 104;
+        ground.moveTo(-o, y + index % 2 * 17).bezierCurveTo(310, y - 12, 770, y + 24, DESIGN_WIDTH + o, y - 5)
+          .stroke({ color: groundDetail, alpha: 0.08 + index * 0.025, width: 2 + index * 0.5 });
+      }
+    } else if (paintBase && spec.groundPattern === 'rune-rings') {
+      ground.ellipse(DESIGN_WIDTH / 2, 520, 480, 128).stroke({ color: accent, alpha: 0.065, width: 2 });
+      ground.ellipse(DESIGN_WIDTH / 2, 520, 250, 68).stroke({ color: groundDetail, alpha: 0.08, width: 1 });
+    } else if (paintBase) {
+      // Arena paving remains architectural, but uses staggered seams rather
+      // than a navigation-grid projection.
+      for (let index = 0; index < 5; index++) {
+        const y = topY + 70 + index * 86;
+        ground.moveTo(-o, y).lineTo(DESIGN_WIDTH + o, y + (index % 2 ? 10 : -8)).stroke({ color: groundDetail, alpha: 0.08, width: 2 });
+      }
     }
     this.groundLayer.addChild(ground);
 
+    const detailDensity = paintBase ? 1 : (spec.art?.detailDensity ?? 0);
     const count = spec.groundPattern === 'grass-lanes'
-      ? Math.max(62, Math.round(96 * spec.density * this.detailDensity()))
-      : Math.max(12, Math.round(42 * spec.density * this.detailDensity()));
+      ? Math.round(96 * spec.density * this.detailDensity() * detailDensity)
+      : Math.round(42 * spec.density * this.detailDensity() * detailDensity);
     for (let index = 0; index < count; index++) {
       const depth = ((index * 37) % 100) / 100;
       const y = topY + 42 + depth * depth * (DESIGN_HEIGHT - topY - 54);
@@ -508,24 +615,32 @@ export class BattleStage implements BattleRenderer {
         graphic.moveTo(x + 9, DESIGN_HEIGHT - h * 0.6).lineTo(x + 26, DESIGN_HEIGHT - h * 0.82).stroke({ color: accent, alpha: 0.25, width: 2 });
       }
     } else if (spec.foregroundFrame === 'rock-ledge') {
-      graphic.poly([0, DESIGN_HEIGHT, 0, 560, 106, 600, 164, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.34 });
-      graphic.poly([DESIGN_WIDTH, DESIGN_HEIGHT, DESIGN_WIDTH, 548, DESIGN_WIDTH - 120, 604, DESIGN_WIDTH - 175, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.34 });
+      graphic.poly([0, DESIGN_HEIGHT, 0, 548, 42, 566, 92, 542, 134, 606, 192, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.38 });
+      graphic.poly([DESIGN_WIDTH, DESIGN_HEIGHT, DESIGN_WIDTH, 532, DESIGN_WIDTH - 42, 570, DESIGN_WIDTH - 96, 548, DESIGN_WIDTH - 142, 610, DESIGN_WIDTH - 196, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.38 });
+      graphic.moveTo(18, 570).lineTo(92, 542).lineTo(148, 616).stroke({ color: accent, alpha: 0.12, width: 3 });
+      graphic.moveTo(DESIGN_WIDTH - 18, 554).lineTo(DESIGN_WIDTH - 96, 548).lineTo(DESIGN_WIDTH - 154, 620).stroke({ color: accent, alpha: 0.12, width: 3 });
     } else if (spec.foregroundFrame === 'spray') {
-      for (let index = 0; index < 14; index++) graphic.ellipse(index * 102, 694 - index % 3 * 7, 42, 8).stroke({ color: mote, alpha: 0.18, width: 2 });
+      for (let index = 0; index < 14; index++) {
+        const x = index * 102 - 18;
+        const y = 694 - index % 3 * 7;
+        graphic.ellipse(x, y, 42, 8).stroke({ color: mote, alpha: 0.20, width: 2 });
+        if (index % 3 === 0) graphic.moveTo(x, y - 5).bezierCurveTo(x - 12, y - 28, x + 16, y - 34, x + 26, y - 11).stroke({ color: mote, alpha: 0.11, width: 2 });
+      }
     } else if (spec.foregroundFrame === 'crystal-veils') {
-      for (const x of [0, 78, 1115, 1202]) graphic.poly([x, DESIGN_HEIGHT, x + 22, 572, x + 62, DESIGN_HEIGHT]).fill({ color: accent, alpha: 0.22 });
+      for (const [index, x] of [0, 68, 1122, 1200].entries()) {
+        const tipY = 548 + index % 2 * 34;
+        graphic.poly([x, DESIGN_HEIGHT, x + 22, tipY, x + 62, DESIGN_HEIGHT]).fill({ color: accent, alpha: 0.24 });
+        graphic.poly([x + 22, tipY, x + 34, DESIGN_HEIGHT, x + 48, DESIGN_HEIGHT]).fill({ color: mote, alpha: 0.09 });
+      }
     } else {
       for (let index = 0; index < 6; index++) {
         const x = 74 + index * 220;
-        graphic.rect(x, 612 + index % 2 * 12, 8, 108).fill({ color: groundDetail, alpha: 0.28 });
-        graphic.poly([x - 26, 622, x + 4, 595, x + 34, 622]).fill({ color: accent, alpha: 0.14 });
+        graphic.poly([x - 42, DESIGN_HEIGHT, x - 12, 606 + index % 2 * 12, x + 18, DESIGN_HEIGHT]).fill({ color: groundDetail, alpha: 0.18 });
+        graphic.rect(x, 606 + index % 2 * 12, 8, 114).fill({ color: groundDetail, alpha: 0.30 });
+        graphic.poly([x - 26, 622, x + 4, 590, x + 34, 622]).fill({ color: accent, alpha: 0.16 });
       }
     }
     this.foreground.addChild(graphic);
-  }
-
-  private project(pixelX: number, pixelY: number): Point {
-    return projectBattleGroundPoint(pixelX, pixelY);
   }
 
   private aimCamera(ids: readonly string[], zoom: number, shake: number): void {
@@ -534,14 +649,15 @@ export class BattleStage implements BattleRenderer {
     // bounded offset keeps a 3v3 board legible instead of turning every skill
     // into a disorienting close-up.
     const intensity = this.cameraIntensityFactor();
-    const decisiveZoom = Math.max(1, Math.min(1.08, zoom));
+    const camera = battleEnvironmentFor(this.biomeId).camera;
+    const decisiveZoom = Math.max(camera.framing.minZoom, Math.min(camera.framing.maxZoom, zoom));
     const points = ids.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
     const center = points.length
       ? { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length }
       : { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT / 2 };
     const rawOffset = {
-      x: Math.max(-42, Math.min(42, (DESIGN_WIDTH / 2 - center.x) * 0.18)),
-      y: Math.max(-24, Math.min(24, (DESIGN_HEIGHT * 0.52 - center.y) * 0.14)),
+      x: Math.max(-camera.framing.maxPanX, Math.min(camera.framing.maxPanX, (DESIGN_WIDTH / 2 - center.x) * 0.18)),
+      y: Math.max(-camera.framing.maxPanY, Math.min(camera.framing.maxPanY, (DESIGN_HEIGHT * camera.framing.focusY - center.y) * 0.14)),
     };
     this.cameraTargetOffset = { x: rawOffset.x * intensity, y: rawOffset.y * intensity };
     this.cameraTargetScale = 1 + (decisiveZoom - 1) * intensity;
@@ -1232,6 +1348,32 @@ export class BattleStage implements BattleRenderer {
         const next = Math.max(0, remaining - dt);
         if (next === 0) cooldowns.delete(uid);
         else cooldowns.set(uid, next);
+      }
+    }
+    // A critically damped presentation spring retains velocity across target
+    // changes. Diagonal and redirected steps therefore bend naturally instead
+    // of restarting as isolated cell-to-cell lerps. Engine occupancy remains
+    // authoritative and all VFX/camera anchors use the same visible position.
+    const positionBlend = 1 - Math.exp(-dt * 12);
+    for (const [uid, target] of this.targetPositions) {
+      const visible = this.positions.get(uid) ?? { ...target };
+      const velocity = this.positionVelocities.get(uid) ?? { x: 0, y: 0 };
+      const horizontal = smoothBattlePresentationAxis(visible.x, target.x, velocity.x, 0.11, dt);
+      const vertical = smoothBattlePresentationAxis(visible.y, target.y, velocity.y, 0.13, dt);
+      visible.x = horizontal.value;
+      visible.y = vertical.value;
+      velocity.x = horizontal.velocity;
+      velocity.y = vertical.velocity;
+      this.positions.set(uid, visible);
+      this.positionVelocities.set(uid, velocity);
+      const targetScale = this.targetScales.get(uid) ?? 1;
+      const visibleScale = (this.visualScales.get(uid) ?? targetScale) + (targetScale - (this.visualScales.get(uid) ?? targetScale)) * positionBlend;
+      this.visualScales.set(uid, visibleScale);
+      const view = this.views.get(uid);
+      if (view) {
+        view.position.set(visible.x, visible.y);
+        view.scale.set(visibleScale);
+        view.zIndex = visible.y;
       }
     }
     this.cameraScale += (this.cameraTargetScale - this.cameraScale) * Math.min(1, dt * 8);

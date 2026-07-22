@@ -13,7 +13,7 @@ import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
  * own.
  */
 export type BattleArtAssetKind = 'static-sprite' | 'sprite-sheet' | 'fallback-shape';
-export type BattleAssetSourceReviewStatus = 'recorded-existing' | 'procedural' | 'code-authored';
+export type BattleAssetSourceReviewStatus = 'recorded-existing' | 'procedural' | 'code-authored' | 'ai-generated';
 export type BattleArtImportStatus = 'awaiting-art-direction-and-source-approval' | 'ready-for-ai-generation' | 'ready-for-manifest-import' | 'integrated';
 export type BattleArtAnchorId = 'root' | 'center' | 'body' | 'head' | 'muzzle' | 'ground';
 export type BattleArtMotionId =
@@ -308,6 +308,15 @@ export const BATTLE_ASSET_SOURCES: readonly BattleAssetSourceRecord[] = [
     reviewStatus: 'procedural',
   },
   {
+    id: 'pokemon-online-imagegen-grass-environment-v1',
+    label: 'Pokemon Online 原创生成环境 — 林间草地战场 v1',
+    sourceUrl: 'internal://openai-imagegen/grass-clearing-v1',
+    licenseLabel: '为本项目生成的原创环境图，不包含第三方角色、商标或外部导入素材；项目按 MIT 代码许可分发，生成图的使用记录见审计文档。',
+    licenseEvidenceUrl: 'doc/BATTLE_ENVIRONMENT_ASSETS.md',
+    attribution: '由 OpenAI 内置图像生成工具按 Pokemon Online 原创美术规格生成；提示词、尺寸与 SHA-256 见 doc/BATTLE_ENVIRONMENT_ASSETS.md。',
+    reviewStatus: 'ai-generated',
+  },
+  {
     id: 'pokemon-online-code-authored-flame-wing-v1',
     label: 'Pokemon Online 代码生成 — #006 B-3 火翼飞龙 v1 试验切片',
     sourceUrl: 'internal://pokemon-online/scripts/generate-flame-wing-sequence.py',
@@ -378,6 +387,7 @@ export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourc
 
 export const BATTLE_ASSET_MANIFEST: readonly BattleAssetManifestEntry[] = [
   { id: FALLBACK_ASSET_ID, kind: 'fallback-shape', url: '', sourceId: 'procedural-fallback', quality: 'all' },
+  { id: 'battle:environment:grass-clearing:v1', kind: 'static-sprite', url: '/battle/environments/grass-clearing-v1.png', sourceId: 'pokemon-online-imagegen-grass-environment-v1', quality: 'all' },
   {
     id: 'battle:flame-wing:v1:front:sequence',
     kind: 'sprite-sheet',
