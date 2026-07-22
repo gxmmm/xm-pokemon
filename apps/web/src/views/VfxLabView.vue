@@ -6,7 +6,8 @@ import { BattleDirector, type BattlePresentation } from '@pokemon-online/present
 import type { BattleCombatant } from '@pokemon-online/shared';
 import type { QualityProfile } from '@pokemon-online/renderer';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
-import { buildVfxLabEvents } from '../battle/VfxLab.ts';
+import type { VfxLabForcedStatus } from '../battle/VfxLab.ts';
+import { buildVfxLabEvents, vfxLabTargetState } from '../battle/VfxLab.ts';
 
 const CASTER_ID = 'vfx-lab:caster';
 const DUMMY_ID = 'vfx-lab:dummy';
@@ -16,6 +17,7 @@ const biome = ref<BattleEnvironmentId>('grass');
 const quality = ref<QualityProfile>('cinematic');
 const intensity = ref(1);
 const repeat = ref(3);
+const forcedDummyStatus = ref<VfxLabForcedStatus>('none');
 const looping = ref(false);
 const presentation = ref<BattlePresentation | null>(null);
 const cues = ref<ReturnType<BattleDirector['direct']>>([]);
@@ -53,9 +55,11 @@ function staticCombatant(speciesId: number, side: 'player' | 'enemy', uid: strin
 }
 
 async function resetStage(): Promise<void> {
+  const dummy = staticCombatant(143, 'enemy', DUMMY_ID, { x: 15, y: 8 });
+  Object.assign(dummy, vfxLabTargetState(forcedDummyStatus.value));
   const combatants = [
     staticCombatant(casterSpeciesId.value, 'player', CASTER_ID, { x: 5, y: 8 }),
-    staticCombatant(143, 'enemy', DUMMY_ID, { x: 15, y: 8 }),
+    dummy,
   ];
   presentation.value = { time: 0, combatants, events: [] };
   cues.value = [];
@@ -102,7 +106,7 @@ function stopLoop(): void {
   looping.value = false;
 }
 
-watch([casterSpeciesId, biome], () => { stopLoop(); void resetStage(); });
+watch([casterSpeciesId, biome, forcedDummyStatus], () => { stopLoop(); void resetStage(); });
 onMounted(() => { void resetStage(); });
 onUnmounted(() => { stopLoop(); cues.value = []; });
 </script>
@@ -112,7 +116,7 @@ onUnmounted(() => { stopLoop(); cues.value = []; });
     <header class="lab-header"><div><p class="eyebrow">VISUAL TEST RANGE</p><h1>技能演示靶场</h1></div><RouterLink to="/battle-sandbox">返回随机战斗</RouterLink></header>
     <div class="layout">
       <aside class="panel selection"><label>施法宝可梦 <input v-model="search" placeholder="搜索图鉴" /></label><div class="species-list"><button v-for="species in filteredSpecies" :key="species.id" :class="{ active: species.id === casterSpeciesId }" type="button" @click="casterSpeciesId = species.id">#{{ String(species.id).padStart(3, '0') }} {{ species.name }}</button></div></aside>
-      <main class="stage"><div class="toolbar"><label>环境 <select v-model="biome"><option value="grass">草地</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label><label>质量 <select v-model="quality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label><label>演出强度 <input v-model.number="intensity" type="range" min="0.5" max="2" step="0.1" /><strong>{{ intensity.toFixed(1) }}x</strong></label><label>连播 <select v-model.number="repeat"><option :value="1">1 次</option><option :value="3">3 次</option><option :value="5">5 次</option></select></label></div><div class="viewport"><PixiBattleViewport :presentation="presentation ?? undefined" :cues="cues" :biome="biome" :quality="quality" @ready="stageReady = true" @unavailable="status = $event" /></div><p class="status">{{ status }}</p></main>
+      <main class="stage"><div class="toolbar"><label>环境 <select v-model="biome"><option value="grass">草地</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label><label>质量 <select v-model="quality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label><label>演出强度 <input v-model.number="intensity" type="range" min="0.5" max="2" step="0.1" /><strong>{{ intensity.toFixed(1) }}x</strong></label><label>连播 <select v-model.number="repeat"><option :value="1">1 次</option><option :value="3">3 次</option><option :value="5">5 次</option></select></label><label>假人状态 <select v-model="forcedDummyStatus"><option value="none">无状态</option><option value="stun">眩晕</option><option value="sleep">睡眠</option><option value="freeze">冰冻</option><option value="paralyze">麻痹</option><option value="confuse">混乱</option><option value="burn">灼伤</option><option value="poison">中毒</option></select></label></div><div class="viewport"><PixiBattleViewport :presentation="presentation ?? undefined" :cues="cues" :biome="biome" :quality="quality" @ready="stageReady = true" @unavailable="status = $event" /></div><p class="status">{{ status }}</p></main>
       <aside class="panel skills"><h2>{{ caster.name }}</h2><p>左侧施法者；右侧为静态训练假人。点击技能连播；右侧循环按钮持续播放。</p><div v-for="skill in selectableSkills" :key="skill.id" class="skill-row"><button type="button" class="skill" @click="playSkill(skill.id)"><span>{{ skill.name }}</span><small>{{ skill.type }} · {{ skill.range }}</small></button><button type="button" class="loop" :title="`${skill.name} 循环播放`" @click="looping ? stopLoop() : startLoop(skill.id)">{{ looping ? '■' : '↻' }}</button></div></aside>
     </div>
   </section>

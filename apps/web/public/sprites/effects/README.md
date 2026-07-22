@@ -29,12 +29,22 @@
 - type/rock, type/ghost, type/dragon, type/dark, type/steel, type/fairy
 
 ### 普攻分类（程序化，无需贴图）
-普通攻击由静态配置以 `normalAttackStyle` 解析并透传 `engine → presentation → renderer`。渲染器只解释通用词汇，绝不按物种或技能 ID 分支：
+普通攻击由静态配置以 `normalAttackVisualProfileFor(speciesId, delivery)` 解析为**轮廓 + 视觉元素色**，并透传 `engine → presentation → renderer`。渲染器只解释通用词汇，绝不按物种或技能 ID 分支：
 
-- 近战：`fist`（拳手）、`claw`（爪击）、`bite`（咬击）、`horn`（角击）、`tail`（尾击）、`body-slam`（撞击）
-- 远程：`psychic-bolt`（超能念波弹）、`elemental-bolt`（元素能量弹）
+- 近战：`fist`（拳手）、`claw`（爪击）、`bite`（咬击）、`horn`（角击）、`tail`（尾击）、`body-slam`（撞击）、`wing-slap`（翼击）、`beak-peck`（啄击）、`tusk-gore`（獠牙顶击）、`pincer-snap`（钳击）、`whip-lash`（鞭击）、`kick`（踢击）、`shell-bash`（壳撞）
+- 远程：`flame-bolt`（火舌与余烬）、`water-shot`（压缩水滴与水弧）、`spark-bolt`（锯齿电弧）、`leaf-shot`（旋叶）、`ice-shard`（冰晶）、`psychic-bolt`（超能念波）、`shadow-orb`（暗影旋涡）、`stone-shot`（岩块）、`wind-cutter`（风刃）、`fairy-spark`（月辉星屑）、`neutral-star`（普通能量星）
 
-拳、爪等近战在目标点绘制不同的程序化冲击轮廓；远程则沿施法者到目标的弹道绘制念波轨道或元素星形弹。该分类仅决定表现，不改变普通攻击的距离、伤害、命中或接触判定。
+所有远攻普攻都携带模型的静态主属性色作为**表现色**，而非把实际普通攻击的伤害类型改成属性攻击；这不会改变普攻的距离、伤害、命中或接触判定。
+
+### 火系层级（程序化，无需贴图）
+
+火系采用静态技能配方选择通用词汇，Pixi 不按技能 ID 判断：
+
+- `default`：小型火焰弹，用于基础火焰攻击；
+- `flame-stream`：多道暖色火舌、亮色核心与漂浮余烬组成的定向持续火柱；
+- `fire-glyph`：推进的四笔“大”字火印，命中时展开同形火印、中心火核和放射余烬，供大型火焰终结技使用。
+
+三者仅决定表现层的轮廓、颜色分层、时长与粒子预算，不改变伤害、命中、冷却、前摇或目标判定。
 
 ### 通用（shared/<名称>.png）
 - `shared/heal`   -- 治疗特效（绿色十字/光点），约 24px。

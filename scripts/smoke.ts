@@ -5,11 +5,11 @@ import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@
 
 import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
 import { contributionSummary, tacticPresentation } from '../apps/web/src/battle/CombatInsights.ts';
-import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, normalAttackVisualStyleFor, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
+import { ABILITY_VISUAL_RECIPES, BATTLE_ART_IMPORT_CONTRACTS, BATTLE_ART_PROFILES, BATTLE_ASSET_MANIFEST, BATTLE_ASSET_SOURCES, REPRESENTATIVE_BATTLE_ART_SPECIES, BATTLE_ENVIRONMENTS, BIOME_VISUALS, ILLUSION_TOWER_SCENE_MAP_IDS, ILLUSION_TOWER_SCENES, PASSIVE_VISUAL_RECIPES, SKILL_CAST_PRESENTATIONS, SKILL_VISUAL_RECIPES, STATUS_VISUAL_RECIPES, GPU_WORLD_MAP_IDS, isGpuWorldMapId, normalAttackVisualProfileFor, normalAttackVisualStyleFor, resolveBattleArtPresentation, validateBattleArtConfiguration, validateSkillVisualRecipes, validateWorldSceneBudgets, WORLD_SCENE_BY_MAP_ID, WORLD_SCENE_VISUAL_BASELINES, worldSceneBudgetReport, worldSceneFingerprintHash } from '@pokemon-online/config';
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent } from '@pokemon-online/presentation';
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
-import { buildVfxLabEvents } from '../apps/web/src/battle/VfxLab.ts';
+import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, CombatantView, elementalVfxShapeFor, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 
@@ -159,6 +159,7 @@ function assert(cond: boolean, msg: string): void {
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
   assert(getSpecies(6).normalAttackDelivery === 'melee' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
   assert(normalAttackVisualStyleFor(68, 'melee') === 'fist' && normalAttackVisualStyleFor(6, 'melee') === 'claw' && normalAttackVisualStyleFor(65, 'ranged') === 'psychic-bolt', 'normal attacks resolve fighter, claw, and psychic-ranged styles from fixed species delivery configuration');
+  assert(normalAttackVisualProfileFor(6, 'ranged').style === 'flame-bolt' && normalAttackVisualProfileFor(6, 'ranged').element === 'fire' && normalAttackVisualProfileFor(9, 'ranged').style === 'water-shot' && normalAttackVisualProfileFor(25, 'ranged').style === 'spark-bolt' && normalAttackVisualProfileFor(12, 'melee').style === 'wing-slap' && normalAttackVisualProfileFor(99, 'melee').style === 'pincer-snap', 'model normal-attack profiles resolve distinct elemental ranged bolts and contact silhouettes without renderer species branches');
   const meleeModelWithRangedSkills = createWildInstance(6, 20);
   meleeModelWithRangedSkills.activeSkills = ['flamethrower'];
   const rangedModelWithMeleeSkills = createWildInstance(65, 20);
@@ -245,6 +246,30 @@ function assert(cond: boolean, msg: string): void {
   assert(isSpriteAsset(spriteEntry.kind) && isSpriteAsset('sprite-sheet') && !isSpriteAsset('fallback-shape'), 'Pixi battle asset loader accepts manifest-declared bitmap forms and rejects procedural fallbacks');
   const viewCombatant = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10)], enemy: [createWildInstance(25, 10)], seed: 716 }).state.combatants[0]!;
   const combatantView = new CombatantView(viewCombatant, assetLoader);
+  combatantView.refresh({ ...viewCombatant, status: 'sleep', statusTimer: 2 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'sleep', 'CombatantView mounts a persistent, model-following sleep control overlay from the status DTO');
+  combatantView.refresh({ ...viewCombatant, status: 'freeze', statusTimer: 2.5 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'freeze', 'CombatantView mounts a persistent, model-following freeze control overlay from the status DTO');
+  combatantView.refresh({ ...viewCombatant, status: 'paralyze', statusTimer: 3 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'paralyze', 'CombatantView mounts body-crossing electrical arcs for persistent paralysis');
+  combatantView.refresh({ ...viewCombatant, status: 'confuse', statusTimer: 2.5 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'confuse', 'CombatantView mounts counter-rotating psychic glyphs for persistent confusion');
+  combatantView.refresh({ ...viewCombatant, status: 'burn', statusTimer: 5 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'burn', 'CombatantView mounts persistent edge flames for burn');
+  combatantView.refresh({ ...viewCombatant, status: 'poison', statusTimer: 5 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'poison', 'CombatantView mounts persistent violet-green poison fumes');
+  combatantView.refresh({ ...viewCombatant, status: null, statusTimer: 0, stunActive: true });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'stun', 'CombatantView mounts a persistent, model-following stun star ring from the presentation stun flag');
+  combatantView.refresh({ ...viewCombatant, status: null, statusTimer: 0 });
+  combatantView.update(0.08);
+  assert(combatantView.getDiagnostics().statusVisual === 'none', 'CombatantView clears persistent hard-control overlays when the status expires');
   combatantView.playAnimation('windup');
   combatantView.update(0.12);
   const viewDiagnostics = combatantView.getDiagnostics();
@@ -329,10 +354,13 @@ function assert(cond: boolean, msg: string): void {
   assert(visualWindup.some((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'windup' && entry.cue.durationMs === 100) && windupVfx?.type === 'vfx' && windupVfx.delayMs === 100, 'instant actions receive a visible configuration-owned prepare before their VFX release');
   const fistNormal = new BattleDirector().direct([{ id: 'fist-normal', sequence: 40, type: 'move', actorId: 'fighter', targetIds: ['target'], skillId: '__normal__', element: 'normal', normalAttackStyle: 'fist', vfxKind: 'melee', at: 20 }]);
   const psychicNormal = new BattleDirector().direct([{ id: 'psychic-normal', sequence: 41, type: 'move', actorId: 'caster', targetIds: ['target'], skillId: '__normal__', element: 'psychic', normalAttackStyle: 'psychic-bolt', vfxKind: 'projectile', at: 20 }]);
+  const fireNormal = new BattleDirector().direct([{ id: 'fire-normal', sequence: 42, type: 'move', actorId: 'caster', targetIds: ['target'], skillId: '__normal__', element: 'fire', normalAttackStyle: 'flame-bolt', vfxKind: 'projectile', at: 20 }]);
   const fistVfx = fistNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
   const psychicVfx = psychicNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
+  const fireVfx = fireNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
   assert(fistVfx?.type === 'vfx' && fistVfx.recipe.id === 'normal-attack:fist' && fistVfx.recipe.variant === 'fist' && planBattleCue(fistVfx)[0]?.primitive === 'impact', 'fighter normal attacks carry a configuration-owned fist impact motif through presentation into Pixi planning');
   assert(psychicVfx?.type === 'vfx' && psychicVfx.recipe.id === 'normal-attack:psychic-bolt' && psychicVfx.recipe.variant === 'psychic-bolt' && planBattleCue(psychicVfx)[0]?.primitive === 'projectile', 'psychic ranged normals carry a configuration-owned bolt motif through presentation into Pixi planning');
+  assert(fireVfx?.type === 'vfx' && fireVfx.recipe.id === 'normal-attack:flame-bolt' && fireVfx.recipe.element === 'fire' && fireVfx.recipe.variant === 'flame-bolt' && planBattleCue(fireVfx)[0]?.primitive === 'projectile', 'elemental ranged normals preserve their model-owned tint and silhouette through presentation into Pixi planning');
   assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');
   console.log('✓ BattleDirector deterministic cue contract:', first.length);
 }
@@ -415,6 +443,7 @@ function assert(cond: boolean, msg: string): void {
   const recipeReport = validateSkillVisualRecipes();
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0 && recipeReport.invalidActorChoreographyRecipeIds.length === 0, 'skill visual recipe coverage and budget validation');
   assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune', 'BattleStage biome environment grammar configured');
+  assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'ember')?.variant === 'default' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'flamethrower')?.variant === 'flame-stream' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'fire-blast')?.variant === 'fire-glyph', 'fire skills use distinct config-owned basic, sustained, and finisher visual motifs');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'blazing-dive')?.variant === 'dive' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'shadow-trap')?.variant === 'bind' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'chilling-snare')?.variant === 'snare', 'signature skills select config variants without renderer skill branches');
   console.log('✓ Stage 6 visual recipe and battle biome contract');
 }
@@ -535,15 +564,24 @@ function assert(cond: boolean, msg: string): void {
 // can be tested without Pixi, DOM, or BattleSim internals.
 {
   const projectile = planBattleCue({ type: 'vfx', recipe: { id: 'ember', element: 'fire', delivery: 'projectile' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const fireStream = planBattleCue({ type: 'vfx', recipe: { id: 'flamethrower', element: 'fire', delivery: 'beam', variant: 'flame-stream' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const fireGlyph = planBattleCue({ type: 'vfx', recipe: { id: 'fire-blast', element: 'fire', delivery: 'projectile', variant: 'fire-glyph' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 1 });
   const dive = planBattleCue({ type: 'vfx', recipe: { id: 'blazing-dive', element: 'fire', delivery: 'melee', variant: 'dive' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 1 });
   const beam = planBattleCue({ type: 'vfx', recipe: { id: 'beam', element: 'electric', delivery: 'beam' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 0.7 });
+  const skyStrike = planBattleCue({ type: 'vfx', recipe: { id: 'skill:thunder', element: 'electric', delivery: 'projectile', variant: 'sky-strike' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 1 });
+  const chainLightning = planBattleCue({ type: 'vfx', recipe: { id: 'skill:volt-chain', element: 'electric', delivery: 'area', variant: 'chain' }, anchors: { actorId: 'actor', targetIds: ['target-a', 'target-b'] }, intensity: 0.8 });
+  const electricImpact = planBattleCue({ type: 'vfx', recipe: { id: 'impact:electric', element: 'electric', delivery: 'aura', variant: 'sky-strike' }, anchors: { actorId: 'actor', targetIds: ['target'] }, intensity: 1 });
   const area = planBattleCue({ type: 'vfx', recipe: { id: 'surf', element: 'water', delivery: 'area' }, anchors: { targetIds: ['target-a', 'target-b'] }, intensity: 0.7 });
   const environment = planBattleCue({ type: 'environment', reaction: 'scorch' });
   const anchoredEnvironment = planBattleCue({ type: 'environment', reaction: 'rune-pulse', anchors: { actorId: 'actor', targetIds: ['target'] } });
   const attackLabEvents = buildVfxLabEvents({ actorId: 'caster', targetId: 'dummy', skillId: 'flamethrower', sequence: 7 });
   const selfLabEvents = buildVfxLabEvents({ actorId: 'caster', targetId: 'dummy', skillId: 'renewal-chant', sequence: 8 });
+  const labFreeze = vfxLabTargetState('freeze');
+  const labStun = vfxLabTargetState('stun');
   assert(attackLabEvents[0]?.targetIds?.[0] === 'dummy' && attackLabEvents[1]?.type === 'damage' && selfLabEvents.every((event) => event.targetIds?.[0] === 'caster'), 'VFX lab routes offensive skills to the dummy and self skills to the caster without simulation');
-  assert(projectile[0]?.primitive === 'projectile' && dive[0]?.primitive === 'dive' && beam[0]?.primitive === 'beam', 'BattleStage maps configured delivery motifs to distinct primitives');
+  assert(labFreeze.status === 'freeze' && labFreeze.statusTimer === 2.5 && labStun.status === null && (labStun.flinchUntil ?? 0) > 0, 'VFX lab can pin status and stun overlays without running a simulator');
+  assert(projectile[0]?.primitive === 'projectile' && fireStream[0]?.primitive === 'beam' && fireStream[0]?.variant === 'flame-stream' && fireGlyph[0]?.primitive === 'projectile' && fireGlyph[0]?.variant === 'fire-glyph' && dive[0]?.primitive === 'dive' && beam[0]?.primitive === 'beam', 'BattleStage preserves configured fire tiers as distinct generic primitives and motifs');
+  assert(skyStrike[0]?.primitive === 'sky-strike' && chainLightning[0]?.primitive === 'chain' && chainLightning[0]?.targetIds.length === 2 && electricImpact[0]?.primitive === 'impact', 'BattleStage distinguishes sky strikes and chain lightning without replaying signature delivery on impact');
   assert(area.map((plan) => plan.primitive).join(',') === 'burst,ring' && environment[0]?.primitive === 'environment' && environment[0]?.targetIds.length === 0 && anchoredEnvironment[0]?.actorId === 'actor' && anchoredEnvironment[0]?.targetIds[0] === 'target', 'BattleStage maps area and environment cues without inventing a central fallback anchor');
   console.log('✓ BattleStage primitive cue policy');
 }

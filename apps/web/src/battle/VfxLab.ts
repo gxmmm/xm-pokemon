@@ -1,4 +1,5 @@
 import { SKILL_MAP } from '@pokemon-online/config';
+import type { BattleCombatant, StatusKind } from '@pokemon-online/shared';
 import type { BattlePresentationEvent } from '@pokemon-online/presentation';
 
 export interface VfxLabEventInput {
@@ -8,8 +9,16 @@ export interface VfxLabEventInput {
   sequence: number;
 }
 
-/** Builds disposable presentation events for the VFX lab. It never creates a
- * BattleSim, changes HP, applies cooldowns, or moves either combatant. */
+export type VfxLabForcedStatus = 'none' | 'stun' | StatusKind;
+
+export function vfxLabTargetState(status: VfxLabForcedStatus): Pick<BattleCombatant, 'status' | 'statusTimer' | 'flinchUntil'> {
+  if (status === 'none') return { status: null, statusTimer: 0, flinchUntil: 0 };
+  if (status === 'stun') return { status: null, statusTimer: 0, flinchUntil: 9999 };
+  const duration: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
+  return { status, statusTimer: duration[status], flinchUntil: 0 };
+}
+
+
 export function buildVfxLabEvents(input: VfxLabEventInput): readonly BattlePresentationEvent[] {
   const skill = SKILL_MAP[input.skillId];
   if (!skill) return [];

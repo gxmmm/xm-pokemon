@@ -30,6 +30,7 @@ export interface CombatantViewDiagnostics {
   movementBobOffsetY: number;
   movementTiltDeg: number;
   movementSpeed: number;
+  statusVisual: 'none' | 'sleep' | 'freeze' | 'stun' | 'paralyze' | 'confuse' | 'burn' | 'poison';
 }
 
 export class CombatantView extends Container {
@@ -41,6 +42,7 @@ export class CombatantView extends Container {
   private readonly chargeAura = new Graphics({ blendMode: 'add' });
   /** Generic element-tinted outline used by configuration-owned actor travel. */
   private readonly choreographyOutline = new Graphics({ blendMode: 'add' });
+  private readonly statusOverlay = new Graphics({ blendMode: 'add' });
   private readonly fallback = new Graphics();
   private readonly decorations = new Map<string, { graphic: Graphics; spec: BattleArtLayerSpec }>();
   private readonly sprite = new Sprite(Texture.EMPTY);
@@ -76,6 +78,7 @@ export class CombatantView extends Container {
   private movementBobOffsetY = 0;
   private movementTiltRad = 0;
   private movementPhase = 0;
+  private statusVisual: 'none' | 'sleep' | 'freeze' | 'stun' | 'paralyze' | 'confuse' | 'burn' | 'poison' = 'none';
   private baseScale: number;
 
   constructor(
@@ -92,7 +95,7 @@ export class CombatantView extends Container {
     this.rebuildLayers();
     this.sprite.anchor.set(0.5, 0.58);
     this.sprite.visible = false;
-    this.body.addChild(this.behindLayers, this.shadow, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.frontLayers);
+    this.body.addChild(this.behindLayers, this.shadow, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.statusOverlay, this.frontLayers);
     this.addChild(this.body);
     this.refresh(combatant);
     this.requestTexture();
@@ -106,6 +109,9 @@ export class CombatantView extends Container {
     this.baseScale = resolved.profile.scale;
     this.facing = combatant.facing;
     this.alive = combatant.alive;
+    this.statusVisual = combatant.status === 'sleep' || combatant.status === 'freeze' || combatant.status === 'paralyze' || combatant.status === 'confuse' || combatant.status === 'burn' || combatant.status === 'poison'
+      ? combatant.status
+      : combatant.stunActive ? 'stun' : 'none';
     this.updateLocomotionIntent(combatant);
     const beganCasting = !!combatant.castProgress && !this.casting;
     this.casting = !!combatant.castProgress;
@@ -197,6 +203,7 @@ export class CombatantView extends Container {
       movementBobOffsetY: this.movementBobOffsetY,
       movementTiltDeg: this.movementTiltRad * 180 / Math.PI,
       movementSpeed: this.movementSpeed,
+      statusVisual: this.statusVisual,
     };
   }
 
@@ -256,6 +263,7 @@ export class CombatantView extends Container {
     this.updateShadowForHover(hover.heightRatio);
     this.updateLayers(progress, pose.glowAlpha, pose.glowScale);
     this.updateChargeAura();
+    this.updateStatusOverlay();
     this.updateChoreographyOutline(progress);
     this.alpha = this.alive ? 1 : 0.25;
   }
@@ -469,8 +477,11 @@ export class CombatantView extends Container {
     }
     const spec = active.spec;
     const wrapped = progress < spec.revealAt;
-    this.sprite.alpha = wrapped ? 0.10 : 1;
-    this.fallback.alpha = wrapped ? 0 : 1;
+    // Keep the sprite legible under a deliberately opaque model-cover layer.
+    // Previous implementation faded it to 10% then drew only an outline, which
+    // read as a weak ring rather than a body wrapped in flame.
+    this.sprite.alpha = wrapped ? 0.68 : 1;
+    this.fallback.alpha = wrapped ? 0.62 : 1;
     const color = colorNumber(active.theme.primary, 0xff824e);
     const highlight = colorNumber(active.theme.highlight, 0xffeea8);
     const phase = progress * Math.PI * 7;
@@ -479,18 +490,24 @@ export class CombatantView extends Container {
     const height = 49 * swell;
     this.choreographyOutline.clear();
     if (!wrapped) return;
-    // The outline hugs the current model bounds using only its neutral local
-    // center; art profiles still own model scale, pose and bitmap selection.
+    // A translucent fill covers the full body, then animated tongues cross the
+    // silhouette. This reads as an actual flame-wrapped model at a glance.
     this.choreographyOutline
-      .ellipse(0, -8, width, height).stroke({ color, alpha: 0.82, width: 5 })
-      .ellipse(0, -8, width * 0.76, height * 0.78).stroke({ color: highlight, alpha: 0.75, width: 3 });
-    const tongues = 6;
+      .ellipse(0, -8, width * 0.96, height * 1.06).fill({ color, alpha: 0.34 })
+      .ellipse(0, -8, width, height).stroke({ color, alpha: 0.94, width: 6 })
+      .ellipse(0, -8, width * 0.78, height * 0.80).stroke({ color: highlight, alpha: 0.86, width: 3.4 });
+    const tongues = 9;
     for (let index = 0; index < tongues; index++) {
       const angle = phase + index / tongues * Math.PI * 2;
-      const x = Math.cos(angle) * width * 0.78;
+      const x = Math.cos(angle) * width * 0.76;
       const y = -8 + Math.sin(angle) * height * 0.78;
-      this.choreographyOutline.moveTo(x, y + 6).lineTo(x + Math.cos(angle) * 8, y - 10 - (index % 2) * 5)
-        .stroke({ color, alpha: 0.68, width: 3.5 });
+      const tipX = x + Math.cos(angle) * (12 + (index % 3) * 4);
+      const tipY = y - 16 - (index % 2) * 10;
+      this.choreographyOutline.poly([x - 6, y + 8, tipX, tipY, x + 7, y + 8]).fill({ color: index % 2 ? color : highlight, alpha: 0.88 });
+    }
+    for (let ember = 0; ember < 7; ember++) {
+      const angle = phase * 1.35 + ember * Math.PI * 2 / 7;
+      this.choreographyOutline.circle(Math.cos(angle) * width * 0.65, -8 + Math.sin(angle) * height * 0.62, 3 + ember % 2 * 2).fill({ color: ember % 2 ? color : highlight, alpha: 0.78 });
     }
   }
 
@@ -543,6 +560,107 @@ export class CombatantView extends Container {
       const x = Math.cos(angle) * sparkRadius;
       const y = -7 + Math.sin(angle) * sparkRadius * 0.62;
       this.chargeAura.circle(x, y, 2.2 + progress * 2.4).fill({ color: highlight, alpha: 0.3 + progress * 0.5 });
+    }
+  }
+
+  private updateStatusOverlay(): void {
+    if (!this.alive || this.statusVisual === 'none') {
+      this.statusOverlay.clear();
+      return;
+    }
+    const phase = this.motionElapsedMs / 1000;
+    this.statusOverlay.clear();
+    if (this.statusVisual === 'sleep') {
+      // Large drifting Z glyphs and a dim, slow breathing halo make a full action
+      // lock readable even when the combatant is partially occluded.
+      const drift = Math.sin(phase * 2.4) * 3;
+      this.statusOverlay.ellipse(0, -22, 44, 19).fill({ color: 0x596bdb, alpha: 0.18 + Math.sin(phase * 2) * 0.05 });
+      for (let index = 0; index < 3; index++) {
+        const t = (phase * 0.42 + index / 3) % 1;
+        const x = 17 + index * 11;
+        const y = -61 - t * 22 + drift;
+        const size = 7 + index * 2;
+        this.statusOverlay.moveTo(x - size * 0.48, y - size * 0.52).lineTo(x + size * 0.48, y - size * 0.52).lineTo(x - size * 0.35, y + size * 0.54).lineTo(x + size * 0.48, y + size * 0.54)
+          .stroke({ color: 0xd5e7ff, alpha: 0.88 - t * 0.32, width: 3 });
+      }
+    } else if (this.statusVisual === 'freeze') {
+      // A translucent cyan body shell sits directly above the bitmap, with
+      // internal crack lines and edge ice spikes: the model is visibly trapped
+      // inside ice rather than merely surrounded by a ring.
+      const pulse = 1 + Math.sin(phase * 5) * 0.05;
+      this.statusOverlay.ellipse(0, -12, 46 * pulse, 61 * pulse).fill({ color: 0x83ddf6, alpha: 0.50 })
+        .ellipse(0, -12, 43 * pulse, 57 * pulse).stroke({ color: 0x9feeff, alpha: 0.96, width: 5 })
+        .ellipse(0, -12, 35 * pulse, 48 * pulse).stroke({ color: 0xe3fbff, alpha: 0.72, width: 2.2 });
+      for (const [x1, y1, x2, y2] of [[-22, -48, -8, -20], [-8, -20, -22, 7], [18, -43, 6, -15], [6, -15, 23, 10], [-2, -55, 5, -32]] as const) {
+        this.statusOverlay.moveTo(x1, y1).lineTo(x2, y2).stroke({ color: 0xe9fdff, alpha: 0.78, width: 2.2 });
+      }
+      for (let index = -2; index <= 2; index++) {
+        const x = index * 15;
+        const height = 14 + (Math.abs(index) % 2) * 8;
+        this.statusOverlay.poly([x - 6, 24, x, 24 - height, x + 7, 24]).fill({ color: index === 0 ? 0xe4fbff : 0x72d8f4, alpha: 0.92 });
+      }
+      for (let index = 0; index < 4; index++) {
+        const angle = phase * 1.8 + index * Math.PI / 2;
+        this.statusOverlay.circle(Math.cos(angle) * 38, -13 + Math.sin(angle) * 32, 3.5).fill({ color: 0xffffff, alpha: 0.84 });
+      }
+    } else if (this.statusVisual === 'paralyze') {
+      // Thick, intermittent electrical arcs visibly cross the body, rather than
+      // living only at the feet or target point.
+      const flash = Math.sin(phase * 16) > -0.2 ? 1 : 0.38;
+      for (let bolt = 0; bolt < 4; bolt++) {
+        const baseY = -45 + bolt * 20;
+        const zig = (bolt % 2 ? 1 : -1) * 12;
+        this.statusOverlay.moveTo(-38, baseY).lineTo(-12, baseY + zig).lineTo(9, baseY - zig * 0.7).lineTo(39, baseY + 5)
+          .stroke({ color: 0xffdf58, alpha: 0.90 * flash, width: 4.5 })
+          .moveTo(-38, baseY).lineTo(-12, baseY + zig).lineTo(9, baseY - zig * 0.7).lineTo(39, baseY + 5)
+          .stroke({ color: 0xffffff, alpha: 0.82 * flash, width: 1.5 });
+      }
+      this.statusOverlay.circle(0, -12, 28).stroke({ color: 0xffdf58, alpha: 0.44 * flash, width: 3 });
+    } else if (this.statusVisual === 'confuse') {
+      // Counter-rotating purple glyphs and an orbiting eye-like ring communicate
+      // a loss of control without moving the authoritative combatant root.
+      for (let ring = 0; ring < 3; ring++) {
+        const angle = phase * (ring % 2 ? -4.8 : 4.2) + ring * 1.8;
+        const radius = 28 + ring * 10;
+        const x = Math.cos(angle) * radius;
+        const y = -14 + Math.sin(angle) * radius * 0.45;
+        this.statusOverlay.star(x, y, 4, 8 + ring * 2, 3).stroke({ color: ring === 0 ? 0xffffff : 0xc787e8, alpha: 0.86, width: 2.4 });
+      }
+      this.statusOverlay.ellipse(0, -13, 43, 17).stroke({ color: 0xc787e8, alpha: 0.70, width: 3 })
+        .circle(0, -13, 5).fill({ color: 0xffffff, alpha: 0.86 });
+    } else if (this.statusVisual === 'burn') {
+      // Low-frequency flames cling to the body edges. Unlike an attack impact,
+      // the small embers persist and rise slowly for the whole burn duration.
+      for (let flame = 0; flame < 6; flame++) {
+        const phaseOffset = phase * 3 + flame * 1.14;
+        const x = Math.sin(phaseOffset) * (16 + flame % 3 * 8);
+        const y = 20 - ((phase * 20 + flame * 17) % 58);
+        const size = 8 + flame % 3 * 3;
+        this.statusOverlay.poly([x - size * 0.45, y + size * 0.55, x + Math.sin(phaseOffset) * 4, y - size, x + size * 0.45, y + size * 0.55]).fill({ color: flame % 2 ? 0xff7448 : 0xffd36b, alpha: 0.82 });
+        this.statusOverlay.circle(x, y + 2, size * 0.22).fill({ color: 0xfff0ad, alpha: 0.88 });
+      }
+      this.statusOverlay.ellipse(0, 16, 38, 10).fill({ color: 0xd94330, alpha: 0.18 });
+    } else if (this.statusVisual === 'poison') {
+      // Poison is a heavy violet-green fume cloud, clearly unlike the upward
+      // orange motion of burn and anchored around the affected body.
+      for (let bubble = 0; bubble < 7; bubble++) {
+        const t = (phase * 0.26 + bubble / 7) % 1;
+        const x = Math.sin(phase * 3 + bubble * 2.4) * (12 + bubble % 3 * 9);
+        const y = 22 - t * 68;
+        const radius = 6 + (1 - t) * (bubble % 2 ? 7 : 4);
+        this.statusOverlay.circle(x, y, radius).fill({ color: bubble % 2 ? 0xb65bd5 : 0x82c86a, alpha: 0.46 + (1 - t) * 0.28 })
+          .circle(x - radius * 0.25, y - radius * 0.22, radius * 0.24).fill({ color: 0xe0b4f4, alpha: 0.72 });
+      }
+      this.statusOverlay.ellipse(0, 15, 42, 14).fill({ color: 0x6c3f86, alpha: 0.24 });
+    } else {
+      const orbit = 31 + Math.sin(phase * 7) * 3;
+      for (let index = 0; index < 3; index++) {
+        const angle = phase * 5 + index * Math.PI * 2 / 3;
+        const x = Math.cos(angle) * orbit;
+        const y = -57 + Math.sin(angle) * 10;
+        this.statusOverlay.star(x, y, 5, 10, 4).fill({ color: index === 0 ? 0xffffff : 0xffdf58, alpha: 0.94 });
+      }
+      this.statusOverlay.ellipse(0, -28, 38, 16).stroke({ color: 0xffdf58, alpha: 0.64, width: 2.4 });
     }
   }
 

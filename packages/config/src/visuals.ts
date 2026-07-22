@@ -127,7 +127,9 @@ export type DeliveryKind = 'melee' | 'projectile' | 'beam' | 'area' | 'aura';
 export type SkillVisualImpact = 'spark' | 'burst' | 'wave' | 'rune' | 'heal' | 'status';
 export type EnvironmentReaction = 'scorch' | 'frost' | 'spark' | 'splash' | 'spore' | 'debris' | 'rune-pulse';
 export type SkillRecipeVariant = 'default' | 'cross' | 'meteor' | 'chain' | 'surge' | 'hymn' | 'crown' | 'chant' | 'dive' | 'bind' | 'snare'
-  | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'psychic-bolt' | 'elemental-bolt';
+  | 'flame-stream' | 'fire-glyph' | 'arc-bolt' | 'sky-strike'
+  | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'wing-slap' | 'beak-peck' | 'tusk-gore' | 'pincer-snap' | 'whip-lash' | 'kick' | 'shell-bash'
+  | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star';
 
 export interface SkillVisualRecipe {
   id: string;

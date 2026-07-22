@@ -1,6 +1,6 @@
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
-import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualStyleFor, NORMAL_ATTACK_RANGED_CELLS } from '@pokemon-online/config';
+import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualProfileFor, NORMAL_ATTACK_RANGED_CELLS } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
@@ -861,8 +861,8 @@ export class BattleSim {
     this.skillRecap(c, NORMAL_ATTACK.id).casts += 1;
     c.normalAttackCd = c.normalAttackInterval / Math.max(0.1, c.normalAttackSpeedMultiplier);
     const ranged = !!c.normalIsRanged;
-    const normalAttackStyle = normalAttackVisualStyleFor(c.speciesId, ranged ? 'ranged' : 'melee');
-    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: NORMAL_ATTACK.type, normalAttackStyle });
+    const normalAttackProfile = normalAttackVisualProfileFor(c.speciesId, ranged ? 'ranged' : 'melee');
+    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: normalAttackProfile.element, normalAttackStyle: normalAttackProfile.style });
     this.dealDamage(c, target, NORMAL_ATTACK.id);
   }
 

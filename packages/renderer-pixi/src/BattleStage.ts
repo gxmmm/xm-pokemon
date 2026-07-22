@@ -207,15 +207,16 @@ export class BattleStage implements BattleRenderer {
       }
     }
     for (const combatant of snapshot.combatants) {
-      const point = this.project(combatant.pixel.x, combatant.pixel.y);
-      this.positions.set(combatant.uid, point);
-      let view = this.views.get(combatant.uid);
+      const visualCombatant = { ...combatant, stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
+      const point = this.project(visualCombatant.pixel.x, visualCombatant.pixel.y);
+      this.positions.set(visualCombatant.uid, point);
+      let view = this.views.get(visualCombatant.uid);
       if (!view) {
-        view = new CombatantView(combatant, this.battleArtAssets);
+        view = new CombatantView(visualCombatant, this.battleArtAssets);
         this.views.set(combatant.uid, view);
         this.combatants.addChild(view);
       } else {
-        view.refresh(combatant);
+        view.refresh(visualCombatant);
       }
       // Render position always follows the delayed snapshot smoothly. Engine
       // castProgress remains the only authoritative movement lock; CombatantView
@@ -570,6 +571,11 @@ export class BattleStage implements BattleRenderer {
     const color = elementColor(plan.element);
     if (plan.primitive === 'projectile' && actor) {
       this.spawnProjectile(actor, target, color, plan.intensity, plan.variant, plan.element);
+    } else if (plan.primitive === 'sky-strike') {
+      this.spawnSkyStrike(target, plan.intensity);
+    } else if (plan.primitive === 'chain') {
+      const chainTargets = plan.targetIds.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
+      this.spawnChainLightning(actor ?? target, chainTargets.length > 0 ? chainTargets : [target], plan.intensity);
     } else if (plan.primitive === 'dive' && actor) {
       this.spawnDive(actor, target, color, plan.intensity);
     } else if (plan.primitive === 'beam' && actor) {
@@ -585,9 +591,130 @@ export class BattleStage implements BattleRenderer {
     }
   }
 
+  /** A vertical, target-owned discharge. Lightning appears in a few stepped
+   * silhouettes instead of travelling smoothly, which keeps it reading as an
+   * instantaneous atmospheric strike rather than a yellow projectile. */
+  private spawnSkyStrike(at: Point, intensity: number): void {
+    const shade = new Graphics();
+    const graphic = new Graphics({ blendMode: 'add' });
+    const duration = this.visualSettings.reduceFlicker ? 0.56 : 0.48;
+    this.addEffect(shade, duration, (progress) => {
+      const reduced = this.visualSettings.reduceFlicker;
+      const rise = Math.min(1, progress / 0.16);
+      const fall = progress < 0.42 ? 1 : Math.max(0, (1 - progress) / 0.58);
+      shade.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: 0x06121d, alpha: rise * fall * (reduced ? 0.055 : 0.14) });
+    });
+    this.addEffect(graphic, duration, (progress) => {
+      const reduced = this.visualSettings.reduceFlicker;
+      const strikeStart = 0.16;
+      const strikeEnd = reduced ? 0.62 : 0.56;
+      const strikeProgress = Math.max(0, Math.min(1, (progress - strikeStart) / (strikeEnd - strikeStart)));
+      const strikeAlpha = progress < strikeStart || progress > strikeEnd ? 0 : Math.sin(strikeProgress * Math.PI) * (reduced ? 0.62 : 1);
+      const afterAlpha = progress < 0.34 ? 0 : (1 - progress) * 0.86;
+      const top = Math.max(-50, at.y - (360 + intensity * 120));
+      const phase = Math.floor(strikeProgress * (reduced ? 3 : 6));
+      graphic.clear();
+
+      const warningAlpha = progress < strikeStart ? (1 - progress / strikeStart) * 0.46 : 0;
+      if (warningAlpha > 0) {
+        graphic.moveTo(at.x, top).lineTo(at.x, at.y + 10).stroke({ color: 0xb9eaff, alpha: warningAlpha, width: 2 })
+          .ellipse(at.x, at.y + 24, 30 + progress * 28, 9 + progress * 4).stroke({ color: 0xffe66b, alpha: warningAlpha * 0.82, width: 3 });
+      }
+
+      if (strikeAlpha > 0) {
+        if (!reduced) graphic.rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: 0xdaf6ff, alpha: strikeAlpha * 0.075 });
+        const segments = 10;
+        let previous = { x: at.x + Math.sin(phase * 1.7) * 22, y: top };
+        for (let segment = 1; segment <= segments; segment++) {
+          const t = segment / segments;
+          const spread = Math.sin(t * Math.PI) * (30 + intensity * 20);
+          const jitter = segment === segments ? 0 : Math.sin(segment * 11.71 + phase * 2.83) * spread;
+          const next = { x: at.x + jitter, y: top + (at.y - top) * t };
+          graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0x65bfff, alpha: strikeAlpha * 0.26, width: 28 + intensity * 11 })
+            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe96a, alpha: strikeAlpha * 0.96, width: 11 + intensity * 4 })
+            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha: strikeAlpha, width: 3.2 });
+          if (segment === 3 || segment === 5 || segment === 7) {
+            const side = segment % 2 ? -1 : 1;
+            const branch = 36 + intensity * 30 + segment * 4;
+            const elbow = { x: next.x + side * branch * 0.42, y: next.y + branch * 0.25 };
+            const end = { x: next.x + side * branch, y: next.y + branch * 0.58 };
+            graphic.moveTo(next.x, next.y).lineTo(elbow.x, elbow.y).lineTo(end.x, end.y).stroke({ color: 0x8dd8ff, alpha: strikeAlpha * 0.28, width: 12 + intensity * 4 })
+              .moveTo(next.x, next.y).lineTo(elbow.x, elbow.y).lineTo(end.x, end.y).stroke({ color: 0xfff28a, alpha: strikeAlpha * 0.78, width: 4 + intensity * 2 })
+              .moveTo(next.x, next.y).lineTo(elbow.x, elbow.y).lineTo(end.x, end.y).stroke({ color: 0xffffff, alpha: strikeAlpha * 0.86, width: 1.6 });
+          }
+          previous = next;
+        }
+      }
+
+      if (afterAlpha > 0) {
+        const radius = 34 + progress * (78 + intensity * 44);
+        graphic.ellipse(at.x, at.y + 26, radius, radius * 0.23).stroke({ color: 0x9ee7ff, alpha: afterAlpha * 0.42, width: 5 })
+          .ellipse(at.x, at.y + 24, radius * 0.58, radius * 0.14).stroke({ color: 0xffea72, alpha: afterAlpha * 0.72, width: 3 });
+        const sparkCount = this.quality === 'cinematic' ? 9 : this.quality === 'standard' ? 6 : 4;
+        for (let spark = 0; spark < sparkCount; spark++) {
+          const angle = spark / sparkCount * Math.PI * 2 + spark * 0.37;
+          const distance = 22 + progress * (70 + (spark % 3) * 18);
+          const sx = at.x + Math.cos(angle) * distance;
+          const sy = at.y + 16 + Math.sin(angle) * distance * 0.34 - progress * (12 + spark % 2 * 14);
+          graphic.moveTo(at.x + Math.cos(angle) * 16, at.y + 16).lineTo(sx, sy).stroke({ color: spark % 2 ? 0xffffff : 0xffe76b, alpha: afterAlpha * 0.72, width: 2.5 + intensity });
+        }
+      }
+    });
+  }
+
+  /** A source-to-target electrical connection. Each link redraws in discrete
+   * phases and branches around its destination, so multi-target skills read as
+   * electricity jumping between bodies rather than an area explosion. */
+  private spawnChainLightning(from: Point, targets: readonly Point[], intensity: number): void {
+    const graphic = new Graphics({ blendMode: 'add' });
+    const duration = 0.46;
+    this.addEffect(graphic, duration, (progress) => {
+      const alpha = Math.sin(Math.PI * Math.min(1, progress * 1.16)) * (this.visualSettings.reduceFlicker ? 0.66 : 0.96);
+      const phase = Math.floor(progress * (this.visualSettings.reduceFlicker ? 4 : 9));
+      const points = [from, ...targets];
+      graphic.clear();
+      for (let link = 0; link < points.length - 1; link++) {
+        const start = points[link]!;
+        const end = points[link + 1]!;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const px = -dy / length;
+        const py = dx / length;
+        const segments = 9;
+        let previous = start;
+        for (let segment = 1; segment <= segments; segment++) {
+          const t = segment / segments;
+          const taper = Math.sin(t * Math.PI);
+          const noise = Math.sin(segment * 12.9898 + phase * 2.41 + link * 4.1) * 0.62
+            + Math.sin(segment * 4.231 + phase * 5.17 + link * 1.3) * 0.38;
+          const jitter = segment === segments ? 0 : noise * (20 + intensity * 14) * taper;
+          const axial = segment === segments ? 0 : Math.sin(segment * 7.13 + phase * 1.71) * 4 * taper;
+          const next = { x: start.x + dx * t + dx / length * axial + px * jitter, y: start.y + dy * t + dy / length * axial + py * jitter };
+          graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0x65c7ff, alpha: alpha * 0.24, width: 21 + intensity * 8 })
+            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe56b, alpha, width: 7 + intensity * 3 })
+            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha, width: 2.2 });
+          if (segment === 3 || segment === 5 || segment === 7) {
+            const side = segment % 2 ? -1 : 1;
+            const branch = 24 + intensity * 17 + segment * 2;
+            const bx = next.x + px * side * branch - dx / length * 8;
+            const by = next.y + py * side * branch - dy / length * 8;
+            graphic.moveTo(next.x, next.y).lineTo(next.x + px * side * branch * 0.42, next.y + py * side * branch * 0.42).lineTo(bx, by)
+              .stroke({ color: 0x8edcff, alpha: alpha * 0.22, width: 8 })
+              .moveTo(next.x, next.y).lineTo(next.x + px * side * branch * 0.42, next.y + py * side * branch * 0.42).lineTo(bx, by)
+              .stroke({ color: 0xdffcff, alpha: alpha * 0.82, width: 2.4 });
+          }
+          previous = next;
+        }
+        graphic.circle(end.x, end.y, 18 + intensity * 8).stroke({ color: 0x8fddff, alpha: alpha * 0.54, width: 5 })
+          .circle(end.x, end.y, 7 + intensity * 4).fill({ color: 0xffffff, alpha: alpha * 0.58 });
+      }
+    });
+  }
+
   private spawnProjectile(from: Point, to: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
-    const duration = variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
+    const duration = variant === 'fire-glyph' ? 0.48 : variant === 'flame-stream' ? 0.38 : variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
     const shape = elementalVfxShapeFor(element);
     this.addEffect(graphic, duration, (progress) => {
       const x = from.x + (to.x - from.x) * progress;
@@ -600,7 +727,94 @@ export class BattleStage implements BattleRenderer {
       const px = -ny;
       const py = nx;
       graphic.clear();
-      this.drawElementalProjectile(graphic, shape, { x, y }, { nx, ny, px, py }, color, intensity, progress);
+      if (variant === 'arc-bolt') {
+        const head = Math.min(1, progress * 1.22);
+        const tail = Math.max(0, head - 0.46);
+        const phase = Math.floor(progress * 18);
+        const segments = 11;
+        let previous: Point | null = null;
+        for (let segment = 0; segment <= segments; segment++) {
+          const t = tail + (head - tail) * segment / segments;
+          const taper = Math.sin(segment / segments * Math.PI);
+          const noise = Math.sin(segment * 13.17 + phase * 2.19) * 0.64 + Math.sin(segment * 4.91 + phase * 5.03) * 0.36;
+          const jitter = segment === 0 || segment === segments ? 0 : noise * (15 + intensity * 11) * taper;
+          const axial = segment === 0 || segment === segments ? 0 : Math.sin(segment * 7.71 + phase * 1.37) * 3.5 * taper;
+          const next = { x: from.x + dx * t + nx * axial + px * jitter, y: from.y + dy * t + ny * axial + py * jitter };
+          if (previous) {
+            graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0x76cfff, alpha: 0.20, width: 17 + intensity * 8 })
+              .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe76b, alpha: 0.94, width: 7 + intensity * 3 })
+              .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha: 0.98, width: 2.2 });
+            if ((segment === 3 || segment === 6 || segment === 9) && head > t) {
+              const side = segment % 2 ? -1 : 1;
+              const branchLength = 22 + intensity * 18;
+              const branchX = next.x - nx * 9 + px * branchLength * side;
+              const branchY = next.y - ny * 9 + py * branchLength * side;
+              graphic.moveTo(next.x, next.y).lineTo(next.x + px * branchLength * side * 0.38, next.y + py * branchLength * side * 0.38).lineTo(branchX, branchY)
+                .stroke({ color: 0x7dcfff, alpha: 0.24, width: 9 })
+                .moveTo(next.x, next.y).lineTo(next.x + px * branchLength * side * 0.38, next.y + py * branchLength * side * 0.38).lineTo(branchX, branchY)
+                .stroke({ color: 0xdffcff, alpha: 0.84, width: 2.8 });
+            }
+          }
+          previous = next;
+        }
+        const headX = from.x + dx * head;
+        const headY = from.y + dy * head;
+        graphic.circle(headX, headY, 13 + intensity * 8).fill({ color: 0xeaffff, alpha: 0.32 })
+          .circle(headX, headY, 5 + intensity * 3).fill({ color: 0xffffff, alpha: 0.94 });
+      } else if (variant === 'flame-bolt') {
+        const flameLength = 30 + intensity * 18;
+        const flameWidth = 10 + intensity * 7;
+        graphic.poly([x - nx * 12, y - ny * 12, x + px * flameWidth, y + py * flameWidth, x + nx * flameLength, y + ny * flameLength, x - px * flameWidth, y - py * flameWidth]).fill({ color, alpha: 0.86 })
+          .poly([x - nx * 5, y - ny * 5, x + px * flameWidth * 0.38, y + py * flameWidth * 0.38, x + nx * (flameLength - 8), y + ny * (flameLength - 8), x - px * flameWidth * 0.38, y - py * flameWidth * 0.38]).fill({ color: 0xfff1a9, alpha: 0.96 });
+        for (let ember = 0; ember < 4; ember++) graphic.circle(x - nx * (12 + ember * 9) + px * Math.sin(progress * 14 + ember) * 5, y - ny * (12 + ember * 9) + py * Math.sin(progress * 14 + ember) * 5, 3 + intensity * 2).fill({ color: ember % 2 ? color : 0xffcb69, alpha: 0.66 });
+      } else if (variant === 'water-shot') {
+        graphic.ellipse(x, y, 14 + intensity * 8, 9 + intensity * 5).fill({ color, alpha: 0.82 }).ellipse(x + nx * 5, y + ny * 5, 8 + intensity * 4, 5 + intensity * 2).fill({ color: 0xe0faff, alpha: 0.92 });
+        for (let arc = -1; arc <= 1; arc++) graphic.moveTo(x - nx * 18 + px * arc * 8, y - ny * 18 + py * arc * 8).lineTo(x + nx * 13 + px * arc * 5, y + ny * 13 + py * arc * 5).stroke({ color: 0xc7f4ff, alpha: 0.64, width: 2 });
+      } else if (variant === 'spark-bolt') {
+        let previous = { x: x - nx * 18, y: y - ny * 18 };
+        for (let segment = 1; segment <= 5; segment++) { const next = { x: x - nx * 18 + nx * segment * 10 + px * (segment % 2 ? 8 : -8), y: y - ny * 18 + ny * segment * 10 + py * (segment % 2 ? 8 : -8) }; graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color, alpha: 0.92, width: 4 + intensity * 2 }).moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha: 0.94, width: 1.5 }); previous = next; }
+      } else if (variant === 'leaf-shot') {
+        for (let leaf = 0; leaf < 3; leaf++) { const angle = progress * 13 + leaf * Math.PI * 2 / 3; graphic.ellipse(x + Math.cos(angle) * 10, y + Math.sin(angle) * 7, 12 + intensity * 4, 5).fill({ color, alpha: 0.84 }); }
+      } else if (variant === 'shadow-orb') {
+        for (let ring = 0; ring < 3; ring++) graphic.ellipse(x + Math.cos(progress * 12 + ring * 2.1) * (8 + ring * 4), y + Math.sin(progress * 12 + ring * 2.1) * (6 + ring * 3), 12 + intensity * 4, 5 + ring).stroke({ color, alpha: 0.78 - ring * 0.14, width: 2 });
+        graphic.circle(x, y, 9 + intensity * 6).fill({ color: 0x2d174a, alpha: 0.88 });
+      } else if (variant === 'stone-shot') {
+        graphic.poly([x + nx * 16, y + ny * 16, x + px * 14, y + py * 14, x - nx * 14, y - ny * 14, x - px * 14, y - py * 14]).fill({ color, alpha: 0.9 });
+      } else if (variant === 'wind-cutter') {
+        for (const side of [-1, 1]) graphic.moveTo(x - nx * 18 + px * side * 9, y - ny * 18 + py * side * 9).lineTo(x + nx * 21, y + ny * 21).stroke({ color, alpha: 0.82, width: 4 + intensity * 2 });
+      } else if (variant === 'fairy-spark' || variant === 'neutral-star') {
+        graphic.star(x, y, variant === 'fairy-spark' ? 5 : 4, 14 + intensity * 8, 5 + intensity * 3).fill({ color: variant === 'fairy-spark' ? 0xffeff9 : color, alpha: 0.9 });
+      } else if (shape === 'flame' && variant === 'flame-stream') {
+        const streamLength = 78 + intensity * 38;
+        const streamWidth = 16 + intensity * 13;
+        const tail = { x: from.x + dx * Math.max(0, progress - 0.36), y: from.y + dy * Math.max(0, progress - 0.36) };
+        for (let lane = -2; lane <= 2; lane++) {
+          const offset = lane * streamWidth * 0.26 + Math.sin(progress * 22 + lane) * 4;
+          graphic.moveTo(tail.x + px * offset, tail.y + py * offset).lineTo(x + nx * streamLength + px * offset * 0.34, y + ny * streamLength + py * offset * 0.34)
+            .stroke({ color: lane === 0 ? 0xfff3bc : lane % 2 ? 0xffbc4e : color, alpha: (1 - Math.abs(lane) * 0.12) * 0.82, width: streamWidth * (lane === 0 ? 0.54 : 0.38) });
+        }
+        for (let ember = 0; ember < 9; ember++) {
+          const trail = (ember / 9 + progress * 1.8) % 1;
+          const sway = Math.sin(progress * 26 + ember * 1.9) * streamWidth * 0.54;
+          graphic.circle(x - nx * trail * streamLength + px * sway, y - ny * trail * streamLength + py * sway, 3 + intensity * 3).fill({ color: ember % 3 ? color : 0xffef9b, alpha: 0.72 });
+        }
+      } else if (shape === 'flame' && variant === 'fire-glyph') {
+        const scale = 1.1 + intensity * 0.52;
+        const glyphX = x + nx * 10;
+        const glyphY = y + ny * 10;
+        const arm = 24 * scale;
+        const stroke = 8 * scale;
+        const glyphAlpha = 0.92 - progress * 0.18;
+        graphic.moveTo(glyphX - arm, glyphY - arm).lineTo(glyphX + arm, glyphY - arm).stroke({ color, alpha: glyphAlpha, width: stroke })
+          .moveTo(glyphX, glyphY - arm).lineTo(glyphX, glyphY + arm).stroke({ color, alpha: glyphAlpha, width: stroke })
+          .moveTo(glyphX - arm * 0.78, glyphY).lineTo(glyphX + arm * 0.78, glyphY).stroke({ color, alpha: glyphAlpha, width: stroke })
+          .moveTo(glyphX - arm, glyphY + arm).lineTo(glyphX + arm, glyphY + arm).stroke({ color: 0xffd162, alpha: glyphAlpha, width: stroke });
+        graphic.circle(glyphX, glyphY, 10 + intensity * 8).fill({ color: 0xfff4bc, alpha: 0.94 });
+        for (let ember = 0; ember < 8; ember++) {
+          const angle = ember / 8 * Math.PI * 2 + progress * 7;
+          graphic.circle(glyphX + Math.cos(angle) * arm * 0.9, glyphY + Math.sin(angle) * arm * 0.58, 3 + intensity * 2).fill({ color: ember % 2 ? color : 0xfff0a7, alpha: 0.72 });
+        }
+      } else this.drawElementalProjectile(graphic, shape, { x, y }, { nx, ny, px, py }, color, intensity, progress);
       if (shape === 'generic') graphic.moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
         .circle(x, y, 8 + intensity * 10).fill({ color, alpha: 0.9 });
       if (variant === 'psychic-bolt' && shape !== 'psychic-orbit') {
@@ -708,6 +922,35 @@ export class BattleStage implements BattleRenderer {
         graphic.moveTo(at.x - radius * 0.7, at.y + radius * 0.3).lineTo(at.x + radius * 0.7, at.y - radius * 0.3).stroke({ color: 0xffffff, alpha, width: 5 + intensity * 3 });
       } else if (variant === 'body-slam') {
         graphic.ellipse(at.x, at.y, radius * 0.85, radius * 0.46).fill({ color, alpha: alpha * 0.58 });
+      } else if (variant === 'wing-slap') {
+        for (const side of [-1, 1]) graphic.moveTo(at.x - radius * 0.62, at.y + side * radius * 0.28).lineTo(at.x + radius * 0.62, at.y - side * radius * 0.28).stroke({ color: side > 0 ? 0xffffff : color, alpha, width: 5 + intensity * 3 });
+      } else if (variant === 'beak-peck' || variant === 'tusk-gore') {
+        const prongs = variant === 'tusk-gore' ? [-1, 1] : [0];
+        for (const prong of prongs) graphic.poly([at.x - radius * 0.68, at.y + prong * radius * 0.22, at.x + radius * 0.70, at.y + prong * radius * 0.12, at.x - radius * 0.18, at.y + prong * radius * 0.48]).fill({ color: prong === 0 ? 0xffffff : color, alpha });
+      } else if (variant === 'pincer-snap') {
+        for (const side of [-1, 1]) graphic.moveTo(at.x - radius * 0.54, at.y + side * radius * 0.54).lineTo(at.x + radius * 0.50, at.y + side * radius * 0.12).lineTo(at.x + radius * 0.17, at.y).stroke({ color: side > 0 ? 0xffffff : color, alpha, width: 5 + intensity * 3 });
+      } else if (variant === 'whip-lash') {
+        graphic.moveTo(at.x - radius * 0.72, at.y + radius * 0.34).lineTo(at.x - radius * 0.12, at.y - radius * 0.48).lineTo(at.x + radius * 0.70, at.y + radius * 0.10).stroke({ color, alpha, width: 5 + intensity * 3 });
+      } else if (variant === 'kick') {
+        graphic.moveTo(at.x - radius * 0.62, at.y + radius * 0.46).lineTo(at.x + radius * 0.62, at.y - radius * 0.30).stroke({ color: 0xffffff, alpha, width: 7 + intensity * 3 });
+      } else if (variant === 'shell-bash') {
+        graphic.arc(at.x, at.y, radius * 0.68, Math.PI * 0.15, Math.PI * 1.85).stroke({ color, alpha, width: 7 + intensity * 3 }).circle(at.x, at.y, radius * 0.30).fill({ color: 0xffffff, alpha: alpha * 0.46 });
+      }
+      if (variant === 'fire-glyph') {
+        const glyph = radius * (0.72 + progress * 0.42);
+        const line = Math.max(4, 7 + intensity * 4 - progress * 3);
+        graphic.moveTo(at.x - glyph, at.y - glyph).lineTo(at.x + glyph, at.y - glyph).stroke({ color, alpha: alpha * 0.84, width: line })
+          .moveTo(at.x, at.y - glyph).lineTo(at.x, at.y + glyph).stroke({ color: 0xffe08a, alpha, width: line })
+          .moveTo(at.x - glyph * 0.8, at.y).lineTo(at.x + glyph * 0.8, at.y).stroke({ color, alpha, width: line })
+          .moveTo(at.x - glyph, at.y + glyph).lineTo(at.x + glyph, at.y + glyph).stroke({ color: 0xffbc4b, alpha: alpha * 0.82, width: line });
+        graphic.circle(at.x, at.y, glyph * 0.43).fill({ color: 0xfff2b1, alpha: alpha * 0.82 });
+        for (let index = 0; index < 10; index++) {
+          const angle = index / 10 * Math.PI * 2 + progress * 4;
+          const distance = glyph * (0.68 + progress * 0.46);
+          graphic.moveTo(at.x + Math.cos(angle) * glyph * 0.18, at.y + Math.sin(angle) * glyph * 0.14)
+            .lineTo(at.x + Math.cos(angle) * distance, at.y + Math.sin(angle) * distance * 0.62)
+            .stroke({ color: index % 2 ? color : 0xffe69c, alpha: alpha * 0.86, width: 2 + intensity * 2 });
+        }
       }
       if (variant === 'dive') {
         // Independent impact burst: the release trail is drawn by spawnDive;
@@ -790,7 +1033,22 @@ export class BattleStage implements BattleRenderer {
       const py = nx;
       const width = 10 + intensity * 22;
       graphic.clear();
-      if (shape === 'flame') {
+      if (shape === 'flame' && variant === 'flame-stream') {
+        const streamWidth = 18 + intensity * 24;
+        const tongueCount = this.quality === 'cinematic' ? 7 : this.quality === 'standard' ? 5 : 3;
+        for (let lane = -2; lane <= 2; lane++) {
+          const offset = lane * streamWidth * 0.28 + Math.sin(progress * 24 + lane * 2.1) * streamWidth * 0.10;
+          graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset * 0.34, to.y + py * offset * 0.34)
+            .stroke({ color: lane === 0 ? 0xfff4bd : lane % 2 ? 0xffc14f : color, alpha: alpha * (lane === 0 ? 0.96 : 0.58), width: streamWidth * (lane === 0 ? 0.48 : 0.34) });
+        }
+        for (let tongue = 0; tongue < tongueCount; tongue++) {
+          const t = (tongue / tongueCount + progress * 0.50) % 1;
+          const sway = Math.sin(progress * 22 + tongue * 1.7) * streamWidth * 0.62;
+          const cx = from.x + dx * t + px * sway;
+          const cy = from.y + dy * t + py * sway;
+          graphic.poly([cx - px * 5, cy - py * 5, cx + nx * (18 + intensity * 13), cy + ny * (18 + intensity * 13), cx + px * 5, cy + py * 5]).fill({ color: tongue % 3 ? color : 0xffef9d, alpha: alpha * 0.82 });
+        }
+      } else if (shape === 'flame') {
         for (let lane = -1; lane <= 1; lane++) {
           const offset = lane * width * 0.28;
           graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset, to.y + py * offset).stroke({ color: lane === 0 ? 0xffefad : color, alpha: alpha * (lane === 0 ? 0.92 : 0.56), width: lane === 0 ? width * 0.46 : width * 0.38 });

@@ -34,9 +34,12 @@ export const SKILL_VISUAL_GRAMMAR: Readonly<Record<TypeName, SkillVisualGrammar>
 
 const SIGNATURE_VARIANTS: Readonly<Record<string, SkillRecipeVariant>> = {
   'hyper-beam': 'meteor', 'solar-beam': 'surge', 'draco-meteor': 'meteor', 'volt-chain': 'chain',
+  'thunder-shock': 'spark-bolt', 'thunderbolt': 'arc-bolt', 'thunder': 'sky-strike',
+  'lightning-feint': 'arc-bolt', 'thunderstorm-reign': 'sky-strike',
   'thunder-crown': 'crown', 'frostbound-hymn': 'hymn', 'renewal-chant': 'chant', 'genesis-pulse': 'hymn',
   'psyonic-annihilation': 'meteor', 'sunfire-pursuit': 'surge', 'tempest-breaker': 'surge',
   'blazing-dive': 'dive', 'shadow-trap': 'bind', 'chilling-snare': 'snare', 'toxic-bind': 'bind',
+  'flamethrower': 'flame-stream', 'fire-blast': 'fire-glyph',
 };
 
 /** Signature choreography remains a property of one shared skill recipe. Any
@@ -55,8 +58,13 @@ const SIGNATURE_ACTOR_CHOREOGRAPHIES: Readonly<Record<string, BattleActorChoreog
   },
 };
 
+const DELIVERY_OVERRIDES: Readonly<Record<string, DeliveryKind>> = {
+  flamethrower: 'beam',
+};
+
 function deliveryFor(skill: Skill): DeliveryKind {
   if (skill.effect?.kind === 'heal' || skill.effect?.kind === 'shield' || skill.effect?.kind === 'buff') return 'aura';
+  if (DELIVERY_OVERRIDES[skill.id]) return DELIVERY_OVERRIDES[skill.id];
   if (skill.targetMode === 'all-enemies') return 'area';
   if (skill.range === 'melee') return 'melee';
   if (skill.id.includes('beam') || skill.id.includes('ray') || skill.id.includes('laser')) return 'beam';

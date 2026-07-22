@@ -492,6 +492,10 @@ export interface BattleCombatant {
   normalAttackSpeedMultiplier: number;
   /** Fractional passive regeneration accumulates until it resolves as whole HP. */
   regenAccumulator: number;
+  /** Absolute simulator time at which a brief stun/flinch ends. */
+  flinchUntil?: number;
+  /** Presentation-only snapshot flag derived from flinchUntil and snapshot time. */
+  stunActive?: boolean;
   status: StatusKind | null;
   statusTimer: number;
   statStages: { atk: number; def: number; spd: number };
@@ -522,7 +526,9 @@ export interface BattleCombatant {
   displayLabel?: string;
 }
 
-export type NormalAttackVisualStyle = 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'psychic-bolt' | 'elemental-bolt';
+export type NormalAttackVisualStyle =
+  | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'wing-slap' | 'beak-peck' | 'tusk-gore' | 'pincer-snap' | 'whip-lash' | 'kick' | 'shell-bash'
+  | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star';
 
 /** Visual-effect hint attached to a BattleEvent so the frontend renderer can
  *  spawn the right animation (projectile / burst / aura / floating number ...)
