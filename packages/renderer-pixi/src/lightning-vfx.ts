@@ -61,7 +61,7 @@ export function spawnSkyStrike(runtime: BattleEffectPool, at: BattleStagePoint, 
       const radius = 34 + progress * (78 + intensity * 44);
       graphic.ellipse(at.x, at.y + 26, radius, radius * 0.23).stroke({ color: 0x9ee7ff, alpha: afterAlpha * 0.42, width: 5 })
         .ellipse(at.x, at.y + 24, radius * 0.58, radius * 0.14).stroke({ color: 0xffea72, alpha: afterAlpha * 0.72, width: 3 });
-      const sparkCount = runtime.quality === 'cinematic' ? 9 : runtime.quality === 'standard' ? 6 : 4;
+      const sparkCount = 6;
       for (let spark = 0; spark < sparkCount; spark++) {
         const angle = spark / sparkCount * Math.PI * 2 + spark * 0.37;
         const distance = 22 + progress * (70 + (spark % 3) * 18);

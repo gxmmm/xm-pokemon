@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
 import { getSpecies, SKILL_MAP, SPECIES_LIST, TYPE_COLORS, type BattleEnvironmentId } from '@pokemon-online/config';
 import { BattleSim } from '@pokemon-online/engine';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import type { BattleCombatant } from '@pokemon-online/shared';
-import type { QualityProfile } from '@pokemon-online/renderer';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import { BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../battle/BattleSandboxTeams.ts';
@@ -19,7 +18,6 @@ const enemySpeciesIds = ref<number[]>([]);
 const activeSide = ref<'player' | 'enemy'>('player');
 const search = ref('');
 const biome = ref<BattleEnvironmentId>('grass');
-const quality = ref<QualityProfile>('standard');
 const running = ref(false);
 const result = ref('');
 const gpuUnavailable = ref<string | null>(null);
@@ -198,7 +196,6 @@ function onPixiUnavailable(message: string): void {
   running.value = false;
 }
 
-watch(quality, () => { /* PixiBattleViewport reacts through its prop. */ });
 onMounted(() => {
   lastFrame = performance.now();
   raf = requestAnimationFrame(frame);
@@ -248,7 +245,6 @@ onUnmounted(() => cancelAnimationFrame(raf));
 
       <footer class="setup-footer">
         <label>环境 <select v-model="biome"><option value="grass">草原</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label>
-        <label>质量 <select v-model="quality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label>
         <span class="muted tiny">所选物种不进入图鉴、背包、队伍或战斗记录。</span>
         <button class="good start-button" type="button" :disabled="!canStart" @click="startBattle">开始 {{ playerTeam.length }}v{{ enemyTeam.length }} 满级随机战斗</button>
       </footer>
@@ -256,7 +252,7 @@ onUnmounted(() => cancelAnimationFrame(raf));
 
     <template v-else>
       <div class="sandbox-battle">
-        <div class="battle-meta"><span>环境：{{ biome }}</span><span>质量：{{ quality }}</span><span>演绎时间：{{ simulationTime.toFixed(1) }}s</span><span v-if="result" class="result">{{ result }}</span></div>
+        <div class="battle-meta"><span>环境：{{ biome }}</span><span>标准品质</span><span>演绎时间：{{ simulationTime.toFixed(1) }}s</span><span v-if="result" class="result">{{ result }}</span></div>
         <div class="sandbox-stage">
           <aside class="sandbox-side player">
             <header>我方状态</header>
@@ -270,7 +266,7 @@ onUnmounted(() => cancelAnimationFrame(raf));
             </article>
           </aside>
           <div class="arena">
-            <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="cues" :biome="biome" :quality="quality" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+            <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="cues" :biome="biome" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
             <div class="action-feed" aria-live="polite"><span v-for="action in actionFeed" :key="action.id" :class="action.tone">{{ action.text }}</span></div>
             <div v-if="gpuUnavailable" class="gpu-error">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
           </div>

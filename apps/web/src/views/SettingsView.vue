@@ -4,8 +4,8 @@ import { useAuthStore } from '../stores/auth.ts';
 import { useMessage } from '../stores/message.ts';
 import { useRouter } from 'vue-router';
 import BackHub from '../components/BackHub.vue';
-import { updateVisualRuntimeSettings, visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
-import type { CameraIntensity, QualityPreference } from '@pokemon-online/renderer';
+import { updateVisualRuntimeSettings, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
+import type { CameraIntensity } from '@pokemon-online/renderer';
 
 const game = useGameStore();
 const auth = useAuthStore();
@@ -15,7 +15,6 @@ const router = useRouter();
 function setSpeed(s: number): void { game.updateSettings({ battleSpeed: s }); }
 function toggleMusic(): void { game.updateSettings({ music: !game.save!.settings.music }); }
 function toggleSfx(): void { game.updateSettings({ sfx: !game.save!.settings.sfx }); }
-function setQualityPreference(qualityPreference: QualityPreference): void { updateVisualRuntimeSettings({ qualityPreference }); }
 function toggleReduceFlicker(): void { updateVisualRuntimeSettings({ reduceFlicker: !visualRuntimeSettings.value.reduceFlicker }); }
 function setCameraIntensity(cameraIntensity: CameraIntensity): void { updateVisualRuntimeSettings({ cameraIntensity }); }
 
@@ -63,19 +62,7 @@ async function manualSave(): Promise<void> {
 
     <div class="panel" style="margin-bottom:12px">
       <div class="bold" style="margin-bottom:8px">视觉与可访问性</div>
-      <div>
-        <div class="between" style="margin-bottom:6px"><span>GPU 质量</span><span class="tiny muted">当前：{{ visualRuntimeCapabilities.quality }}</span></div>
-        <div class="row">
-          <button v-for="option in [
-            { value: 'auto', label: '自动' },
-            { value: 'cinematic', label: '电影' },
-            { value: 'standard', label: '标准' },
-            { value: 'compatibility', label: '兼容' },
-          ]" :key="option.value" :class="{ gold: visualRuntimeSettings.qualityPreference === option.value }" @click="setQualityPreference(option.value as QualityPreference)">{{ option.label }}</button>
-        </div>
-        <div class="tiny muted" style="margin-top:6px">自动模式会依据 WebGL / WebGL2、设备内存与像素密度选择档位；手动档会立即作用于已开启的 GPU 世界与战斗 renderer。</div>
-      </div>
-      <div class="between" style="margin-top:12px">
+      <div class="between">
         <div><span>减少闪烁</span><div class="tiny muted">降低 GPU 特效、转场与环境动态的闪烁感</div></div>
         <button class="sm" :class="{ gold: visualRuntimeSettings.reduceFlicker }" @click="toggleReduceFlicker">{{ visualRuntimeSettings.reduceFlicker ? '开' : '关' }}</button>
       </div>

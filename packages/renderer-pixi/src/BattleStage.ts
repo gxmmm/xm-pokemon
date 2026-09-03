@@ -1,4 +1,4 @@
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type QualityProfile, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
+import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, type BattleEnvironmentSpec } from '@pokemon-online/config';
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
@@ -14,7 +14,6 @@ import { DrawCallObserver } from './draw-call-observer.ts';
 import { spawnChainLightning, spawnSkyStrike } from './lightning-vfx.ts';
 
 export interface BattleStageDiagnostics {
-  quality: QualityProfile;
   biomeId: string;
   combatantCount: number;
   activeEffectCount: number;
@@ -64,7 +63,6 @@ export class BattleStage implements BattleRenderer {
   private delayedCues: DelayedBattleCue[] = [];
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
-  private quality: QualityProfile;
   private biomeId = 'grass';
   private cameraScale = 1;
   private cameraOffset: Point = { x: 0, y: 0 };
@@ -75,11 +73,6 @@ export class BattleStage implements BattleRenderer {
   private transitionLayer: Graphics | null = null;
   private drawCallObserver: DrawCallObserver | null = null;
   private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
-
-  constructor(initialQuality: QualityProfile = 'standard') {
-    this.quality = initialQuality;
-    this.effectPool.setQuality(initialQuality);
-  }
 
   async mount(container: HTMLElement): Promise<void> {
     this.unmount();
@@ -138,12 +131,6 @@ export class BattleStage implements BattleRenderer {
     this.mountedContainer = null;
   }
 
-  setQuality(profile: QualityProfile): void {
-    this.quality = profile;
-    this.effectPool.setQuality(profile);
-    this.drawEnvironment();
-  }
-
   setVisualSettings(settings?: VisualRuntimeSettings): void {
     this.visualSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, ...settings };
     this.effectPool.setReduceFlicker(this.visualSettings.reduceFlicker);
@@ -158,7 +145,6 @@ export class BattleStage implements BattleRenderer {
     const canvas = this.app?.canvas;
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
     return {
-      quality: this.quality,
       biomeId: this.biomeId,
       combatantCount: this.views.size,
       activeEffectCount: this.effectPool.activeCount,
@@ -256,7 +242,7 @@ export class BattleStage implements BattleRenderer {
       this.targetScales.set(visualCombatant.uid, projection.scale);
       this.targetGroundScales.set(visualCombatant.uid, groundProjection.scale);
       const profile = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).profile;
-      const contactPlan = terrainContactPlan(spec.contactVisual, profile.locomotionMode, this.quality);
+      const contactPlan = terrainContactPlan(spec.contactVisual, profile.locomotionMode);
       this.terrainContactPlans.set(visualCombatant.uid, contactPlan);
       if (hasContinuousWorldPosition) {
         this.positions.set(visualCombatant.uid, { ...point });
@@ -310,7 +296,7 @@ export class BattleStage implements BattleRenderer {
     const previous = this.contactPositions.get(uid);
     this.contactPositions.set(uid, point);
     const travel = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
-    const pressure = movementPressurePlan(this.quality);
+    const pressure = movementPressurePlan();
     const moved = travel > pressure.minTravelPixels;
     if (moved && (this.pressureCooldowns.get(uid) ?? 0) <= 0 && previous) {
       this.spawnMovementPressure(point, { x: point.x - previous.x, y: point.y - previous.y });
@@ -353,7 +339,7 @@ export class BattleStage implements BattleRenderer {
     if (length < 0.001) return;
     const direction = { x: velocity.x / length, y: velocity.y / length };
     const normal = { x: -direction.y, y: direction.x };
-    const plan = movementPressurePlan(this.quality);
+    const plan = movementPressurePlan();
     const graphic = new Graphics({ blendMode: 'add' });
     this.effectPool.add(graphic, plan.durationSeconds, (progress) => {
       const alpha = (1 - progress) * 0.30;
@@ -467,7 +453,7 @@ export class BattleStage implements BattleRenderer {
   }
 
   private detailDensity(): number {
-    return this.quality === 'cinematic' ? 1 : this.quality === 'standard' ? 0.62 : 0.30;
+    return 0.62;
   }
 
   private drawBackdropGrammar(spec: BattleEnvironmentSpec): void {
@@ -1044,7 +1030,7 @@ export class BattleStage implements BattleRenderer {
           head.x - px * (headWidth * 0.36), head.y - py * (headWidth * 0.36),
           tail.x - px * Math.max(1, tailWidth * 0.38), tail.y - py * Math.max(1, tailWidth * 0.38),
         ]).fill({ color: 0xfff1ae, alpha: 0.88 });
-      const emberCount = this.quality === 'cinematic' ? 8 : this.quality === 'standard' ? 5 : 3;
+      const emberCount = 5;
       for (let index = 0; index < emberCount; index++) {
         const t = Math.max(0, headT - index / (emberCount + 1) * 0.42);
         const sway = Math.sin(progress * 18 + index * 2.3) * (5 + intensity * 4);
@@ -1074,7 +1060,7 @@ export class BattleStage implements BattleRenderer {
       graphic.clear();
       if (shape === 'flame' && variant === 'flame-stream') {
         const streamWidth = 18 + intensity * 24;
-        const tongueCount = this.quality === 'cinematic' ? 7 : this.quality === 'standard' ? 5 : 3;
+        const tongueCount = 5;
         for (let lane = -2; lane <= 2; lane++) {
           const offset = lane * streamWidth * 0.28 + Math.sin(progress * 24 + lane * 2.1) * streamWidth * 0.10;
           graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset * 0.34, to.y + py * offset * 0.34)
@@ -1128,8 +1114,8 @@ export class BattleStage implements BattleRenderer {
 
   private spawnBurst(at: Point, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: import('@pokemon-online/shared').TypeName): void {
     const graphic = new Graphics({ blendMode: 'add' });
-    const qualityCap = this.quality === 'cinematic' ? 24 : this.quality === 'standard' ? 16 : 9;
-    const particleCount = Math.min(Math.max(particleBudget ?? qualityCap, 9), qualityCap);
+    const particleCap = 16;
+    const particleCount = Math.min(Math.max(particleBudget ?? particleCap, 9), particleCap);
     const shape = elementalVfxShapeFor(element);
     const duration = 0.46 + intensity * 0.22;
     this.effectPool.add(graphic, duration, (progress) => {

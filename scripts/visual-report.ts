@@ -20,7 +20,7 @@ console.log(`Battle environments: ${Object.keys(BATTLE_ENVIRONMENTS).join(', ')}
 console.log(`Pixi world maps: ${GPU_WORLD_MAP_IDS.join(', ')}`);
 for (const scene of WORLD_SCENES) {
   const budget = worldSceneBudgetReport(scene);
-  console.log(`World scene ${budget.mapId}: landmarks=${budget.landmarkCount}/${scene.resources.landmarkLimit}, static=${budget.staticContainerCount}/${scene.resources.staticContainerLimit}, entities=${budget.dynamicEntityCount}/${scene.resources.entityLimit}, cinematicParticles=${budget.cinematicAmbientParticles}/${scene.resources.ambientParticleLimit}, preload=${budget.preloadKeyCount}, baseline=${worldSceneFingerprintHash(scene)}, fingerprint=${budget.fingerprint}`);
+  console.log(`World scene ${budget.mapId}: landmarks=${budget.landmarkCount}/${scene.resources.landmarkLimit}, static=${budget.staticContainerCount}/${scene.resources.staticContainerLimit}, entities=${budget.dynamicEntityCount}/${scene.resources.entityLimit}, ambientParticles=${budget.ambientParticleCount}/${scene.resources.ambientParticleLimit}, preload=${budget.preloadKeyCount}, baseline=${worldSceneFingerprintHash(scene)}, fingerprint=${budget.fingerprint}`);
 }
 for (const [label, entries] of failures) console.log(`${label}: ${entries.length}${entries.length ? ` (${entries.join(', ')})` : ''}`);
 if (failures.some(([, entries]) => entries.length > 0)) process.exit(1);

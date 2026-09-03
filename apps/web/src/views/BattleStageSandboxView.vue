@@ -1,24 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { BattleStage } from '@pokemon-online/renderer-pixi';
-import type { QualityProfile } from '@pokemon-online/renderer';
 
 const viewport = ref<HTMLElement | null>(null);
 const running = ref(false);
 const speed = ref(1);
-const requestedQuality = ref<QualityProfile>('cinematic');
 const biomeId = ref<'grass' | 'cave' | 'water' | 'dragon' | 'arena'>('grass');
 const status = ref('准备中');
 const simulationTime = ref(0);
-const stage = new BattleStage(requestedQuality.value);
+const stage = new BattleStage();
 const bridge = new BattlePresentationBridge();
 let sim: BattleSim | null = null;
 let raf = 0;
 let lastFrame = 0;
-
-const qualityLabel = computed(() => requestedQuality.value);
 
 function makeSimulation(): BattleSim {
   return new BattleSim({
@@ -40,10 +36,6 @@ async function resetBattle(): Promise<void> {
 }
 
 function toggle(): void { running.value = !running.value; }
-function setQuality(): void {
-  stage.setQuality(requestedQuality.value);
-  status.value = `质量档位已切换为 ${requestedQuality.value}。compatibility 会保留战斗信息并降低环境密度。`;
-}
 
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
@@ -63,7 +55,6 @@ function frame(now: number): void {
   raf = requestAnimationFrame(frame);
 }
 
-watch(requestedQuality, setQuality);
 watch(biomeId, () => { void resetBattle(); });
 onMounted(async () => {
   if (!viewport.value) return;
@@ -91,8 +82,7 @@ onUnmounted(() => {
       <button type="button" @click="resetBattle">重置 3v1</button>
       <label>速度 <select v-model.number="speed"><option :value="1">1x</option><option :value="2">2x</option><option :value="3">3x</option></select></label>
       <label>环境 <select v-model="biomeId"><option value="grass">grass</option><option value="cave">cave</option><option value="water">water</option><option value="dragon">dragon</option><option value="arena">arena</option></select></label>
-      <label>质量 <select v-model="requestedQuality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label>
-      <span>模拟时间 {{ simulationTime.toFixed(1) }}s · {{ qualityLabel }}</span>
+      <span>模拟时间 {{ simulationTime.toFixed(1) }}s · 标准品质</span>
     </div>
 
     <div ref="viewport" class="viewport" aria-label="Pixi BattleStage vertical slice"></div>

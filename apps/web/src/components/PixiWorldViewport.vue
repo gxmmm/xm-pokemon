@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { WorldSceneSpec } from '@pokemon-online/config';
-import type { QualityProfile, SceneTransitionRequest, VisualRuntimeSettings, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
+import type { SceneTransitionRequest, VisualRuntimeSettings, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
 import { WorldStage } from '@pokemon-online/renderer-pixi';
 import { startRendererObservation } from '../visuals/runtime-observation.ts';
 
 const props = defineProps<{
   scene: WorldSceneSpec;
   entities: readonly WorldEntityRenderSnapshot[];
-  quality?: QualityProfile;
   visualSettings?: VisualRuntimeSettings;
 }>();
 const emit = defineEmits<{
@@ -17,7 +16,7 @@ const emit = defineEmits<{
 }>();
 
 const host = ref<HTMLElement | null>(null);
-const stage = new WorldStage(props.quality ?? 'standard');
+const stage = new WorldStage();
 let mounted = false;
 let stopObservation: (() => void) | null = null;
 let enteredSceneId: string | null = null;
@@ -53,7 +52,6 @@ async function playTransition(request: SceneTransitionRequest): Promise<void> {
 
 function getDiagnostics() { return stage.getDiagnostics(); }
 
-watch(() => props.quality, (quality) => stage.setQuality(quality ?? 'standard'));
 watch(() => props.visualSettings, (settings) => stage.setVisualSettings(settings), { deep: true });
 watch(() => props.scene.id, () => { void syncScene(); });
 // WorldView remains authoritative for movement and interaction. This bridge only

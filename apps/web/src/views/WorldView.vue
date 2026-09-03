@@ -6,12 +6,12 @@ import { useBattleStore } from '../stores/battle.ts';
 import { getMap, isWalkable, isEncounterTile, MAP_MAP, STORY_TRAINERS, STORY_WARP_REQUIREMENTS, WORLD_SCENE_BY_MAP_ID, isGpuWorldMapId, isLowTideReefCell, isTideBlockedCell, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, type StoryNpc, type StoryObject, type StoryScene } from '@pokemon-online/config';
 import { rollWildGroup, ENCOUNTER_CHANCE, dayNight } from '@pokemon-online/engine';
 import type { Facing } from '@pokemon-online/shared';
-import type { QualityProfile, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
+import type { WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
 import PixiWorldViewport from '../components/PixiWorldViewport.vue';
 import WorldMap from '../components/WorldMap.vue';
 import { createTransitionState, runTransition } from '../world/transitions.ts';
 import { consumeWorldReturnVisualTransition, requestBattleVisualTransition } from '../game/SceneVisualTransition.ts';
-import { visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
+import { visualRuntimeSettings } from '../visuals/runtime-settings.ts';
 import { rendererObservationEnabled } from '../visuals/runtime-observation.ts';
 
 declare global {
@@ -39,7 +39,6 @@ const returnedFromGpuBattle = consumeWorldReturnVisualTransition();
 const map = computed(() => getMap(game.save!.currentMapId));
 // A reviewed Scene Pack is the single eligibility source for the Pixi world.
 const gpuUnavailable = ref<string | null>(null);
-const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
 const pixiStatus = ref(
   returnedFromGpuBattle && isGpuWorldMapId(returnedFromGpuBattle.mapId)
     ? '正在恢复 GPU 世界 renderer…'
@@ -47,10 +46,6 @@ const pixiStatus = ref(
 );
 const pixiWorldRef = ref<InstanceType<typeof PixiWorldViewport> | null>(null);
 const gpuWorldScene = computed(() => isGpuWorldMapId(map.value.id) ? WORLD_SCENE_BY_MAP_ID[map.value.id] : undefined);
-watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
-  pixiQuality.value = quality;
-  pixiStatus.value = `GPU ${map.value.name} ${quality} renderer`;
-});
 const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
   { id: 'player', kind: 'player', position: { x: view.px, y: view.py }, facing: view.facing },
   ...npcs.value.map((npc) => ({ id: npc.id, kind: 'npc' as const, position: { x: npc.x, y: npc.y } })),
@@ -58,7 +53,7 @@ const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
 ]);
 async function onPixiWorldReady(): Promise<void> {
   gpuUnavailable.value = null;
-  pixiStatus.value = `GPU ${map.value.name} ${pixiQuality.value} renderer`;
+  pixiStatus.value = `GPU ${map.value.name} 标准品质 renderer`;
   if (returnedFromGpuBattle?.mapId === map.value.id && isGpuWorldMapId(map.value.id)) {
     await nextTick();
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 260, color: '#0b2430' });
@@ -73,7 +68,7 @@ async function enterBattleRoute(): Promise<void> {
   // created by the battle store and world movement stays frozen by `leaving`.
   if (!gpuUnavailable.value && isGpuWorldMapId(map.value.id)) {
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
-    requestBattleVisualTransition({ mapId: map.value.id, quality: pixiQuality.value });
+    requestBattleVisualTransition({ mapId: map.value.id });
   }
   await router.push({ name: 'battle' });
 }
@@ -371,7 +366,7 @@ watch(() => game.save?.position, () => {
     <div class="objective"><span>主线目标</span><strong>{{ objective }}</strong></div>
 
     <div class="canvas-wrap">
-      <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
+      <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :visual-settings="visualRuntimeSettings" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
       <div v-else class="gpu-unavailable">GPU 世界场景不可用。</div>
       <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 世界渲染不可用：{{ gpuUnavailable }}</div>
     </div>

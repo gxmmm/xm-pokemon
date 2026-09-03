@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
-import type { QualityProfile, SceneTransitionRequest, VisualRuntimeSettings } from '@pokemon-online/renderer';
+import type { SceneTransitionRequest, VisualRuntimeSettings } from '@pokemon-online/renderer';
 import { BattleStage } from '@pokemon-online/renderer-pixi';
 import { startRendererObservation } from '../visuals/runtime-observation.ts';
 
@@ -9,7 +9,6 @@ const props = defineProps<{
   presentation?: BattlePresentation;
   cues?: readonly DirectedBattleCue[];
   biome: string;
-  quality?: QualityProfile;
   visualSettings?: VisualRuntimeSettings;
   introTransition?: boolean;
 }>();
@@ -19,7 +18,7 @@ const emit = defineEmits<{
 }>();
 
 const host = ref<HTMLElement | null>(null);
-const stage = new BattleStage(props.quality ?? 'standard');
+const stage = new BattleStage();
 let mounted = false;
 let stopObservation: (() => void) | null = null;
 let enteredBiome: string | null = null;
@@ -56,7 +55,6 @@ onMounted(async () => {
   }
 });
 
-watch(() => props.quality, (quality) => stage.setQuality(quality ?? 'standard'));
 watch(() => props.visualSettings, (settings) => stage.setVisualSettings(settings), { deep: true });
 watch(() => props.presentation, (presentation) => { void syncPresentation(presentation); });
 // BattlePresentationBridge supplies an incremental array each frame. Deliberately

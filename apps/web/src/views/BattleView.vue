@@ -10,11 +10,10 @@ import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
-import type { QualityProfile } from '@pokemon-online/renderer';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { consumeBattleVisualTransition, requestWorldReturnVisualTransition } from '../game/SceneVisualTransition.ts';
-import { visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
+import { visualRuntimeSettings } from '../visuals/runtime-settings.ts';
 import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
@@ -30,19 +29,14 @@ const totalExp = ref(0);
 const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
 // BattleStage is the only gameplay renderer for wild, story, and PvP battles.
 const gpuUnavailable = ref<string | null>(null);
-const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
 const pixiStatus = ref(enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
 const returningToWorld = ref(false);
 let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
-watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
-  pixiQuality.value = quality;
-  pixiStatus.value = `GPU ${quality} renderer`;
-});
 function onPixiReady(): void {
   gpuUnavailable.value = null;
-  pixiStatus.value = `GPU ${pixiQuality.value} renderer`;
+  pixiStatus.value = 'GPU 标准品质 renderer';
 }
 function onPixiUnavailable(message: string): void {
   gpuUnavailable.value = message;
@@ -321,7 +315,7 @@ async function returnToWorld(): Promise<void> {
   returningToWorld.value = true;
   if (!gpuUnavailable.value && battle.mapId && isGpuWorldMapId(battle.mapId)) {
     await pixiRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
-    requestWorldReturnVisualTransition({ mapId: battle.mapId, quality: pixiQuality.value });
+    requestWorldReturnVisualTransition({ mapId: battle.mapId });
   }
   battle.clear();
   await router.replace({ name: 'world' });
@@ -394,7 +388,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>

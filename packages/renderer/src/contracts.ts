@@ -1,19 +1,15 @@
 import type { BattleActorChoreography, BattleCombatant, BattleWorldPosition, TypeName } from '@pokemon-online/shared';
 
-export type QualityProfile = 'cinematic' | 'standard' | 'compatibility';
-export type QualityPreference = 'auto' | QualityProfile;
 export type CameraIntensity = 'full' | 'reduced' | 'off';
 
 /** Low-frequency presentation preferences. They contain no game, save, or
  * simulation state and cross the Vue-to-renderer bridge as a renderer-neutral DTO. */
 export interface VisualRuntimeSettings {
-  qualityPreference: QualityPreference;
   reduceFlicker: boolean;
   cameraIntensity: CameraIntensity;
 }
 
 export const DEFAULT_VISUAL_RUNTIME_SETTINGS: Readonly<VisualRuntimeSettings> = {
-  qualityPreference: 'auto',
   reduceFlicker: false,
   cameraIntensity: 'full',
 };
@@ -28,7 +24,6 @@ export interface SceneTransitionRequest {
 export interface GameRenderer {
   mount(container: HTMLElement): Promise<void>;
   unmount(): void;
-  setQuality(profile: QualityProfile): void;
   preload(keys: readonly AssetKey[]): Promise<void>;
   transition(request: SceneTransitionRequest): Promise<void>;
 }

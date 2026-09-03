@@ -2,14 +2,12 @@
 declare global { interface Window { __WORLD_STAGE_DIAGNOSTICS__?: () => import('@pokemon-online/renderer-pixi').WorldStageDiagnostics; } }
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { WORLD_SCENE_BY_MAP_ID } from '@pokemon-online/config';
-import type { QualityProfile, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
+import type { WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
 import { WorldStage } from '@pokemon-online/renderer-pixi';
 
 const viewport = ref<HTMLElement | null>(null);
 const visualRegressionMode = new URLSearchParams(window.location.search).get('visual-regression') === '1';
-const requestedQuality = new URLSearchParams(window.location.search).get('visual-quality');
 const requestedScene = new URLSearchParams(window.location.search).get('visual-scene');
-const quality = ref<QualityProfile>(requestedQuality === 'standard' || requestedQuality === 'compatibility' ? requestedQuality : 'cinematic');
 const running = ref(!visualRegressionMode);
 const SANDBOX_MAP_IDS = [
   'viridian-forest', 'route3', 'rock-tunnel', 'sea-route', 'dragon-den',
@@ -25,7 +23,7 @@ const sceneMapId = ref<SandboxMapId>(isSandboxMapId(requestedScene) ? requestedS
 const status = ref('正在挂载 WorldStage…');
 const time = ref(0);
 const scene = computed(() => WORLD_SCENE_BY_MAP_ID[sceneMapId.value]!);
-const stage = new WorldStage(quality.value);
+const stage = new WorldStage();
 let raf = 0;
 let last = 0;
 
@@ -149,11 +147,6 @@ function frame(now: number): void {
   }
   raf = requestAnimationFrame(frame);
 }
-function setQuality(): void {
-  stage.setQuality(quality.value);
-  status.value = `${quality.value}：环境粒子密度已按质量档位调整，scene 与地图规则仍完全分离。`;
-}
-watch(quality, setQuality);
 watch(sceneMapId, () => { void syncScene(); });
 onMounted(async () => {
   if (!viewport.value) return;
@@ -181,14 +174,13 @@ onUnmounted(() => {
     <div class="controls">
       <button type="button" @click="running = !running">{{ running ? '暂停人物行为' : '继续人物行为' }}</button>
       <label>场景 <select v-model="sceneMapId"><option value="illusion-tower-1">幻境之塔·一层</option><option value="illusion-tower-2">幻境之塔·二层</option><option value="illusion-tower-3">幻境之塔·三层</option><option value="illusion-tower-4">幻境之塔·四层</option><option value="illusion-tower-5">幻境之塔·五层（同一参数包）</option><option value="sea-route">静潮群岛</option><option value="rock-tunnel">赤砾裂谷</option><option value="route3">星陨高径</option><option value="viridian-forest">迷雾林境</option><option value="dragon-den">潮洞</option><option value="deep-space">深空遗迹对照</option><option value="mt-moon">星陨观测所对照</option><option value="route1">萤火林道对照</option><option value="pallet">雾湾镇对照</option></select></label>
-      <label>质量 <select v-model="quality"><option value="cinematic">cinematic</option><option value="standard">standard</option><option value="compatibility">compatibility</option></select></label>
       <span>{{ scene.biome }} · {{ landmarks.length }} 个配置化地标 · {{ sceneMapId.startsWith('illusion-tower-') ? '玩家会穿过投影符文雾幕' : sceneMapId === 'sea-route' ? '玩家会穿过礁石海雾前景' : sceneMapId === 'rock-tunnel' ? '玩家会穿过低光岩檐前景' : sceneMapId === 'route3' ? '玩家会穿过断崖岩檐前景' : sceneMapId === 'viridian-forest' ? '玩家会穿过迷雾树冠前景' : sceneMapId === 'dragon-den' ? '玩家会穿过潮雾前景' : sceneMapId === 'deep-space' ? '玩家会穿过近景失重石台' : sceneMapId === 'mt-moon' ? '玩家会穿过穹顶前景' : sceneMapId === 'route1' ? '玩家会穿过树冠前景' : '玩家会穿过屋檐' }}</span>
     </div>
     <div ref="viewport" class="viewport" :class="sceneMapId" aria-label="WorldStage sandbox" data-testid="world-stage-viewport"></div>
     <p class="status">{{ status }}</p>
     <ul>
       <li>该页面只验证 Scene Pack 与 WorldStage，不接管移动、碰撞、遭遇、剧情或存档。</li>
-      <li>三档质量只调整表现预算，不改变地图规则；所有正式地图统一使用 Pixi。</li>
+      <li>世界场景统一使用标准品质与固定表现预算；所有正式地图统一使用 Pixi。</li>
     </ul>
   </section>
 </template>

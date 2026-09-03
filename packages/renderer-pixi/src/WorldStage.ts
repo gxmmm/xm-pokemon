@@ -1,4 +1,4 @@
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type QualityProfile, type SceneTransitionRequest, type VisualRuntimeSettings, type WorldCue, type WorldRenderInput, type WorldRenderer, type WorldRenderSnapshot } from '@pokemon-online/renderer';
+import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type SceneTransitionRequest, type VisualRuntimeSettings, type WorldCue, type WorldRenderInput, type WorldRenderer, type WorldRenderSnapshot } from '@pokemon-online/renderer';
 import { Application, Container, Graphics } from 'pixi.js';
 import { CharacterView, type CharacterAppearance, type CharacterBehavior } from './CharacterView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
@@ -47,7 +47,6 @@ export interface WorldStageSceneSpec {
 
 export interface WorldStageDiagnostics {
   sceneId: string | null;
-  quality: QualityProfile;
   preloadKeyCount: number;
   ambientParticleCount: number;
   entityCount: number;
@@ -99,14 +98,11 @@ export class WorldStage implements WorldRenderer {
   private readonly scenePreloadKeys = new Set<AssetKey>();
   private host: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  private quality: QualityProfile;
   private activeScene: WorldStageSceneSpec | null = null;
   private elapsed = 0;
   private motionEnabled = true;
   private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
   private drawCallObserver: DrawCallObserver | null = null;
-
-  constructor(quality: QualityProfile = 'standard') { this.quality = quality; }
 
   async mount(host: HTMLElement): Promise<void> {
     this.unmount();
@@ -166,7 +162,6 @@ export class WorldStage implements WorldRenderer {
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
     return {
       sceneId: this.activeScene?.id ?? null,
-      quality: this.quality,
       preloadKeyCount: this.scenePreloadKeys.size,
       ambientParticleCount: this.ambientParticles.length,
       entityCount: this.characterViews.size + this.objectViews.size,
@@ -178,14 +173,6 @@ export class WorldStage implements WorldRenderer {
       drawCallsSinceLastSample: drawCalls.sinceLastRead,
       motionEnabled: this.motionEnabled,
     };
-  }
-
-  setQuality(quality: QualityProfile): void {
-    if (this.quality === quality) return;
-    this.quality = quality;
-    // Rebuild static/environment layers only. Entity snapshots remain intact,
-    // so renderer quality never changes authoritative world facts.
-    this.drawScene();
   }
 
   async preload(keys: readonly AssetKey[]): Promise<void> {
@@ -706,9 +693,9 @@ export class WorldStage implements WorldRenderer {
   }
 
   private drawAmbience(ambience: { preset: string; density: number }, palette: ScenePalette): void {
-    const qualityCount = this.quality === 'cinematic' ? 30 : this.quality === 'standard' ? 17 : 7;
-    const requested = Math.max(2, Math.round(qualityCount * Math.max(0.2, ambience.density / 0.42)));
-    const sceneLimit = this.activeScene?.resources?.ambientParticleLimit ?? qualityCount;
+    const standardParticleCount = 17;
+    const requested = Math.max(2, Math.round(standardParticleCount * Math.max(0.2, ambience.density / 0.42)));
+    const sceneLimit = this.activeScene?.resources?.ambientParticleLimit ?? standardParticleCount;
     const count = Math.min(requested, sceneLimit);
     const luminous = ambience.preset === 'pollen' || ambience.preset === 'starlight' || ambience.preset === 'rune';
     for (let index = 0; index < count; index++) {
@@ -717,14 +704,14 @@ export class WorldStage implements WorldRenderer {
       const graphic = new Graphics({ blendMode: luminous ? 'add' : 'normal' });
       if (ambience.preset === 'pollen') {
         const radius = 1.5 + index % 3;
-        graphic.circle(baseX, baseY, radius).fill({ color: index % 3 === 0 ? palette.accent : palette.fog, alpha: this.quality === 'compatibility' ? 0.48 : 0.7 })
+        graphic.circle(baseX, baseY, radius).fill({ color: index % 3 === 0 ? palette.accent : palette.fog, alpha: 0.7 })
           .circle(baseX, baseY, radius * 3.2).fill({ color: palette.accent, alpha: 0.06 });
       } else if (ambience.preset === 'starlight' || ambience.preset === 'rune') {
         const radius = 2 + index % 3;
-        graphic.star(baseX, baseY, ambience.preset === 'rune' ? 5 : 4, radius * 2.4, radius * 0.72).fill({ color: index % 3 === 0 ? palette.accent : palette.fog, alpha: this.quality === 'compatibility' ? 0.42 : 0.68 })
+        graphic.star(baseX, baseY, ambience.preset === 'rune' ? 5 : 4, radius * 2.4, radius * 0.72).fill({ color: index % 3 === 0 ? palette.accent : palette.fog, alpha: 0.68 })
           .circle(baseX, baseY, radius * 3).fill({ color: palette.accent, alpha: 0.05 });
       } else {
-        graphic.ellipse(baseX, baseY, 35 + index % 3 * 9, 9 + index % 2 * 3).fill({ color: palette.fog, alpha: this.quality === 'compatibility' ? 0.13 : 0.18 });
+        graphic.ellipse(baseX, baseY, 35 + index % 3 * 9, 9 + index % 2 * 3).fill({ color: palette.fog, alpha: 0.18 });
       }
       this.foreground.addChild(graphic);
       this.ambientParticles.push({ graphic, baseX, baseY, phase: index * 0.71, speed: luminous ? 0.42 + (index % 4) * 0.07 : 0.18 + (index % 4) * 0.035, drift: luminous ? 20 : 32 });

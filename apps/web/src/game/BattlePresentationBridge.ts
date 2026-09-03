@@ -68,7 +68,7 @@ export class BattlePresentationBridge {
   }
 
   /** Holds only the delayed visual cursor. The duration is clamped so a stream
-   * of compatibility-renderer impact signals can never stall battle playback. */
+   * of repeated impact signals can never stall battle playback. */
   requestHitStop(intensity: number): void {
     this.presentationHold = Math.max(this.presentationHold, Math.min(0.20, 0.075 + intensity * 0.10));
   }

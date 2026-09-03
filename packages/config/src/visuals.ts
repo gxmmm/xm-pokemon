@@ -108,7 +108,7 @@ export interface WorldSceneBudgetReport {
   landmarkCount: number;
   staticContainerCount: number;
   dynamicEntityCount: number;
-  cinematicAmbientParticles: number;
+  ambientParticleCount: number;
   preloadKeyCount: number;
   fingerprint: string;
 }
@@ -146,7 +146,7 @@ export interface SkillVisualRecipe {
   /** Optional actor-side motion/visibility choreography. It is static recipe
    * data; presentation forwards it and renderer consumers only execute the DTO. */
   actorChoreography?: BattleActorChoreography;
-  /** Upper bound for the cinematic burst primitive before quality reduction. */
+  /** Upper bound for the burst primitive in the standard renderer. */
   particleBudget: number;
 }
 
@@ -545,14 +545,14 @@ export function isGpuWorldMapId(mapId: string): boolean {
 }
 
 export const WORLD_SCENE_PRELOAD_KEY_CATALOG: readonly WorldScenePreloadKey[] = ['procedural-primitives'];
-const WORLD_STAGE_CINEMATIC_AMBIENT_BASE = 30;
+const WORLD_STAGE_AMBIENT_BASE = 17;
 
 function sceneStaticContainerCount(scene: WorldSceneSpec): number {
   return 3 + (scene.landmarks?.length ?? 0) + 1;
 }
 
-function sceneCinematicAmbientParticles(scene: WorldSceneSpec): number {
-  return Math.max(2, Math.round(WORLD_STAGE_CINEMATIC_AMBIENT_BASE * Math.max(0.2, scene.ambience.density / 0.42)));
+function sceneAmbientParticleCount(scene: WorldSceneSpec): number {
+  return Math.max(2, Math.round(WORLD_STAGE_AMBIENT_BASE * Math.max(0.2, scene.ambience.density / 0.42)));
 }
 
 /** Stable config signature used by Node reports until browser screenshot capture
@@ -601,7 +601,7 @@ export function worldSceneBudgetReport(scene: WorldSceneSpec): WorldSceneBudgetR
     landmarkCount: scene.landmarks?.length ?? 0,
     staticContainerCount: sceneStaticContainerCount(scene),
     dynamicEntityCount: (scene.characters?.length ?? 0) + (scene.objectVisuals?.length ?? 0),
-    cinematicAmbientParticles: sceneCinematicAmbientParticles(scene),
+    ambientParticleCount: sceneAmbientParticleCount(scene),
     preloadKeyCount: scene.resources.preloadKeys.length,
     fingerprint: worldSceneFingerprint(scene),
   };
@@ -622,7 +622,7 @@ export function validateWorldSceneBudgets(scenes: readonly WorldSceneSpec[] = WO
     mapIds.add(scene.mapId);
     const report = worldSceneBudgetReport(scene);
     if (scene.resources.preloadKeys.some((key) => !WORLD_SCENE_PRELOAD_KEY_CATALOG.includes(key))) unknownPreloadKeys.push(scene.id);
-    if (report.landmarkCount > scene.resources.landmarkLimit || report.staticContainerCount > scene.resources.staticContainerLimit || report.dynamicEntityCount > scene.resources.entityLimit || report.cinematicAmbientParticles > scene.resources.ambientParticleLimit) overBudgetSceneIds.push(scene.id);
+    if (report.landmarkCount > scene.resources.landmarkLimit || report.staticContainerCount > scene.resources.staticContainerLimit || report.dynamicEntityCount > scene.resources.entityLimit || report.ambientParticleCount > scene.resources.ambientParticleLimit) overBudgetSceneIds.push(scene.id);
     if (WORLD_SCENE_VISUAL_BASELINES[scene.mapId] !== worldSceneFingerprintHash(scene)) mismatchedBaselineMapIds.push(scene.mapId);
   }
   return {

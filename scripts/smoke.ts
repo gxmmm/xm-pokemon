@@ -10,7 +10,7 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
+import { DEFAULT_VISUAL_RUNTIME_SETTINGS } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 import { Graphics } from 'pixi.js';
 
@@ -66,7 +66,7 @@ function assert(cond: boolean, msg: string): void {
 }
 
 // Long-run renderer observation stays outside rules: route handoffs retain
-// only visual map/quality DTOs, never counters, heap data, or save facts.
+// only visual map DTOs, never counters, heap data, or save facts.
 {
   const observation = { stage: 'world' as const, heapUsedBytes: 1024, diagnostics: { canvasCount: 1, totalChildCount: 12, drawCallTotal: 7 } };
   assert(observation.stage === 'world' && observation.heapUsedBytes === 1024 && observation.diagnostics.canvasCount === 1 && observation.diagnostics.drawCallTotal === 7 && Object.keys(observation).length === 3, 'renderer observation samples remain presentation-only');
@@ -76,8 +76,8 @@ function assert(cond: boolean, msg: string): void {
 // Stage 8 visual preferences are renderer-neutral and deliberately cannot
 // carry player/save/simulation data across the Vue-to-renderer boundary.
 {
-  const settings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, qualityPreference: 'standard' as const, reduceFlicker: true, cameraIntensity: 'reduced' as const };
-  assert(settings.qualityPreference === 'standard' && settings.reduceFlicker && settings.cameraIntensity === 'reduced' && Object.keys(settings).length === 3, 'visual runtime preferences remain presentation-only');
+  const settings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, reduceFlicker: true, cameraIntensity: 'reduced' as const };
+  assert(settings.reduceFlicker && settings.cameraIntensity === 'reduced' && Object.keys(settings).length === 2, 'visual runtime preferences remain presentation-only');
   console.log('✓ Stage 8 presentation-only visual settings contract');
 }
 
@@ -105,7 +105,6 @@ function assert(cond: boolean, msg: string): void {
 // and timing are acceptance-level contracts because cues wait for settlement.
 {
   const runtime = new BattleEffectPool();
-  runtime.setQuality('cinematic');
   spawnSkyStrike(runtime, { x: 640, y: 420 }, 0.8);
   assert(runtime.activeCount === 2 && runtime.container.children.length === 2, 'sky strike owns separate shade and bolt effects');
   runtime.update(0.47);
@@ -190,17 +189,6 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ BattlePresentationBridge delayed cue contract:', cueIds.size);
 }
 
-// Quality selection is pure policy so WebGL probing can remain in a Vue bridge.
-{
-  assert(selectQualityProfile({ webgl: false }).quality === 'compatibility', 'renderer quality falls back without WebGL');
-  assert(selectQualityProfile({ webgl: true, webgl2: false }).quality === 'standard', 'renderer quality selects standard WebGL');
-  assert(selectQualityProfile({ webgl: true, webgl2: true }).quality === 'cinematic', 'renderer quality selects cinematic WebGL2');
-  assert(selectQualityProfile({ webgl: true, webgl2: true, devicePixelRatio: 3 }).reason === 'high-device-pixel-ratio', 'renderer quality protects high-DPR devices in auto mode');
-  assert(selectQualityProfile({ webgl: true, webgl2: true, preferredQuality: 'standard' }).quality === 'standard', 'renderer quality honors manual standard preference');
-  assert(selectQualityProfile({ webgl: true, webgl2: true, preferredQuality: 'compatibility' }).quality === 'compatibility', 'renderer quality honors manual compatibility preference');
-  console.log('✓ renderer quality policy');
-}
-
 // Visual config must cover existing skills and the first two scene-pack samples.
 {
   assert(!!WORLD_SCENE_BY_MAP_ID.pallet && WORLD_SCENE_BY_MAP_ID.pallet.biome === 'mist-harbor', 'Mist Bay scene pack configured');
@@ -254,7 +242,7 @@ function assert(cond: boolean, msg: string): void {
   const groundedShadow = groundShadowPlan(0, 0);
   const raisedShadow = groundShadowPlan(90, 0);
   const hoveringShadow = groundShadowPlan(0, 1, grassFlight.shadowAlphaMultiplier, grassFlight.shadowScaleMultiplier);
-  const standardPressure = movementPressurePlan('standard');
+  const standardPressure = movementPressurePlan();
   const battleGroundNorth = projectBattleGroundPoint(10, 1, BATTLE_ENVIRONMENTS.grass.camera);
   const battleGroundSouth = projectBattleGroundPoint(10, 12, BATTLE_ENVIRONMENTS.grass.camera);
   const raisedBattlePoint = projectBattleWorldPoint(battleWorldPositionFromGrid(10, 12, 2), BATTLE_ENVIRONMENTS.grass.camera);
@@ -514,8 +502,8 @@ function assert(cond: boolean, msg: string): void {
 // Route renderer handoffs are intentionally visual-only DTOs so a world/battle
 // transition cannot carry simulation, collision, or save state across routes.
 {
-  const handoff = { mapId: 'pallet', quality: 'standard' as const };
-  assert(handoff.mapId === 'pallet' && handoff.quality === 'standard' && Object.keys(handoff).length === 2, 'GPU world-battle handoff is visual-only');
+  const handoff = { mapId: 'pallet' };
+  assert(handoff.mapId === 'pallet' && Object.keys(handoff).length === 1, 'GPU world-battle handoff is visual-only');
   console.log('✓ GPU world-battle visual handoff contract');
 }
 
