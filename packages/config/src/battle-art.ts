@@ -2,7 +2,7 @@ import type { Ability, PassiveSkill, Skill, Species, StatusKind, TypeName } from
 import { ABILITIES } from './abilities.ts';
 import { PASSIVE_SKILLS } from './passive-skills.ts';
 import { SPECIES_LIST } from './pokemon.ts';
-import { NORMAL_ATTACK, SKILL_MAP, SKILLS } from './skills.ts';
+import { NORMAL_ATTACK, SKILLS } from './skills.ts';
 import { SKILL_VISUAL_RECIPE_MAP } from './skill-visuals.ts';
 import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
 

@@ -536,11 +536,12 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
   ...ILLUSION_TOWER_SCENES,
 ];
 
-/** Explicit migration gate for formal WorldView GPU rendering. Scene packs can
- * exist for sandbox/prototyping without being eligible for the live world path. */
-export const GPU_WORLD_MAP_IDS = ['pallet', 'route1', 'illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5', 'viridian-forest', 'route3', 'mt-moon', 'rock-tunnel', 'sea-route', 'deep-space', 'dragon-den'] as const;
-export function isGpuWorldMapId(mapId: string): mapId is typeof GPU_WORLD_MAP_IDS[number] {
-  return (GPU_WORLD_MAP_IDS as readonly string[]).includes(mapId);
+/** Every reviewed Scene Pack is eligible for the Pixi world path. Deriving the
+ * index from the scenes avoids maintaining a second map-id whitelist. */
+export const GPU_WORLD_MAP_IDS: readonly string[] = WORLD_SCENES.map((scene) => scene.mapId);
+const GPU_WORLD_MAP_ID_SET = new Set(GPU_WORLD_MAP_IDS);
+export function isGpuWorldMapId(mapId: string): boolean {
+  return GPU_WORLD_MAP_ID_SET.has(mapId);
 }
 
 export const WORLD_SCENE_PRELOAD_KEY_CATALOG: readonly WorldScenePreloadKey[] = ['procedural-primitives'];

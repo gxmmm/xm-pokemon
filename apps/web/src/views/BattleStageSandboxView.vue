@@ -100,7 +100,7 @@ onUnmounted(() => {
     <ul>
       <li>已实现：grass / cave / water / dragon / arena 配置化 biome、CombatantView、camera rig、presentation-only hit-stop。</li>
       <li>程序化 primitives：projectile/trail、impact、beam、burst、ring，以及 config-gated scorch / frost / spark / splash / spore / debris / rune-pulse。</li>
-      <li>现有 Canvas 主路径保持不变；这是下一步替换前的并行验证入口。</li>
+      <li>该页面隔离验证正式 Pixi BattleStage，不读取或改写玩家存档。</li>
     </ul>
   </section>
 </template>

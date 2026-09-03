@@ -21,8 +21,8 @@ export interface BattlePresentationOutcome {
 
 /** Renderer-neutral projection of a core BattleEvent.
  *
- * It keeps presentation fields structured so neither the Canvas compatibility
- * implementation nor a future GPU renderer needs to infer meaning from logs.
+ * It keeps presentation fields structured so renderers never need to infer
+ * gameplay meaning from localized log text.
  */
 export interface BattlePresentationEvent {
   id: string;
@@ -47,9 +47,7 @@ export interface CameraPlan {
   shake?: number;
 }
 
-/** Includes the legacy action forms so Canvas can remain a compatibility
- * consumer while a future renderer maps the same semantic action to its own
- * CombatantView animation system. */
+/** Stable semantic motion vocabulary consumed by CombatantView. */
 export type CombatantAnimation = 'idle' | 'windup' | 'melee' | 'dive' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';
 
 export interface VfxRecipeRef {

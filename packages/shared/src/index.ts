@@ -1,3 +1,5 @@
+import type { BattleWorldPosition } from './types.ts';
+
 export * from './types.ts';
 
 /** App-wide constants shared across frontend and backend. */
@@ -36,6 +38,17 @@ export const ARENA = { width: 720, height: 360 };
  *  restricted to an inscribed ellipse - see engine grid.isCellInArena - so the
  *  visible arena is an oval colosseum with stands outside). */
 export const BATTLE_GRID = { cols: 20, rows: 14 };
+
+/** Renderer-neutral compatibility mapping from the simulator's visual cell
+ * coordinates into the continuous battle world. Gameplay remains on integer
+ * grid cells; presentation and renderers may interpolate this XYZ value. */
+export function battleWorldPositionFromGrid(gridX: number, gridY: number, z = 0): BattleWorldPosition {
+  return {
+    x: gridX + 0.5 - BATTLE_GRID.cols / 2,
+    y: gridY + 0.5 - BATTLE_GRID.rows / 2,
+    z,
+  };
+}
 
 /** Battle simulation tick rate (seconds per logical tick). */
 export const BATTLE_TICK = 0.05; // 20 ticks/sec

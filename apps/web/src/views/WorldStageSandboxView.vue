@@ -11,10 +11,18 @@ const requestedQuality = new URLSearchParams(window.location.search).get('visual
 const requestedScene = new URLSearchParams(window.location.search).get('visual-scene');
 const quality = ref<QualityProfile>(requestedQuality === 'standard' || requestedQuality === 'compatibility' ? requestedQuality : 'cinematic');
 const running = ref(!visualRegressionMode);
-type SandboxMapId = 'viridian-forest' | 'route3' | 'rock-tunnel' | 'sea-route' | 'dragon-den' | 'deep-space' | 'mt-moon' | 'route1' | 'pallet' | 'illusion-tower-1' | 'illusion-tower-2' | 'illusion-tower-3' | 'illusion-tower-4' | 'illusion-tower-5';
-const isSandboxMapId = (mapId: string | null): mapId is SandboxMapId => mapId === 'viridian-forest' || mapId === 'route3' || mapId === 'rock-tunnel' || mapId === 'sea-route' || mapId === 'dragon-den' || mapId === 'deep-space' || mapId === 'mt-moon' || mapId === 'route1' || mapId === 'pallet' || mapId === 'illusion-tower-1' || mapId === 'illusion-tower-2' || mapId === 'illusion-tower-3' || mapId === 'illusion-tower-4' || mapId === 'illusion-tower-5';
+const SANDBOX_MAP_IDS = [
+  'viridian-forest', 'route3', 'rock-tunnel', 'sea-route', 'dragon-den',
+  'deep-space', 'mt-moon', 'route1', 'pallet',
+  'illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5',
+] as const;
+type SandboxMapId = typeof SANDBOX_MAP_IDS[number];
+type TowerMapId = Extract<SandboxMapId, `illusion-tower-${number}`>;
+const SANDBOX_MAP_ID_SET = new Set<string>(SANDBOX_MAP_IDS);
+const isSandboxMapId = (mapId: string | null): mapId is SandboxMapId => mapId !== null && SANDBOX_MAP_ID_SET.has(mapId);
+const isTowerMapId = (mapId: SandboxMapId): mapId is TowerMapId => mapId.startsWith('illusion-tower-');
 const sceneMapId = ref<SandboxMapId>(isSandboxMapId(requestedScene) ? requestedScene : 'illusion-tower-1');
-const status = ref('正在建立星陨高径 scene pack…');
+const status = ref('正在挂载 WorldStage…');
 const time = ref(0);
 const scene = computed(() => WORLD_SCENE_BY_MAP_ID[sceneMapId.value]!);
 const stage = new WorldStage(quality.value);
@@ -22,6 +30,25 @@ let raf = 0;
 let last = 0;
 
 const landmarks = computed(() => scene.value.landmarks ?? []);
+const SCENE_READY_MESSAGE: Readonly<Record<Exclude<SandboxMapId, TowerMapId>, string>> = {
+  'route3': '星陨高径：断崖岩壁、石阶古道、坠星刻痕、前景岩檐与高空星尘',
+  'rock-tunnel': '赤砾裂谷：赤色岩壁、矿脉、落石台、低光岩檐与风沙',
+  'sea-route': '静潮群岛：礁石群岛、浅潮水道、低潮沉船、潮洞口与海雾',
+  'viridian-forest': '迷雾林境：树墙、孢子林地、根环、遮挡树冠、低雾与剧情对象外观',
+  'dragon-den': '潮洞：潮蚀洞壁、盐晶潮池、锚印地台、洞口雾幕与守望者',
+  'deep-space': '深空遗迹：失重石台、裂隙拱门、悬浮碎片、异常遗物与符文尘粒',
+  'mt-moon': '星陨观测所：观测穹顶、陨石尖塔、星图地台、晶簇、裂隙雾与星图师',
+  'route1': '萤火林道：树墙、路径、草地、根须、树冠遮挡、萤火与岚巡员',
+  'pallet': '雾湾镇：灯塔、研究所、码头、前景屋檐与薄雾',
+};
+
+function sceneReadyMessage(mapId: SandboxMapId): string {
+  if (isTowerMapId(mapId)) {
+    const floor = Number(mapId.slice(-1));
+    return `幻境之塔${'一二三四五'[floor - 1]}层：参数化石阶台地、投影晶簇、裂隙雾、近景阴影与符文尘粒`;
+  }
+  return SCENE_READY_MESSAGE[mapId];
+}
 function snapshot(at: number): readonly WorldEntityRenderSnapshot[] {
   if (sceneMapId.value === 'viridian-forest') {
     const stroll = 8 + Math.sin(at * 0.62) * 1.1;
@@ -111,25 +138,7 @@ function snapshot(at: number): readonly WorldEntityRenderSnapshot[] {
 async function syncScene(): Promise<void> {
   await stage.enterScene({ sceneId: scene.value.id, biomeId: scene.value.biome }, scene.value);
   stage.applyWorldSnapshot({ time: time.value, entities: snapshot(time.value) });
-  status.value = sceneMapId.value === 'illusion-tower-1' || sceneMapId.value === 'illusion-tower-2' || sceneMapId.value === 'illusion-tower-3' || sceneMapId.value === 'illusion-tower-4' || sceneMapId.value === 'illusion-tower-5'
-    ? `幻境之塔${sceneMapId.value.endsWith('-5') ? '五层' : sceneMapId.value.endsWith('-4') ? '四层' : sceneMapId.value.endsWith('-3') ? '三层' : sceneMapId.value.endsWith('-2') ? '二层' : '一层'} WorldStage 已挂载：同一参数化 Scene Pack 的石阶台地、投影晶簇、裂隙雾、近景阴影与符文尘粒均来自 WorldSceneSpec。`
-    : sceneMapId.value === 'route3'
-    ? '星陨高径 WorldStage 已挂载：断崖岩壁、石阶古道、坠星刻痕、前景岩檐与高空星尘均来自 WorldSceneSpec。'
-    : sceneMapId.value === 'rock-tunnel'
-      ? '赤砾裂谷 WorldStage 已挂载：赤色岩壁、矿脉、落石台、低光岩檐与风沙均来自 WorldSceneSpec。'
-      : sceneMapId.value === 'sea-route'
-        ? '静潮群岛 WorldStage 已挂载：礁石群岛、浅潮水道、低潮沉船、潮洞口与海雾均来自 WorldSceneSpec。'
-      : sceneMapId.value === 'viridian-forest'
-      ? '迷雾林境 WorldStage 已挂载：树墙、孢子林地、根环、遮挡树冠、低雾与剧情对象外观均来自 WorldSceneSpec。'
-      : sceneMapId.value === 'dragon-den'
-      ? '潮洞 WorldStage 已挂载：潮蚀洞壁、盐晶潮池、锚印地台、洞口雾幕与守望者均来自 WorldSceneSpec。'
-      : sceneMapId.value === 'deep-space'
-        ? '深空遗迹 WorldStage 已挂载：失重石台、裂隙拱门、悬浮碎片、异常遗物与符文尘粒均来自 WorldSceneSpec。'
-        : sceneMapId.value === 'mt-moon'
-          ? '星陨观测所 WorldStage 已挂载：观测穹顶、陨石尖塔、星图地台、晶簇、裂隙雾与星图师均来自 WorldSceneSpec。'
-          : sceneMapId.value === 'route1'
-            ? '萤火林道 WorldStage 已挂载：树墙、路径、草地、根须、树冠遮挡、萤火与岚巡员均来自 WorldSceneSpec。'
-            : '雾湾镇 WorldStage 已挂载：灯塔、研究所、码头、前景屋檐与薄雾均来自 WorldSceneSpec。';
+  status.value = `${sceneReadyMessage(sceneMapId.value)}均来自 WorldSceneSpec，WorldStage 已挂载。`;
 }
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -168,7 +177,7 @@ onUnmounted(() => {
 
 <template>
   <section class="world-stage-page">
-    <header><p class="eyebrow">VISUAL RUNTIME · STAGE 9.1-draft</p><h1>WorldStage sandbox</h1><p>独立 scene pack 验证页：不接管 WorldView 的移动、碰撞、剧情、warp 或 encounter。</p></header>
+    <header><p class="eyebrow">VISUAL REGRESSION</p><h1>WorldStage sandbox</h1><p>独立 Scene Pack 验证页：不接管 WorldView 的移动、碰撞、剧情、warp 或 encounter。</p></header>
     <div class="controls">
       <button type="button" @click="running = !running">{{ running ? '暂停人物行为' : '继续人物行为' }}</button>
       <label>场景 <select v-model="sceneMapId"><option value="illusion-tower-1">幻境之塔·一层</option><option value="illusion-tower-2">幻境之塔·二层</option><option value="illusion-tower-3">幻境之塔·三层</option><option value="illusion-tower-4">幻境之塔·四层</option><option value="illusion-tower-5">幻境之塔·五层（同一参数包）</option><option value="sea-route">静潮群岛</option><option value="rock-tunnel">赤砾裂谷</option><option value="route3">星陨高径</option><option value="viridian-forest">迷雾林境</option><option value="dragon-den">潮洞</option><option value="deep-space">深空遗迹对照</option><option value="mt-moon">星陨观测所对照</option><option value="route1">萤火林道对照</option><option value="pallet">雾湾镇对照</option></select></label>
@@ -177,16 +186,10 @@ onUnmounted(() => {
     </div>
     <div ref="viewport" class="viewport" :class="sceneMapId" aria-label="WorldStage sandbox" data-testid="world-stage-viewport"></div>
     <p class="status">{{ status }}</p>
-    <ul v-if="sceneMapId.startsWith('illusion-tower-')"><li>幻境之塔配置：石阶台地、投影晶簇、裂隙雾、路径、近景阴影与符文雾幕全部来自同一参数化 Scene Pack factory。</li><li>一层到五层仅传入 floor 参数，复用同一 landmark / palette / ambience grammar；没有 floor-specific renderer branch。</li><li>地图原有 <code>encounterFloor</code>、遭遇等级带、楼梯 warp、训练塔开关和存档均由既有 map/runtime 权威管理。</li><li>一至五层已依次接入显式 GPU gate；Canvas 继续保留，训练塔仍使用同一参数化 Scene Pack factory。</li></ul>
-    <ul v-else-if="sceneMapId === 'rock-tunnel'"><li>裂谷配置：赤色岩壁、暴露矿脉、落石台、中央裂谷路径、低光岩檐与风沙全部来自通用 landmark / palette / ambience grammar。</li><li>本图没有配置化故事对象；玩家位置仅作为 renderer DTO。原有 <code>encounterFloor</code>、碰撞、洞窟 warp 与剧情门槛仍由既有 map/story/runtime 权威管理。</li><li><code>dust</code> ambience 与低光裂谷色板由 scene config 描述；三档质量只降低粒子数量，不改变 encounterFloor 或地图规则。</li><li>本轮直接通过显式 GPU gate 接入，Canvas 继续保留；请在正式页面验证移动、低光遮挡、自然遇敌与洞窟往返。</li></ul>
-    <ul v-else-if="sceneMapId === 'route3'"><li>高径配置：断崖岩壁、石阶古道、风化台地、坠星刻痕、岩檐遮挡与高空星尘全部来自通用 landmark / palette / ambience grammar。</li><li>剧情样本：陵导员 洛岩 <code>(6, 8)</code>、三枚坠星刻痕 <code>(3, 4)</code> / <code>(12, 6)</code> / <code>(5, 11)</code> 仅作为 renderer DTO；真实可见性、坐标和交互仍由既有 story/runtime 权威管理。</li><li><code>starlight</code> ambience 与 <code>sunlit-route</code> 高径色板由 scene config 描述；三档质量只降低粒子数量，不改变对象或地图规则。</li><li>本包仅完成 sandbox-first 与视觉回归候选；<code>route3</code> 未加入 GPU migration gate，Canvas 未删除，待人工验收后才可继续正式行为回归。</li></ul>
-    <ul v-else-if="sceneMapId === 'viridian-forest'"><li>迷雾森林配置：远景树墙、孢子林地、根环、苔石、近景树冠与低雾全部来自通用 landmark / palette / ambience grammar。</li><li>剧情样本：织羽 <code>(10, 9)</code>、三枚潮光孢子 <code>(3, 4)</code> / <code>(12, 7)</code> / <code>(4, 11)</code> 与异相核 <code>(8, 5)</code> 仅作为 renderer DTO；真实可见性、坐标和交互仍由既有 story/runtime 权威管理。</li><li><code>mist</code> ambience 与 <code>mist-forest</code> 色板由 scene config 描述；三档质量只降低粒子数量，不改变对象或地图规则。</li><li>本包仅完成 sandbox-first 与视觉回归候选；<code>viridian-forest</code> 未加入 GPU migration gate，Canvas 未删除，待人工验收后才可继续正式行为回归。</li></ul>
-    <ul v-else-if="sceneMapId === 'sea-route'"><li>静潮群岛配置：露出水面的礁石、浅潮水道、低潮沉船、潮洞口与前景海雾均来自通用 landmark / palette / ambience grammar。</li><li>剧情样本：船长赛岚 <code>(6, 10)</code>、海图学徒宁墨 <code>(11, 5)</code>、潮位仪 <code>(4, 10)</code> 与沉船航海日志 <code>(12, 4)</code> 仅作为 renderer DTO；真实潮位、坐标、可见性和交互仍由既有 story/runtime 权威管理。</li><li><code>spray</code> ambience 与 <code>tide-sea</code> 色板由 scene config 描述；三档质量只降低粒子数量，不改变 encounterFloor、船只 / 洞窟 warp 或地图规则。</li><li>本包直接接入显式 GPU gate；Canvas 继续保留，等待正式页面人工验证。</li></ul>
-    <ul v-else-if="sceneMapId === 'dragon-den'"><li>潮洞配置：潮蚀洞壁、盐晶潮池、深潮锚印地台、前景潮雾与符文尘粒。</li><li>剧情样本：潮洞守望者 <code>(10, 8)</code>、深潮锚印 <code>(8, 5)</code> 与深空裂隙 <code>(8, 2)</code> 仅作为 renderer DTO；坐标与可见性仍由既有 story/runtime 权威管理。</li><li><code>rune</code> ambience 与 <code>dragon-grotto</code> 色板由 scene config 描述；质量切换只改变粒子数量。</li><li>潮洞已通过人工验收并可经既有 Canvas / GPU 控制受控启用；规则与存档继续由原有 runtime/config 管理。</li></ul>
-    <ul v-else-if="sceneMapId === 'deep-space'"><li>异常遗迹配置：失重石台、裂隙拱门、悬浮碎片、前景石台、裂隙雾与符文尘粒。</li><li>剧情样本：三个失重晶簇、古代终端、裂隙守卫核心和幻兽回响仅作为 renderer DTO object，坐标与可见性仍由既有 story/runtime 权威管理。</li><li><code>rune</code> ambience 与 <code>deep-ruin</code> 色板由 scene config 描述；质量切换只改变粒子数量。</li><li>深空遗迹已通过人工验收并可经既有 Canvas / GPU 控制受控启用；规则与存档继续由原有 runtime/config 管理。</li></ul>
-    <ul v-else-if="sceneMapId === 'mt-moon'"><li>强地标配置：观测穹顶、陨石尖塔、星图地台、晶簇、裂隙雾与星光尘粒。</li><li>环境样本：玩家穿过穹顶上缘；星图师朔使用原有配置坐标 <code>(11, 8)</code> 追踪星图；星图镜仅为 renderer DTO object。</li><li><code>starlight</code> ambience 与 <code>moon-cavern</code> 色板由 scene config 描述；质量切换只改变粒子数量。</li><li>本页暂不接入正式 WorldView；观测所的自然 encounterFloor、碰撞、warp、NPC、剧情和存档继续由原有 runtime/config 管理。</li></ul>
-    <ul v-else-if="sceneMapId === 'route1'"><li>自然场景配置：远景树墙、非单格重复树群、林间路径、发光草地、根须、苔石、前景树冠与低雾。</li><li>对照场景保留用于验证通用 WorldStage 未因观测所能力回归。</li></ul>
-    <ul v-else><li>地标配置：灯塔、潮汐研究所、码头、市场屋檐、前景雾带。</li><li>对照场景保留用于验证通用 WorldStage 未因观测所能力回归。</li></ul>
+    <ul>
+      <li>该页面只验证 Scene Pack 与 WorldStage，不接管移动、碰撞、遭遇、剧情或存档。</li>
+      <li>三档质量只调整表现预算，不改变地图规则；所有正式地图统一使用 Pixi。</li>
+    </ul>
   </section>
 </template>
 

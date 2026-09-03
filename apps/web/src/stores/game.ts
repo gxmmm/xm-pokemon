@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { PlayerSave, PokemonInstance, PokedexEntry, PlayerSettings, BattleResult } from '@pokemon-online/shared';
+import type { PlayerSave, PokemonInstance, PlayerSettings, BattleResult } from '@pokemon-online/shared';
 import { SAVE_VERSION, ROSTER_MAX, PVE_TEAM_SIZE, PVP_TEAM_SIZE } from '@pokemon-online/shared';
 import { getSpecies, getMap, ITEM_MAP, MAP_MAP, expForLevel } from '@pokemon-online/config';
 import {

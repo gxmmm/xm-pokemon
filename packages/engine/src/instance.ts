@@ -1,7 +1,7 @@
 import type { PokemonInstance, IV, StatusKind } from '@pokemon-online/shared';
-import { GROWTH_MIN, GROWTH_MAX, IV_MAX, ACTIVE_SKILL_MAX, PASSIVE_SKILL_MAX, MAX_LEVEL } from '@pokemon-online/shared';
+import { GROWTH_MAX, IV_MAX, ACTIVE_SKILL_MAX, PASSIVE_SKILL_MAX, MAX_LEVEL } from '@pokemon-online/shared';
 import { getSpecies, expForLevel, levelForExp, SKILL_MAP } from '@pokemon-online/config';
-import { rand, type RNG, mulberry32 } from './rng.ts';
+import { type RNG, mulberry32 } from './rng.ts';
 import { computeStats, maxHp } from './stats.ts';
 
 export function genUid(): string {
@@ -74,7 +74,8 @@ export function growthFloor(rarity: string): number {
 export function rollGrowth(rarity: string, rng: RNG = Math.random): number {
   const ceil = growthCeiling(rarity);
   const floor = growthFloor(rarity);
-  return Math.round(rand.float(Math.min(floor, ceil), ceil) * 100) / 100;
+  const min = Math.min(floor, ceil);
+  return Math.round((rng() * (ceil - min) + min) * 100) / 100;
 }
 
 /** Active skills a species has learned at or below `level` (up to ACTIVE_SKILL_MAX).

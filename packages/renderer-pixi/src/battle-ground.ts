@@ -1,19 +1,10 @@
-import { BATTLE_GRID, type BattleWorldPosition } from '@pokemon-online/shared';
+import { battleWorldPositionFromGrid, type BattleWorldPosition } from '@pokemon-online/shared';
 import type { BattleCameraSpec } from '@pokemon-online/config';
+
+export { battleWorldPositionFromGrid } from '@pokemon-online/shared';
 
 export interface BattleGroundPoint { x: number; y: number; }
 export interface BattleGroundProjection extends BattleGroundPoint { depth: number; scale: number; }
-
-/** Compatibility boundary between the current integer-cell simulator and the
- * continuous battle world consumed by presentation. No screen geometry leaks
- * back through this adapter. */
-export function battleWorldPositionFromGrid(gridX: number, gridY: number, z = 0): BattleWorldPosition {
-  return {
-    x: gridX + 0.5 - BATTLE_GRID.cols / 2,
-    y: gridY + 0.5 - BATTLE_GRID.rows / 2,
-    z,
-  };
-}
 
 /** Pinhole projection for the configurable 2.5D spectator camera. */
 export function projectBattleWorldPoint(position: BattleWorldPosition, camera: BattleCameraSpec): BattleGroundProjection {

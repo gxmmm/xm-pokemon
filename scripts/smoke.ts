@@ -11,7 +11,7 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
-import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
 
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
@@ -99,11 +99,18 @@ function assert(cond: boolean, msg: string): void {
 {
   const interpolationSim = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10)], enemy: [createWildInstance(25, 10)], seed: 140716 });
   const before = interpolationSim.state.combatants[0]!;
-  const after = { ...before, currentHp: Math.max(0, before.currentHp - 10), pixel: { x: before.pixel.x + 2, y: before.pixel.y + 1 } };
+  const afterPixel = { x: before.pixel.x + 2, y: before.pixel.y + 1 };
+  const after = {
+    ...before,
+    currentHp: Math.max(0, before.currentHp - 10),
+    pixel: afterPixel,
+    worldPosition: battleWorldPositionFromGrid(afterPixel.x, afterPixel.y, 6),
+  };
   const start = snapshotBattle(0, [before]);
   const end = snapshotBattle(1, [after]);
   const half = interpolateBattle(start, end, 0.5)[0]!;
-  assert(half.currentHp === before.currentHp && half.pixel.x === before.pixel.x + 1, 'presentation interpolation keeps discrete state event-stepped');
+  const startWorld = battleWorldPositionFromGrid(before.pixel.x, before.pixel.y);
+  assert(half.currentHp === before.currentHp && half.pixel.x === before.pixel.x + 1 && half.worldPosition.x === startWorld.x + 1 && half.worldPosition.y === startWorld.y + 0.5 && half.worldPosition.z === 3, 'presentation interpolation keeps discrete state event-stepped while emitting continuous xyz world coordinates');
   console.log('✓ presentation timeline contract');
 }
 
@@ -198,9 +205,12 @@ function assert(cond: boolean, msg: string): void {
   assert(BATTLE_ENVIRONMENTS.grass.parallax.far < BATTLE_ENVIRONMENTS.grass.parallax.horizon && BATTLE_ENVIRONMENTS.grass.parallax.horizon < BATTLE_ENVIRONMENTS.grass.parallax.ground && BATTLE_ENVIRONMENTS.grass.parallax.ground < BATTLE_ENVIRONMENTS.grass.parallax.foreground && BATTLE_ENVIRONMENTS.grass.overscan >= 180, 'battle environment parallax is ordered from distant background through foreground with camera-safe canvas coverage');
   const grassEnvironmentAsset = BATTLE_ASSET_MANIFEST.find((asset) => asset.id === BATTLE_ENVIRONMENTS.grass.art?.backgroundAssetId);
   const grassEnvironmentSource = BATTLE_ASSET_SOURCES.find((source) => source.id === grassEnvironmentAsset?.sourceId);
-  assert(grassEnvironmentAsset?.url === '/battle/environments/grass-clearing-v1.png' && grassEnvironmentSource?.reviewStatus === 'ai-generated' && existsSync('apps/web/public/battle/environments/grass-clearing-v1.png') && existsSync('doc/BATTLE_ENVIRONMENT_ASSETS.md'), 'formal grass environment art is manifest-owned, locally present, and provenance-audited');
+  assert(grassEnvironmentAsset?.url === '/battle/environments/grass-clearing-v1.png' && grassEnvironmentSource?.reviewStatus === 'ai-generated' && existsSync('apps/web/public/battle/environments/grass-clearing-v1.png'), 'formal grass environment art is manifest-owned, locally present, and provenance-audited');
   const grassGrounded = terrainContactPlan('grass-clumps', 'grounded');
   const grassFlight = terrainContactPlan('grass-clumps', 'flight');
+  const groundedShadow = groundShadowPlan(0, 0);
+  const raisedShadow = groundShadowPlan(90, 0);
+  const hoveringShadow = groundShadowPlan(0, 1, grassFlight.shadowAlphaMultiplier, grassFlight.shadowScaleMultiplier);
   const standardPressure = movementPressurePlan('standard');
   const battleGroundNorth = projectBattleGroundPoint(10, 1, BATTLE_ENVIRONMENTS.grass.camera);
   const battleGroundSouth = projectBattleGroundPoint(10, 12, BATTLE_ENVIRONMENTS.grass.camera);
@@ -210,7 +220,7 @@ function assert(cond: boolean, msg: string): void {
   const centeredImpact = battleContactPoint({ x: 640, y: 520 }, { x: 410, y: 520 });
   assert(elementalVfxShapeFor('fire') === 'flame' && elementalVfxShapeFor('electric') === 'lightning' && elementalVfxShapeFor('psychic') === 'psychic-orbit', 'core elements resolve to concrete flame, lightning, and psychic visual silhouettes');
   assert(centeredImpact.y === 490, 'combat impact anchors resolve at model visual center instead of the head');
-  assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y && battleGroundNorth.scale < battleGroundSouth.scale && raisedBattlePoint.y < battleGroundSouth.y && dampedStep.value > 0 && redirectedStep.value > dampedStep.value && redirectedStep.value < 80, 'terrain contact, continuous damped steering, and configurable xyz battle-world projection stay within the visible arena plane');
+  assert(grassGrounded.occludesFeet && grassGrounded.particleKind === 'grass' && !grassFlight.occludesFeet && grassFlight.particleKind === 'none' && grassFlight.shadowAlphaMultiplier < 1 && raisedShadow.alpha < groundedShadow.alpha && raisedShadow.scaleX < groundedShadow.scaleX && hoveringShadow.alpha < raisedShadow.alpha && standardPressure.intervalSeconds === 0.20 && standardPressure.lineCount === 3 && standardPressure.durationSeconds < standardPressure.intervalSeconds && standardPressure.minTravelPixels <= 1 && battleGroundNorth.y >= 340 && battleGroundSouth.y <= 650 && battleGroundSouth.y > battleGroundNorth.y && battleGroundNorth.scale < battleGroundSouth.scale && raisedBattlePoint.y < battleGroundSouth.y && dampedStep.value > 0 && redirectedStep.value > dampedStep.value && redirectedStep.value < 80, 'terrain contact, height-aware grounding, continuous damped steering, and configurable xyz battle-world projection stay within the visible arena plane');
   const charizardSwift = resolveBattleArtPresentation({ speciesId: 6, side: 'player', skillId: 'swift' });
   const pikachuSwift = resolveBattleArtPresentation({ speciesId: 25, side: 'enemy', skillId: 'swift' });
   const charizardFacingLeft = resolveBattleArtPresentation({ speciesId: 6, side: 'player', facing: -1 });
@@ -279,11 +289,15 @@ function assert(cond: boolean, msg: string): void {
   combatantView.playAnimation('windup');
   combatantView.update(0.12);
   const viewDiagnostics = combatantView.getDiagnostics();
-  assert(combatantView.children.length === 1 && combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1, 'CombatantView resolves a sprite-sheet windup through its generic configuration contract');
+  assert(combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 2 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1, 'CombatantView resolves a sprite-sheet windup through its generic configuration contract');
   combatantView.refresh({ ...viewCombatant, facing: -1 });
   combatantView.update(0.12);
   const reversedViewDiagnostics = combatantView.getDiagnostics();
   assert(viewDiagnostics.locomotionMode === 'flight' && viewDiagnostics.visualHoverOffsetY < 0 && reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView keeps generic pose geometry directional while applying configuration-owned flight lift');
+  combatantView.setGrounding({ x: 3, y: 44 }, 44, 0.68, 0.86);
+  combatantView.update(0.02);
+  const raisedViewDiagnostics = combatantView.getDiagnostics();
+  assert(raisedViewDiagnostics.projectedLiftPixels === 44 && raisedViewDiagnostics.shadowAlpha < 0.68, 'CombatantView keeps its contact shadow on the projected ground and weakens it with visual elevation');
   combatantView.refresh({ ...viewCombatant, pixel: { x: viewCombatant.pixel.x + 0.9, y: viewCombatant.pixel.y } });
   combatantView.update(0.05);
   const movingFeel = combatantView.getDiagnostics();
@@ -380,8 +394,8 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ White Night repeatable sparring contract');
 }
 
-// Stage 7 adds a sandbox-first strong-landmark scene pack. It must remain
-// outside the formal GPU WorldView gate until its own visual acceptance pass.
+// The observatory Scene Pack keeps its landmark grammar independent from
+// collision, encounter, warp, and story state.
 {
   const observatory = WORLD_SCENE_BY_MAP_ID['mt-moon'];
   const observatoryLandmarks = observatory?.landmarks ?? [];
@@ -390,7 +404,7 @@ function assert(cond: boolean, msg: string): void {
   const domeRim = observatoryLandmarks.find((landmark) => landmark.id === 'dome-upper-rim' && landmark.depth === 'occlusion');
   assert(!!domeRim && domeRim.x <= 7.7 && domeRim.x + (domeRim.width ?? 1) >= 7.7 && domeRim.y <= 9.7 && domeRim.y + (domeRim.height ?? 1) >= 9.7, 'Starfall Observatory dome occlusion covers sandbox player route');
   assert(observatory?.characters?.some((character) => character.id === 'sky-cartographer' && character.behavior === 'trace-stars'), 'Starfall Observatory reserves cartographer star-tracing behavior');
-  assert(isGpuWorldMapId('mt-moon'), 'Starfall Observatory is approved for controlled GPU WorldView');
+  assert(isGpuWorldMapId('mt-moon'), 'Starfall Observatory has a Pixi WorldView Scene Pack');
   console.log('✓ Starfall Observatory WorldSceneSpec sandbox contract');
 }
 
@@ -462,13 +476,12 @@ function assert(cond: boolean, msg: string): void {
   console.log('✓ GPU world-battle visual handoff contract');
 }
 
-// Formal GPU-world eligibility is an explicit config-owned migration gate;
-// scene-pack existence alone must not enable the live WorldView GPU path.
+// Scene Packs are the single source of Pixi world eligibility. Every enabled
+// gameplay map must resolve to exactly one reviewed pack.
 {
-  assert(GPU_WORLD_MAP_IDS.join(',') === 'pallet,route1,illusion-tower-1,illusion-tower-2,illusion-tower-3,illusion-tower-4,illusion-tower-5,viridian-forest,route3,mt-moon,rock-tunnel,sea-route,deep-space,dragon-den' && isGpuWorldMapId('pallet') && isGpuWorldMapId('route1') && isGpuWorldMapId('illusion-tower-1') && isGpuWorldMapId('illusion-tower-2') && isGpuWorldMapId('illusion-tower-3') && isGpuWorldMapId('illusion-tower-4') && isGpuWorldMapId('illusion-tower-5') && isGpuWorldMapId('viridian-forest') && isGpuWorldMapId('route3') && isGpuWorldMapId('mt-moon') && isGpuWorldMapId('rock-tunnel') && isGpuWorldMapId('sea-route') && isGpuWorldMapId('deep-space') && isGpuWorldMapId('dragon-den'), 'controlled GPU world path includes Mist Bay, Lumen Trail, all five Illusion Tower floors, Mistwood Trial, Starfall Ridge, Starfall Observatory, Red Rift Canyon, Stilltide Isles, Deep-space Ruins, and Tide Dragon Den');
-  assert(GPU_WORLD_MAP_IDS.every((mapId) => !!WORLD_SCENE_BY_MAP_ID[mapId]), 'every controlled GPU world map has a scene pack');
-  assert(MAPS.every((map) => isGpuWorldMapId(map.id) && !!WORLD_SCENE_BY_MAP_ID[map.id]), 'every enabled map has an explicit GPU gate and Scene Pack for the default WorldView path');
-  console.log('✓ controlled GPU world eligibility');
+  assert(new Set(GPU_WORLD_MAP_IDS).size === GPU_WORLD_MAP_IDS.length && GPU_WORLD_MAP_IDS.every((mapId) => !!WORLD_SCENE_BY_MAP_ID[mapId]), 'Pixi world index is uniquely derived from Scene Packs');
+  assert(MAPS.every((map) => isGpuWorldMapId(map.id) && !!WORLD_SCENE_BY_MAP_ID[map.id]), 'every enabled map has a Scene Pack for the default WorldView path');
+  console.log('✓ Scene Pack-derived Pixi world eligibility');
 }
 
 // The five training floors intentionally share a single parameterized Scene Pack

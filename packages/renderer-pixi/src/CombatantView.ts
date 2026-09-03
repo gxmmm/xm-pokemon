@@ -2,6 +2,7 @@ import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPres
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { groundShadowPlan } from './terrain-contact-plan.ts';
 
 /**
  * GPU model view driven entirely by a resolved BattleArtProfile. It has no
@@ -30,6 +31,8 @@ export interface CombatantViewDiagnostics {
   movementBobOffsetY: number;
   movementTiltDeg: number;
   movementSpeed: number;
+  projectedLiftPixels: number;
+  shadowAlpha: number;
   statusVisual: 'none' | 'sleep' | 'freeze' | 'stun' | 'paralyze' | 'confuse' | 'burn' | 'poison';
 }
 
@@ -78,6 +81,10 @@ export class CombatantView extends Container {
   private movementBobOffsetY = 0;
   private movementTiltRad = 0;
   private movementPhase = 0;
+  private groundingOffset = { x: 0, y: 0 };
+  private projectedLiftPixels = 0;
+  private terrainShadowAlphaMultiplier = 1;
+  private terrainShadowScaleMultiplier = 1;
   private statusVisual: 'none' | 'sleep' | 'freeze' | 'stun' | 'paralyze' | 'confuse' | 'burn' | 'poison' = 'none';
   private baseScale: number;
 
@@ -95,8 +102,11 @@ export class CombatantView extends Container {
     this.rebuildLayers();
     this.sprite.anchor.set(0.5, 0.58);
     this.sprite.visible = false;
-    this.body.addChild(this.behindLayers, this.shadow, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.statusOverlay, this.frontLayers);
-    this.addChild(this.body);
+    this.body.addChild(this.behindLayers, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.statusOverlay, this.frontLayers);
+    // The contact shadow belongs to the projected ground root, not the animated
+    // body. Attacks, recoil, tilt, hover, and future world-z motion must not drag
+    // it away from the terrain.
+    this.addChild(this.shadow, this.body);
     this.refresh(combatant);
     this.requestTexture();
   }
@@ -184,6 +194,18 @@ export class CombatantView extends Container {
     return this.motionElapsedMs >= this.activeMotionDurationMs();
   }
 
+  setGrounding(
+    offset: { x: number; y: number },
+    projectedLiftPixels: number,
+    shadowAlphaMultiplier = 1,
+    shadowScaleMultiplier = 1,
+  ): void {
+    this.groundingOffset = offset;
+    this.projectedLiftPixels = Math.max(0, projectedLiftPixels);
+    this.terrainShadowAlphaMultiplier = shadowAlphaMultiplier;
+    this.terrainShadowScaleMultiplier = shadowScaleMultiplier;
+  }
+
   getDiagnostics(): CombatantViewDiagnostics {
     return {
       modelId: this.presentation.profile.modelId,
@@ -203,6 +225,8 @@ export class CombatantView extends Container {
       movementBobOffsetY: this.movementBobOffsetY,
       movementTiltDeg: this.movementTiltRad * 180 / Math.PI,
       movementSpeed: this.movementSpeed,
+      projectedLiftPixels: this.projectedLiftPixels,
+      shadowAlpha: this.shadow.alpha,
       statusVisual: this.statusVisual,
     };
   }
@@ -303,9 +327,15 @@ export class CombatantView extends Container {
 
   private updateShadowForHover(heightRatio: number): void {
     const profile = this.presentation.profile;
-    const scale = profile.shadowScale * (1 - heightRatio * 0.28);
-    this.shadow.scale.set(scale, 1 - heightRatio * 0.16);
-    this.shadow.alpha = 1 - heightRatio * 0.42;
+    const plan = groundShadowPlan(
+      this.projectedLiftPixels,
+      heightRatio,
+      this.terrainShadowAlphaMultiplier,
+      this.terrainShadowScaleMultiplier,
+    );
+    this.shadow.position.set(this.groundingOffset.x, this.groundingOffset.y);
+    this.shadow.scale.set(profile.shadowScale * plan.scaleX, plan.scaleY);
+    this.shadow.alpha = plan.alpha;
   }
 
   private updateLocomotionIntent(combatant: BattleCombatant): void {
@@ -668,7 +698,7 @@ export class CombatantView extends Container {
     const theme = this.presentation.theme;
     const primary = colorNumber(theme.primary, 0x69d4e7);
     const secondary = colorNumber(theme.secondary, 0x7ee6ac);
-    this.shadow.clear().ellipse(0, 22, 43 * this.presentation.profile.shadowScale, 14).fill({ color: 0x07101a, alpha: 0.34 });
+    this.shadow.clear().ellipse(0, 22, 43, 14).fill({ color: 0x07101a, alpha: 0.34 });
     this.fallback.clear()
       .circle(0, -8, 25).fill({ color: primary, alpha: 0.94 })
       .circle(-8, -16, 8).fill({ color: 0xffffff, alpha: 0.35 })

@@ -7,7 +7,7 @@ import type { BattleCombatant } from '@pokemon-online/shared';
 import type { QualityProfile } from '@pokemon-online/renderer';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
-import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../battle/BattleSandboxTeams.ts';
+import { BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../battle/BattleSandboxTeams.ts';
 
 /**
  * 独立验收入口：不读取 Pinia、账户或存档；双方选择只在本页内存中保存。

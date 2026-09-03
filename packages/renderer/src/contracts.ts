@@ -50,9 +50,8 @@ export interface WorldRenderSnapshot {
   entities: readonly WorldEntityRenderSnapshot[];
 }
 
-/** Renderer input may carry a continuous world position directly. During the
- * grid-to-world migration it remains optional so existing presentation frames
- * cross the compatibility adapter without changing simulation facts. */
+/** Renderer input may carry a continuous world position directly. It remains
+ * optional at this boundary so non-presentation callers can supply grid data. */
 export type BattleRenderCombatant = BattleCombatant & {
   worldPosition?: BattleWorldPosition;
 };

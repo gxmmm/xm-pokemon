@@ -1,4 +1,4 @@
-import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TypeName, TimedEffect, TeamTactic } from '@pokemon-online/shared';
+import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
 import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualProfileFor, NORMAL_ATTACK_RANGED_CELLS } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';

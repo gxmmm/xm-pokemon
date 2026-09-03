@@ -1,14 +1,14 @@
-import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent, type BattlePresentation, type BattleSnapshot, type DirectedBattleCue } from '@pokemon-online/presentation';
-import type { BattleCombatant, BattleEvent } from '@pokemon-online/shared';
+import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent, type BattlePresentation, type BattlePresentationCombatantInput, type BattleSnapshot, type DirectedBattleCue } from '@pokemon-online/presentation';
+import type { BattleEvent } from '@pokemon-online/shared';
 
 /** The renderer-facing subset of a BattleSim. Keeping the bridge on structured
  * shared DTOs prevents it from depending on simulation internals or a concrete
- * Vue/Canvas/Pixi consumer. */
+ * Vue/Pixi consumer. */
 export interface BattlePresentationSource {
   readonly isOver: boolean;
   readonly state: {
     readonly time: number;
-    readonly combatants: readonly BattleCombatant[];
+    readonly combatants: readonly BattlePresentationCombatantInput[];
     readonly events: readonly BattleEvent[];
   };
 }
@@ -34,8 +34,7 @@ export interface BattlePresentationBridgeOptions {
  * can hold an impact frame without affecting rules, cooldowns, or AI.
  *
  * This is intentionally framework and renderer agnostic. BattleView supplies
- * the simulation DTO and passes the returned frame to the Canvas compatibility
- * renderer today; a future GPU BattleStage can consume the same frame.
+ * the simulation DTO and passes the returned frame to BattleStage.
  */
 export class BattlePresentationBridge {
   private readonly presentationDelay: number;
@@ -132,7 +131,7 @@ export class BattlePresentationBridge {
     while (this.snapshots.length > 2 && this.snapshots[1]!.time < keepFrom) this.snapshots.shift();
   }
 
-  private presentationCombatants(at: number): BattleCombatant[] {
+  private presentationCombatants(at: number): BattlePresentation['combatants'] {
     if (this.snapshots.length === 0) return [];
     let before = this.snapshots[0]!;
     let after = this.snapshots[this.snapshots.length - 1]!;

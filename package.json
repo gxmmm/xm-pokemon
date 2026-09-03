@@ -2,7 +2,7 @@
   "name": "pokemon-online",
   "version": "1.0.0",
   "private": true,
-  "description": "Pokemon Online - a friend co-op Pokemon raising game. Design First, frontend-computed, Cloudflare Workers + D1 save server.",
+  "description": "friend co-op Pokemon raising game. ",
   "workspaces": [
     "packages/*",
     "apps/*"

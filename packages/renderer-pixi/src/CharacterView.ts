@@ -13,9 +13,8 @@ const PALETTES: Record<CharacterAppearance, Palette> = {
   scout: { skin: 0xd7aa7d, hair: 0x304c48, shirt: 0x607f5b, trim: 0xa8cc72, pants: 0x293b36 },
 };
 
-/** Renderer-local procedural character. It intentionally shares the palette and
- * silhouette language of the legacy Canvas character fallback without importing
- * app code or owning any world facts. */
+/** Renderer-local procedural world character. It owns no app state or world
+ * facts; appearance and behavior arrive through renderer DTOs. */
 export class CharacterView {
   readonly container: Container;
   private readonly body: Graphics;

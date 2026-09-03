@@ -77,8 +77,6 @@ const FALLBACK_PALETTE: ScenePalette = {
   backdrop: '#8cb6c4', ground: '#5f8079', path: '#76968d', shadow: '#31575c', accent: '#f1cd83', fog: '#e6f8f2',
 };
 
-function color(hex: string): number { return Number.parseInt(hex.replace('#', ''), 16); }
-
 /** Config-driven GPU world sample. It renders static scene-pack information and
  * renderer DTO snapshots only; movement/collision/story/encounters remain in
  * the existing WorldView + game runtime. */
@@ -102,7 +100,6 @@ export class WorldStage implements WorldRenderer {
   private host: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private quality: QualityProfile;
-  private activeBiome = 'mist-harbor';
   private activeScene: WorldStageSceneSpec | null = null;
   private elapsed = 0;
   private motionEnabled = true;
@@ -214,14 +211,12 @@ export class WorldStage implements WorldRenderer {
     });
   }
 
-  async enterWorld(input: WorldRenderInput): Promise<void> {
-    this.activeBiome = input.biomeId;
+  async enterWorld(_input: WorldRenderInput): Promise<void> {
     this.activeScene = null;
     this.drawScene();
   }
 
-  async enterScene(input: WorldRenderInput, scene: WorldStageSceneSpec): Promise<void> {
-    this.activeBiome = input.biomeId;
+  async enterScene(_input: WorldRenderInput, scene: WorldStageSceneSpec): Promise<void> {
     this.activeScene = scene;
     // Scene-local only: switching packs discards prior preload ownership rather
     // than retaining assets for every world map.

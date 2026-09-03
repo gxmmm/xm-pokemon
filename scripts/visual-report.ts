@@ -17,7 +17,7 @@ const failures = [
 
 console.log(`Skill visual recipes: ${SKILL_VISUAL_RECIPES.length}`);
 console.log(`Battle environments: ${Object.keys(BATTLE_ENVIRONMENTS).join(', ')}`);
-console.log(`Controlled GPU world maps: ${GPU_WORLD_MAP_IDS.join(', ')}`);
+console.log(`Pixi world maps: ${GPU_WORLD_MAP_IDS.join(', ')}`);
 for (const scene of WORLD_SCENES) {
   const budget = worldSceneBudgetReport(scene);
   console.log(`World scene ${budget.mapId}: landmarks=${budget.landmarkCount}/${scene.resources.landmarkLimit}, static=${budget.staticContainerCount}/${scene.resources.staticContainerLimit}, entities=${budget.dynamicEntityCount}/${scene.resources.entityLimit}, cinematicParticles=${budget.cinematicAmbientParticles}/${scene.resources.ambientParticleLimit}, preload=${budget.preloadKeyCount}, baseline=${worldSceneFingerprintHash(scene)}, fingerprint=${budget.fingerprint}`);

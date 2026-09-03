@@ -40,7 +40,6 @@ type WorldBehaviorDiagnostics = {
     nearbyNpcId: string | null;
     nearbyObjectId: string | null;
     encounterEligible: boolean;
-    diagnosticWorldScene: boolean;
 };
 function assert(condition: unknown, message: string): asserts condition { if (!condition)
     throw new Error(message); }
@@ -203,35 +202,35 @@ async function requireMistwood(page: Page, label: string): Promise<WorldBehavior
     await requireWorld(page, '迷雾林境', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
     const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'viridian-forest' && diagnostics.sceneId === 'mistwood-trial' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: formally gated scene did not use the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    assert(diagnostics.mapId === 'viridian-forest' && diagnostics.sceneId === 'mistwood-trial' && diagnostics.renderer === 'pixi', `${label}: scene did not use the Pixi WorldView bridge (${JSON.stringify(diagnostics)})`);
     return diagnostics;
 }
 async function requireStarfallRidge(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '星陨高径', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
     const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'route3' && diagnostics.sceneId === 'starfall-ridge' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: formally gated ridge scene did not use the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    assert(diagnostics.mapId === 'route3' && diagnostics.sceneId === 'starfall-ridge' && diagnostics.renderer === 'pixi', `${label}: ridge scene did not use the Pixi WorldView bridge (${JSON.stringify(diagnostics)})`);
     return diagnostics;
 }
 async function requireStilltideIsles(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '静潮群岛', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
     const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'sea-route' && diagnostics.sceneId === 'stilltide-isles' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: formally gated Stilltide Isles scene did not use the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    assert(diagnostics.mapId === 'sea-route' && diagnostics.sceneId === 'stilltide-isles' && diagnostics.renderer === 'pixi', `${label}: Stilltide Isles scene did not use the Pixi WorldView bridge (${JSON.stringify(diagnostics)})`);
     return diagnostics;
 }
 async function requireTideCave(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '潮洞', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
     const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'dragon-den' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: tide-cave crossing did not retain the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    assert(diagnostics.mapId === 'dragon-den' && diagnostics.renderer === 'pixi', `${label}: tide-cave crossing did not retain the Pixi WorldView bridge (${JSON.stringify(diagnostics)})`);
     return diagnostics;
 }
 async function requireRedRiftCanyon(page: Page, label: string): Promise<WorldBehaviorDiagnostics> {
     await requireWorld(page, '赤砾裂谷', label);
     await page.locator('.pixi-world-viewport canvas').waitFor({ timeout: 10000 });
     const diagnostics = await worldBehavior(page);
-    assert(diagnostics.mapId === 'rock-tunnel' && diagnostics.renderer === 'pixi' && !diagnostics.diagnosticWorldScene, `${label}: canyon crossing did not retain the normal GPU WorldView bridge (${JSON.stringify(diagnostics)})`);
+    assert(diagnostics.mapId === 'rock-tunnel' && diagnostics.renderer === 'pixi', `${label}: canyon crossing did not retain the Pixi WorldView bridge (${JSON.stringify(diagnostics)})`);
     return diagnostics;
 }
 async function advanceDialog(page: Page): Promise<void> {
@@ -413,7 +412,7 @@ async function completeChapterOne(page: Page): Promise<void> {
     await press(page, 'e');
     await dismissDialog(page);
     const returned = await worldBehavior(page);
-    assert(returned.mapId === 'pallet' && returned.renderer === 'pixi' && !returned.diagnosticWorldScene && returned.activeQuest === 'climb-starfell', `chapter-one return did not restore the approved GPU path and next quest (${JSON.stringify(returned)})`);
+    assert(returned.mapId === 'pallet' && returned.renderer === 'pixi' && returned.activeQuest === 'climb-starfell', `chapter-one return did not restore the Pixi path and next quest (${JSON.stringify(returned)})`);
 }
 
 async function resolveRoute3WildBattle(page: Page, captureFirstWild = false): Promise<void> {
@@ -598,7 +597,7 @@ async function enterStarfallRidgeObservation(page: Page): Promise<void> {
     // by real interactions; the destination is an already approved GPU map.
     await enterWarp(page, 'route3', { x: 8, y: 1 }, 'ArrowUp', '星陨观测所');
     const returned = await worldBehavior(page);
-    assert(returned.mapId === 'mt-moon' && returned.renderer === 'pixi' && !returned.diagnosticWorldScene, `ridge north-warp did not restore the approved GPU renderer path (${JSON.stringify(returned)})`);
+    assert(returned.mapId === 'mt-moon' && returned.renderer === 'pixi', `ridge north-warp did not restore the Pixi renderer path (${JSON.stringify(returned)})`);
 }
 async function readHeap(page: Page): Promise<number> {
     const cdp = await page.context().newCDPSession(page);

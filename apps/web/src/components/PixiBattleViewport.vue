@@ -60,7 +60,7 @@ watch(() => props.quality, (quality) => stage.setQuality(quality ?? 'standard'))
 watch(() => props.visualSettings, (settings) => stage.setVisualSettings(settings), { deep: true });
 watch(() => props.presentation, (presentation) => { void syncPresentation(presentation); });
 // BattlePresentationBridge supplies an incremental array each frame. Deliberately
-// do not re-read engine events here: both Canvas and Pixi consume director cues.
+// do not re-read engine events here; BattleStage consumes the director cues.
 watch(() => props.cues, (cues) => { void syncCues(cues); });
 
 async function playTransition(request: SceneTransitionRequest): Promise<void> {

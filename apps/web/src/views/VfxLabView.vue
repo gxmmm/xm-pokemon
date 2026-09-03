@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getSpecies, SKILL_MAP, SPECIES_LIST, type BattleEnvironmentId } from '@pokemon-online/config';
 import { createWildInstance } from '@pokemon-online/engine';
-import { BattleDirector, type BattlePresentation } from '@pokemon-online/presentation';
+import { BattleDirector, snapshotBattle, type BattlePresentation } from '@pokemon-online/presentation';
 import type { BattleCombatant } from '@pokemon-online/shared';
 import type { QualityProfile } from '@pokemon-online/renderer';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
@@ -61,7 +61,7 @@ async function resetStage(): Promise<void> {
     staticCombatant(casterSpeciesId.value, 'player', CASTER_ID, { x: 5, y: 8 }),
     dummy,
   ];
-  presentation.value = { time: 0, combatants, events: [] };
+  presentation.value = { time: 0, combatants: snapshotBattle(0, combatants).combatants, events: [] };
   cues.value = [];
   director.reset();
   await nextTick();

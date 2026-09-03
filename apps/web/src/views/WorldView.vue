@@ -12,7 +12,7 @@ import WorldMap from '../components/WorldMap.vue';
 import { createTransitionState, runTransition } from '../world/transitions.ts';
 import { consumeWorldReturnVisualTransition, requestBattleVisualTransition } from '../game/SceneVisualTransition.ts';
 import { visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
-import { hasRendererObservationWorldScene, isRendererObservationWorldScene, rendererObservationEnabled } from '../visuals/runtime-observation.ts';
+import { rendererObservationEnabled } from '../visuals/runtime-observation.ts';
 
 declare global {
   interface Window {
@@ -27,7 +27,6 @@ declare global {
       nearbyNpcId: string | null;
       nearbyObjectId: string | null;
       encounterEligible: boolean;
-      diagnosticWorldScene: boolean;
     };
   }
 }
@@ -38,22 +37,16 @@ const router = useRouter();
 const returnedFromGpuBattle = consumeWorldReturnVisualTransition();
 
 const map = computed(() => getMap(game.save!.currentMapId));
-/** Formal eligibility stays config-owned. The observation-only branch below is an
- * authenticated diagnostic for a pending Scene Pack; it never mutates the gate. */
-function canBridgeGpuWorld(mapId: string): boolean {
-  return isGpuWorldMapId(mapId) || hasRendererObservationWorldScene(mapId);
-}
-// All configured maps have an approved Scene Pack and explicit GPU gate.
-// Legacy Canvas code remains in the repository but is never mounted by gameplay.
+// A reviewed Scene Pack is the single eligibility source for the Pixi world.
 const gpuUnavailable = ref<string | null>(null);
 const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
 const pixiStatus = ref(
-  returnedFromGpuBattle && canBridgeGpuWorld(returnedFromGpuBattle.mapId)
+  returnedFromGpuBattle && isGpuWorldMapId(returnedFromGpuBattle.mapId)
     ? '正在恢复 GPU 世界 renderer…'
-    : canBridgeGpuWorld(map.value.id) ? `正在初始化 GPU ${map.value.name} renderer…` : 'GPU 世界场景不可用',
+    : isGpuWorldMapId(map.value.id) ? `正在初始化 GPU ${map.value.name} renderer…` : 'GPU 世界场景不可用',
 );
 const pixiWorldRef = ref<InstanceType<typeof PixiWorldViewport> | null>(null);
-const gpuWorldScene = computed(() => canBridgeGpuWorld(map.value.id) ? WORLD_SCENE_BY_MAP_ID[map.value.id] : undefined);
+const gpuWorldScene = computed(() => isGpuWorldMapId(map.value.id) ? WORLD_SCENE_BY_MAP_ID[map.value.id] : undefined);
 watch(() => visualRuntimeCapabilities.value.quality, (quality) => {
   pixiQuality.value = quality;
   pixiStatus.value = `GPU ${map.value.name} ${quality} renderer`;
@@ -66,7 +59,7 @@ const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
 async function onPixiWorldReady(): Promise<void> {
   gpuUnavailable.value = null;
   pixiStatus.value = `GPU ${map.value.name} ${pixiQuality.value} renderer`;
-  if (returnedFromGpuBattle?.mapId === map.value.id && canBridgeGpuWorld(map.value.id)) {
+  if (returnedFromGpuBattle?.mapId === map.value.id && isGpuWorldMapId(map.value.id)) {
     await nextTick();
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 260, color: '#0b2430' });
   }
@@ -78,7 +71,7 @@ function onPixiWorldUnavailable(message: string): void {
 async function enterBattleRoute(): Promise<void> {
   // Route handoff transports visual intent only. Battle facts have already been
   // created by the battle store and world movement stays frozen by `leaving`.
-  if (!gpuUnavailable.value && canBridgeGpuWorld(map.value.id)) {
+  if (!gpuUnavailable.value && isGpuWorldMapId(map.value.id)) {
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
     requestBattleVisualTransition({ mapId: map.value.id, quality: pixiQuality.value });
   }
@@ -103,13 +96,10 @@ const dialogIndex = ref(0);
 const dialogDone = ref(false);
 const objective = computed(() => storyQuestLabel(game.save?.story.activeQuest ?? 'meet-professor'));
 const tide = computed(() => game.save?.story.tide ?? 'high');
-const canInteract = computed(() => (!!nearbyNpc.value || !!nearbyObject.value) && !dialog.value && !transition.active && !leaving);
 watch(gpuWorldScene, (scene) => {
   gpuUnavailable.value = null;
   if (scene) {
-    pixiStatus.value = isRendererObservationWorldScene(map.value.id)
-      ? `GPU ${map.value.name} observation diagnostic`
-      : `正在初始化 GPU ${map.value.name} renderer…`;
+    pixiStatus.value = `正在初始化 GPU ${map.value.name} renderer…`;
     return;
   }
   gpuUnavailable.value = '当前地图缺少 GPU Scene Pack';
@@ -340,7 +330,6 @@ onMounted(() => {
       nearbyNpcId: nearbyNpc.value?.id ?? null,
       nearbyObjectId: nearbyObject.value?.id ?? null,
       encounterEligible: isEncounterTile(tileAt(Math.round(view.px), Math.round(view.py)), map.value),
-      diagnosticWorldScene: isRendererObservationWorldScene(map.value.id),
     });
   }
   // capture phase: receive keys BEFORE browser extensions (e.g. video-speed

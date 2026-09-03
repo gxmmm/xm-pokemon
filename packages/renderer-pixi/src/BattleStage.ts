@@ -6,7 +6,7 @@ import { smoothBattlePresentationAxis } from './battle-motion.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
-import { movementPressurePlan, terrainContactPlan } from './terrain-contact-plan.ts';
+import { movementPressurePlan, terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
 
@@ -52,8 +52,14 @@ export class BattleStage implements BattleRenderer {
   private positions = new Map<string, Point>();
   private targetPositions = new Map<string, Point>();
   private positionVelocities = new Map<string, Point>();
+  private groundPositions = new Map<string, Point>();
+  private targetGroundPositions = new Map<string, Point>();
+  private groundPositionVelocities = new Map<string, Point>();
   private visualScales = new Map<string, number>();
   private targetScales = new Map<string, number>();
+  private groundScales = new Map<string, number>();
+  private targetGroundScales = new Map<string, number>();
+  private terrainContactPlans = new Map<string, TerrainContactPlan>();
   private contactGraphics = new Map<string, Graphics>();
   private contactPositions = new Map<string, Point>();
   private contactCooldowns = new Map<string, number>();
@@ -112,8 +118,14 @@ export class BattleStage implements BattleRenderer {
     this.positions.clear();
     this.targetPositions.clear();
     this.positionVelocities.clear();
+    this.groundPositions.clear();
+    this.targetGroundPositions.clear();
+    this.groundPositionVelocities.clear();
     this.visualScales.clear();
     this.targetScales.clear();
+    this.groundScales.clear();
+    this.targetGroundScales.clear();
+    this.terrainContactPlans.clear();
     this.contactGraphics.clear();
     this.contactPositions.clear();
     this.contactCooldowns.clear();
@@ -217,8 +229,14 @@ export class BattleStage implements BattleRenderer {
         this.positions.delete(uid);
         this.targetPositions.delete(uid);
         this.positionVelocities.delete(uid);
+        this.groundPositions.delete(uid);
+        this.targetGroundPositions.delete(uid);
+        this.groundPositionVelocities.delete(uid);
         this.visualScales.delete(uid);
         this.targetScales.delete(uid);
+        this.groundScales.delete(uid);
+        this.targetGroundScales.delete(uid);
+        this.terrainContactPlans.delete(uid);
         this.contactPositions.delete(uid);
         this.contactCooldowns.delete(uid);
         this.pressureCooldowns.delete(uid);
@@ -229,13 +247,28 @@ export class BattleStage implements BattleRenderer {
     }
     for (const combatant of snapshot.combatants) {
       const visualCombatant = { ...combatant, stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
-      const projection = projectBattleWorldPoint(
-        visualCombatant.worldPosition ?? battleWorldPositionFromGrid(visualCombatant.pixel.x, visualCombatant.pixel.y),
-        battleEnvironmentFor(this.biomeId).camera,
-      );
+      const spec = battleEnvironmentFor(this.biomeId);
+      const hasContinuousWorldPosition = visualCombatant.worldPosition !== undefined;
+      const worldPosition = visualCombatant.worldPosition ?? battleWorldPositionFromGrid(visualCombatant.pixel.x, visualCombatant.pixel.y);
+      const projection = projectBattleWorldPoint(worldPosition, spec.camera);
+      const groundProjection = projectBattleWorldPoint({ ...worldPosition, z: 0 }, spec.camera);
       const point = { x: projection.x, y: projection.y };
+      const groundPoint = { x: groundProjection.x, y: groundProjection.y };
       this.targetPositions.set(visualCombatant.uid, point);
+      this.targetGroundPositions.set(visualCombatant.uid, groundPoint);
       this.targetScales.set(visualCombatant.uid, projection.scale);
+      this.targetGroundScales.set(visualCombatant.uid, groundProjection.scale);
+      const profile = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).profile;
+      const contactPlan = terrainContactPlan(spec.contactVisual, profile.locomotionMode, this.quality);
+      this.terrainContactPlans.set(visualCombatant.uid, contactPlan);
+      if (hasContinuousWorldPosition) {
+        this.positions.set(visualCombatant.uid, { ...point });
+        this.positionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
+        this.groundPositions.set(visualCombatant.uid, { ...groundPoint });
+        this.groundPositionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
+        this.visualScales.set(visualCombatant.uid, projection.scale);
+        this.groundScales.set(visualCombatant.uid, groundProjection.scale);
+      }
       let view = this.views.get(visualCombatant.uid);
       if (!view) {
         view = new CombatantView(visualCombatant, this.battleArtAssets);
@@ -243,26 +276,40 @@ export class BattleStage implements BattleRenderer {
         this.combatants.addChild(view);
         this.positions.set(visualCombatant.uid, point);
         this.positionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
+        this.groundPositions.set(visualCombatant.uid, groundPoint);
+        this.groundPositionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
         this.visualScales.set(visualCombatant.uid, projection.scale);
+        this.groundScales.set(visualCombatant.uid, groundProjection.scale);
       } else {
         view.refresh(visualCombatant);
       }
-      // Render position always follows the delayed snapshot smoothly. Engine
-      // castProgress remains the only authoritative movement lock; CombatantView
-      // adds its action offsets locally, avoiding a catch-up teleport after a
-      // visual prepare, cast, or recovery pose finishes.
+      // Presentation-owned world positions are already continuously
+      // interpolated, so they bypass the legacy pixel spring. Engine
+      // castProgress remains the only authoritative movement lock;
+      // CombatantView adds action offsets locally.
       const visiblePoint = this.positions.get(visualCombatant.uid) ?? point;
+      const visibleGroundPoint = this.groundPositions.get(visualCombatant.uid) ?? groundPoint;
+      const visibleScale = this.visualScales.get(visualCombatant.uid) ?? projection.scale;
       view.position.set(visiblePoint.x, visiblePoint.y);
-      view.scale.set(this.visualScales.get(visualCombatant.uid) ?? projection.scale);
-      view.zIndex = visiblePoint.y;
-      this.updateTerrainContact(combatant.uid, combatant.speciesId, visiblePoint);
+      view.scale.set(visibleScale);
+      view.zIndex = visibleGroundPoint.y;
+      this.updateViewGrounding(view, visiblePoint, visibleGroundPoint, visibleScale, this.groundScales.get(visualCombatant.uid) ?? groundProjection.scale, contactPlan);
+      this.updateTerrainContact(combatant.uid, visibleGroundPoint, contactPlan);
     }
   }
 
-  private updateTerrainContact(uid: string, speciesId: number, point: Point): void {
+  private updateViewGrounding(view: CombatantView, point: Point, groundPoint: Point, scale: number, groundScale: number, plan: TerrainContactPlan): void {
+    const safeScale = Math.max(0.001, scale);
+    view.setGrounding(
+      { x: (groundPoint.x - point.x) / safeScale, y: (groundPoint.y - point.y) / safeScale },
+      Math.max(0, groundPoint.y - point.y),
+      plan.shadowAlphaMultiplier,
+      plan.shadowScaleMultiplier * groundScale / safeScale,
+    );
+  }
+
+  private updateTerrainContact(uid: string, point: Point, plan: TerrainContactPlan): void {
     const spec = battleEnvironmentFor(this.biomeId);
-    const profile = resolveBattleArtPresentation({ speciesId, side: 'player' }).profile;
-    const plan = terrainContactPlan(spec.contactVisual, profile.locomotionMode, this.quality);
     const previous = this.contactPositions.get(uid);
     this.contactPositions.set(uid, point);
     const travel = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
@@ -1366,14 +1413,30 @@ export class BattleStage implements BattleRenderer {
       velocity.y = vertical.velocity;
       this.positions.set(uid, visible);
       this.positionVelocities.set(uid, velocity);
+      const groundTarget = this.targetGroundPositions.get(uid) ?? target;
+      const visibleGround = this.groundPositions.get(uid) ?? { ...groundTarget };
+      const groundVelocity = this.groundPositionVelocities.get(uid) ?? { x: 0, y: 0 };
+      const groundHorizontal = smoothBattlePresentationAxis(visibleGround.x, groundTarget.x, groundVelocity.x, 0.11, dt);
+      const groundVertical = smoothBattlePresentationAxis(visibleGround.y, groundTarget.y, groundVelocity.y, 0.13, dt);
+      visibleGround.x = groundHorizontal.value;
+      visibleGround.y = groundVertical.value;
+      groundVelocity.x = groundHorizontal.velocity;
+      groundVelocity.y = groundVertical.velocity;
+      this.groundPositions.set(uid, visibleGround);
+      this.groundPositionVelocities.set(uid, groundVelocity);
       const targetScale = this.targetScales.get(uid) ?? 1;
       const visibleScale = (this.visualScales.get(uid) ?? targetScale) + (targetScale - (this.visualScales.get(uid) ?? targetScale)) * positionBlend;
       this.visualScales.set(uid, visibleScale);
+      const targetGroundScale = this.targetGroundScales.get(uid) ?? targetScale;
+      const visibleGroundScale = (this.groundScales.get(uid) ?? targetGroundScale) + (targetGroundScale - (this.groundScales.get(uid) ?? targetGroundScale)) * positionBlend;
+      this.groundScales.set(uid, visibleGroundScale);
       const view = this.views.get(uid);
       if (view) {
         view.position.set(visible.x, visible.y);
         view.scale.set(visibleScale);
-        view.zIndex = visible.y;
+        view.zIndex = visibleGround.y;
+        const plan = this.terrainContactPlans.get(uid);
+        if (plan) this.updateViewGrounding(view, visible, visibleGround, visibleScale, visibleGroundScale, plan);
       }
     }
     this.cameraScale += (this.cameraTargetScale - this.cameraScale) * Math.min(1, dt * 8);

@@ -20,6 +20,31 @@ export interface TerrainContactPlan {
   shadowScaleMultiplier: number;
 }
 
+export interface GroundShadowPlan {
+  alpha: number;
+  scaleX: number;
+  scaleY: number;
+}
+
+/** Converts renderer-only elevation into a restrained contact-shadow response.
+ * Screen lift is used instead of world units so the result remains stable when
+ * a biome changes its camera height or pitch. */
+export function groundShadowPlan(
+  projectedLiftPixels: number,
+  hoverHeightRatio: number,
+  alphaMultiplier = 1,
+  scaleMultiplier = 1,
+): GroundShadowPlan {
+  const worldLift = Math.max(0, Math.min(1, projectedLiftPixels / 110));
+  const hoverLift = Math.max(0, Math.min(1, hoverHeightRatio));
+  const separation = 1 - (1 - worldLift) * (1 - hoverLift * 0.72);
+  return {
+    alpha: Math.max(0.18, (1 - separation * 0.58) * alphaMultiplier),
+    scaleX: Math.max(0.52, (1 - separation * 0.34) * scaleMultiplier),
+    scaleY: Math.max(0.48, (1 - separation * 0.22) * scaleMultiplier),
+  };
+}
+
 /** Pure visual policy joining resolved environment and model configuration.
  * It deliberately carries no species IDs, grid rules, collision, or gameplay
  * effects: flight/hover are visual presentation choices only. */

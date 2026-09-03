@@ -15,17 +15,12 @@ import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/pres
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { consumeBattleVisualTransition, requestWorldReturnVisualTransition } from '../game/SceneVisualTransition.ts';
 import { visualRuntimeCapabilities, visualRuntimeSettings } from '../visuals/runtime-settings.ts';
-import { hasRendererObservationWorldScene } from '../visuals/runtime-observation.ts';
 import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
 const game = useGameStore();
 const router = useRouter();
 const enteredFromGpuWorld = consumeBattleVisualTransition();
-function canBridgeGpuWorld(mapId: string): boolean {
-  return isGpuWorldMapId(mapId) || hasRendererObservationWorldScene(mapId);
-}
-
 const speed = ref(1);
 const running = ref(true);
 const ended = ref(false);
@@ -34,10 +29,9 @@ const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
 const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
 // BattleStage is the only gameplay renderer for wild, story, and PvP battles.
-// Legacy Canvas code remains in the repository but is never mounted by gameplay.
 const gpuUnavailable = ref<string | null>(null);
 const pixiQuality = ref<QualityProfile>(visualRuntimeCapabilities.value.quality);
-const pixiStatus = ref(enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
+const pixiStatus = ref(enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
 const returningToWorld = ref(false);
 let raf = 0;
 
@@ -63,7 +57,7 @@ const skillFlash = ref<Record<string, number>>({});
 const interruptFlash = ref<Record<string, number>>({});
 const presentationBridge = new BattlePresentationBridge();
 const presentation = ref<BattlePresentation | null>(null);
-// The canvas needs the full presentation cadence; side cards and the combat log
+// The Pixi stage needs the full presentation cadence; side cards and the combat log
 // do not. Keep DOM/reactivity updates at 12fps to avoid six cards re-rendering
 // for every animation frame.
 const hudCombatants = ref<BattleCombatant[]>([]);
@@ -91,7 +85,7 @@ function avatarStyle(uid: string): Record<string, string> {
   };
 }
 function interruptVal(uid: string): number { return interruptFlash.value[uid] ?? 0; }
-// The canvas receives every presentation frame. HUD data is sampled separately
+// The Pixi stage receives every presentation frame. HUD data is sampled separately
 // so text, cooldown chips and battle-log DOM do not chase the 60fps canvas loop.
 const playerComs = computed(() => hudCombatants.value.filter((c) => c.side === 'player'));
 const enemyComs = computed(() => hudCombatants.value.filter((c) => c.side === 'enemy'));
@@ -325,7 +319,7 @@ function releaseAll(): void {
 async function returnToWorld(): Promise<void> {
   if (returningToWorld.value) return;
   returningToWorld.value = true;
-  if (!gpuUnavailable.value && battle.mapId && canBridgeGpuWorld(battle.mapId)) {
+  if (!gpuUnavailable.value && battle.mapId && isGpuWorldMapId(battle.mapId)) {
     await pixiRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
     requestWorldReturnVisualTransition({ mapId: battle.mapId, quality: pixiQuality.value });
   }
@@ -400,7 +394,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && canBridgeGpuWorld(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :quality="pixiQuality" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>

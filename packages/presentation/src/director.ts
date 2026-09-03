@@ -1,11 +1,10 @@
 import { DEFAULT_SKILL_CAST_PRESENTATION, SKILL_CAST_PRESENTATION_BY_SKILL_ID, SKILL_VISUAL_RECIPE_MAP } from '@pokemon-online/config';
-import type { BattleEvent, TypeName } from '@pokemon-online/shared';
+import type { TypeName } from '@pokemon-online/shared';
 import {
   type BattleCue,
   type BattlePresentationEvent,
   type CombatantAnimation,
   type EnvironmentReaction,
-  toBattlePresentationEvent,
 } from './battle.ts';
 
 /** Serializable envelope that lets any renderer deduplicate and schedule cues
@@ -130,11 +129,6 @@ export class BattleDirector {
     return output.filter((cue) => !('subjectId' in cue) || cue.subjectId.length > 0)
       .map((cue, index) => ({ id: `${event.id}:cue:${index}`, eventId: event.id, sequence: event.sequence, at: event.at, cue }));
   }
-}
-
-/** Convenience bridge for legacy callers while presentation is migrated. */
-export function directBattleEvents(events: readonly BattleEvent[]): DirectedBattleCue[] {
-  return new BattleDirector().direct(events.map(toBattlePresentationEvent));
 }
 
 interface RecipeLike { id: string; element?: TypeName; delivery: 'melee' | 'projectile' | 'beam' | 'area' | 'aura'; camera: 'light' | 'track' | 'impact' | 'finisher'; variant?: string; actorChoreography?: import('@pokemon-online/shared').BattleActorChoreography; particleBudget?: number; }
