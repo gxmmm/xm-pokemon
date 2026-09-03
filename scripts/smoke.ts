@@ -17,6 +17,7 @@ import { Container, Graphics, Texture } from 'pixi.js';
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { BattleCameraController } from '../packages/renderer-pixi/src/BattleCameraController.ts';
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
+import { BattlePositionTracker } from '../packages/renderer-pixi/src/BattlePositionTracker.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
 import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environment-reaction-vfx.ts';
 import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
@@ -210,6 +211,51 @@ function assert(cond: boolean, msg: string): void {
   diagnostics = camera.getDiagnostics();
   assert(diagnostics.targetScale === 1 && diagnostics.targetOffset.x === 0 && diagnostics.targetOffset.y === 0 && diagnostics.shake === 0, 'disabled camera intensity suppresses zoom, pan, and shake');
   console.log('✓ standalone spectator camera and parallax controller');
+}
+
+// Body and ground projection motion share one record per combatant, preventing
+// parallel position/velocity/scale maps from drifting during redirection.
+{
+  const tracker = new BattlePositionTracker();
+  const initial = tracker.setTarget('unit', {
+    point: { x: 100, y: 180 },
+    groundPoint: { x: 100, y: 220 },
+    scale: 0.84,
+    groundScale: 0.90,
+  });
+  assert(tracker.size === 1 && initial.point.x === 100 && initial.groundPoint.y === 220, 'new combatant position state initializes at its resolved projection');
+  tracker.setTarget('unit', {
+    point: { x: 300, y: 260 },
+    groundPoint: { x: 300, y: 310 },
+    scale: 1.08,
+    groundScale: 1.12,
+  });
+  const moving = tracker.update(0.05)[0]!;
+  assert(moving.point.x > 100 && moving.point.x < 300 && moving.groundPoint.y > 220 && moving.groundPoint.y < 310, 'body and ground projections advance with bounded damping');
+  assert(moving.scale > 0.84 && moving.scale < 1.08 && moving.groundScale > 0.90 && moving.groundScale < 1.12, 'body and ground scales interpolate with their matching projections');
+  const beforeRedirect = moving.point.x;
+  tracker.setTarget('unit', {
+    point: { x: 240, y: 210 },
+    groundPoint: { x: 240, y: 260 },
+    scale: 1,
+    groundScale: 1.04,
+  });
+  const redirected = tracker.update(0.05)[0]!;
+  assert(redirected.point.x > beforeRedirect && redirected.point.x < 240, 'redirected movement preserves momentum without overshooting its new target');
+
+  const snapped = tracker.setTarget('unit', {
+    point: { x: 420, y: 190 },
+    groundPoint: { x: 420, y: 245 },
+    scale: 0.96,
+    groundScale: 1.02,
+  }, true);
+  assert(snapped.point.x === 420 && snapped.groundPoint.y === 245 && snapped.scale === 0.96, 'continuous world positions bypass the legacy presentation spring');
+  const externalPoint = tracker.getPosition('unit')!;
+  externalPoint.x = -1;
+  assert(tracker.getPosition('unit')?.x === 420, 'position reads cannot mutate the tracker state');
+  tracker.remove('unit');
+  assert(tracker.size === 0 && tracker.getFrame('unit') === undefined, 'removed combatants release their complete position state');
+  console.log('✓ coherent combatant position and projection tracker');
 }
 
 // Lightning primitives remain standalone render recipes. Their effect counts

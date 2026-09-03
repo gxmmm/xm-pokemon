@@ -2,10 +2,10 @@ import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type Ba
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation } from '@pokemon-online/config';
 import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
-import { smoothBattlePresentationAxis } from './battle-motion.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController } from './BattleCameraController.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
+import { BattlePositionTracker } from './BattlePositionTracker.ts';
 import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import { terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
@@ -48,17 +48,8 @@ export class BattleStage implements BattleRenderer {
   private overlay = new Container();
   private views = new Map<string, CombatantView>();
   private readonly battleArtAssets = new BattleArtAssetLoader();
+  private readonly positionTracker = new BattlePositionTracker();
   private environmentBackgroundTexture: Texture | null = null;
-  private positions = new Map<string, Point>();
-  private targetPositions = new Map<string, Point>();
-  private positionVelocities = new Map<string, Point>();
-  private groundPositions = new Map<string, Point>();
-  private targetGroundPositions = new Map<string, Point>();
-  private groundPositionVelocities = new Map<string, Point>();
-  private visualScales = new Map<string, number>();
-  private targetScales = new Map<string, number>();
-  private groundScales = new Map<string, number>();
-  private targetGroundScales = new Map<string, number>();
   private terrainContactPlans = new Map<string, TerrainContactPlan>();
   private delayedCues: DelayedBattleCue[] = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -99,16 +90,7 @@ export class BattleStage implements BattleRenderer {
     this.effectPool.clear();
     this.delayedCues = [];
     this.views.clear();
-    this.positions.clear();
-    this.targetPositions.clear();
-    this.positionVelocities.clear();
-    this.groundPositions.clear();
-    this.targetGroundPositions.clear();
-    this.groundPositionVelocities.clear();
-    this.visualScales.clear();
-    this.targetScales.clear();
-    this.groundScales.clear();
-    this.targetGroundScales.clear();
+    this.positionTracker.clear();
     this.terrainContactPlans.clear();
     this.terrainContacts.clear();
     this.camera.reset();
@@ -199,16 +181,7 @@ export class BattleStage implements BattleRenderer {
       if (!active.has(uid)) {
         view.destroy();
         this.views.delete(uid);
-        this.positions.delete(uid);
-        this.targetPositions.delete(uid);
-        this.positionVelocities.delete(uid);
-        this.groundPositions.delete(uid);
-        this.targetGroundPositions.delete(uid);
-        this.groundPositionVelocities.delete(uid);
-        this.visualScales.delete(uid);
-        this.targetScales.delete(uid);
-        this.groundScales.delete(uid);
-        this.targetGroundScales.delete(uid);
+        this.positionTracker.remove(uid);
         this.terrainContactPlans.delete(uid);
         this.terrainContacts.remove(uid);
       }
@@ -222,32 +195,15 @@ export class BattleStage implements BattleRenderer {
       const groundProjection = projectBattleWorldPoint({ ...worldPosition, z: 0 }, spec.camera);
       const point = { x: projection.x, y: projection.y };
       const groundPoint = { x: groundProjection.x, y: groundProjection.y };
-      this.targetPositions.set(visualCombatant.uid, point);
-      this.targetGroundPositions.set(visualCombatant.uid, groundPoint);
-      this.targetScales.set(visualCombatant.uid, projection.scale);
-      this.targetGroundScales.set(visualCombatant.uid, groundProjection.scale);
       const profile = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).profile;
       const contactPlan = terrainContactPlan(spec.contactVisual, profile.locomotionMode);
       this.terrainContactPlans.set(visualCombatant.uid, contactPlan);
-      if (hasContinuousWorldPosition) {
-        this.positions.set(visualCombatant.uid, { ...point });
-        this.positionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
-        this.groundPositions.set(visualCombatant.uid, { ...groundPoint });
-        this.groundPositionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
-        this.visualScales.set(visualCombatant.uid, projection.scale);
-        this.groundScales.set(visualCombatant.uid, groundProjection.scale);
-      }
       let view = this.views.get(visualCombatant.uid);
+      const isNewView = !view;
       if (!view) {
         view = new CombatantView(visualCombatant, this.battleArtAssets);
         this.views.set(combatant.uid, view);
         this.combatants.addChild(view);
-        this.positions.set(visualCombatant.uid, point);
-        this.positionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
-        this.groundPositions.set(visualCombatant.uid, groundPoint);
-        this.groundPositionVelocities.set(visualCombatant.uid, { x: 0, y: 0 });
-        this.visualScales.set(visualCombatant.uid, projection.scale);
-        this.groundScales.set(visualCombatant.uid, groundProjection.scale);
       } else {
         view.refresh(visualCombatant);
       }
@@ -255,14 +211,17 @@ export class BattleStage implements BattleRenderer {
       // interpolated, so they bypass the legacy pixel spring. Engine
       // castProgress remains the only authoritative movement lock;
       // CombatantView adds action offsets locally.
-      const visiblePoint = this.positions.get(visualCombatant.uid) ?? point;
-      const visibleGroundPoint = this.groundPositions.get(visualCombatant.uid) ?? groundPoint;
-      const visibleScale = this.visualScales.get(visualCombatant.uid) ?? projection.scale;
-      view.position.set(visiblePoint.x, visiblePoint.y);
-      view.scale.set(visibleScale);
-      view.zIndex = visibleGroundPoint.y;
-      this.updateViewGrounding(view, visiblePoint, visibleGroundPoint, visibleScale, this.groundScales.get(visualCombatant.uid) ?? groundProjection.scale, contactPlan);
-      this.terrainContacts.update(combatant.uid, visibleGroundPoint, contactPlan, spec);
+      const frame = this.positionTracker.setTarget(visualCombatant.uid, {
+        point,
+        groundPoint,
+        scale: projection.scale,
+        groundScale: groundProjection.scale,
+      }, hasContinuousWorldPosition || isNewView);
+      view.position.set(frame.point.x, frame.point.y);
+      view.scale.set(frame.scale);
+      view.zIndex = frame.groundPoint.y;
+      this.updateViewGrounding(view, frame.point, frame.groundPoint, frame.scale, frame.groundScale, contactPlan);
+      this.terrainContacts.update(combatant.uid, frame.groundPoint, contactPlan, spec);
     }
   }
 
@@ -325,12 +284,12 @@ export class BattleStage implements BattleRenderer {
   }
 
   private focusCamera(ids: readonly string[], zoom: number, shake: number): void {
-    const points = ids.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
+    const points = ids.map((id) => this.positionTracker.getPosition(id)).filter((point): point is Point => !!point);
     this.camera.focus(points, battleEnvironmentFor(this.biomeId).camera, zoom, shake);
   }
 
   private playAnimationCue(cue: Extract<BattleCue, { type: 'animation' }>): void {
-    const target = cue.targetIds?.map((id) => this.positions.get(id)).find((point): point is Point => !!point);
+    const target = cue.targetIds?.map((id) => this.positionTracker.getPosition(id)).find((point): point is Point => !!point);
     this.views.get(cue.subjectId)?.playAnimation(
       cue.animation,
       cue.schedule,
@@ -342,8 +301,8 @@ export class BattleStage implements BattleRenderer {
   }
 
   private spawnPlan(plan: BattleStageVfxPlan): void {
-    const actor = plan.actorId ? this.positions.get(plan.actorId) : undefined;
-    const targetRoot = plan.targetIds.map((id) => this.positions.get(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
+    const actor = plan.actorId ? this.positionTracker.getPosition(plan.actorId) : undefined;
+    const targetRoot = plan.targetIds.map((id) => this.positionTracker.getPosition(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
     const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
     const color = elementColor(plan.element);
     if (plan.primitive === 'projectile' && actor) {
@@ -351,7 +310,7 @@ export class BattleStage implements BattleRenderer {
     } else if (plan.primitive === 'sky-strike') {
       spawnSkyStrike(this.effectPool, target, plan.intensity);
     } else if (plan.primitive === 'chain') {
-      const chainTargets = plan.targetIds.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
+      const chainTargets = plan.targetIds.map((id) => this.positionTracker.getPosition(id)).filter((point): point is Point => !!point);
       spawnChainLightning(this.effectPool, actor ?? target, chainTargets.length > 0 ? chainTargets : [target], plan.intensity);
     } else if (plan.primitive === 'dive' && actor) {
       spawnDive(this.effectPool, actor, target, color, plan.intensity);
@@ -372,47 +331,16 @@ export class BattleStage implements BattleRenderer {
     const clock = this.hitStopSeconds > 0 ? 0 : dt;
     this.hitStopSeconds = Math.max(0, this.hitStopSeconds - dt);
     this.terrainContacts.tick(dt);
-    // A critically damped presentation spring retains velocity across target
-    // changes. Diagonal and redirected steps therefore bend naturally instead
-    // of restarting as isolated cell-to-cell lerps. Engine occupancy remains
-    // authoritative and all VFX/camera anchors use the same visible position.
-    const positionBlend = 1 - Math.exp(-dt * 12);
-    for (const [uid, target] of this.targetPositions) {
-      const visible = this.positions.get(uid) ?? { ...target };
-      const velocity = this.positionVelocities.get(uid) ?? { x: 0, y: 0 };
-      const horizontal = smoothBattlePresentationAxis(visible.x, target.x, velocity.x, 0.11, dt);
-      const vertical = smoothBattlePresentationAxis(visible.y, target.y, velocity.y, 0.13, dt);
-      visible.x = horizontal.value;
-      visible.y = vertical.value;
-      velocity.x = horizontal.velocity;
-      velocity.y = vertical.velocity;
-      this.positions.set(uid, visible);
-      this.positionVelocities.set(uid, velocity);
-      const groundTarget = this.targetGroundPositions.get(uid) ?? target;
-      const visibleGround = this.groundPositions.get(uid) ?? { ...groundTarget };
-      const groundVelocity = this.groundPositionVelocities.get(uid) ?? { x: 0, y: 0 };
-      const groundHorizontal = smoothBattlePresentationAxis(visibleGround.x, groundTarget.x, groundVelocity.x, 0.11, dt);
-      const groundVertical = smoothBattlePresentationAxis(visibleGround.y, groundTarget.y, groundVelocity.y, 0.13, dt);
-      visibleGround.x = groundHorizontal.value;
-      visibleGround.y = groundVertical.value;
-      groundVelocity.x = groundHorizontal.velocity;
-      groundVelocity.y = groundVertical.velocity;
-      this.groundPositions.set(uid, visibleGround);
-      this.groundPositionVelocities.set(uid, groundVelocity);
-      const targetScale = this.targetScales.get(uid) ?? 1;
-      const visibleScale = (this.visualScales.get(uid) ?? targetScale) + (targetScale - (this.visualScales.get(uid) ?? targetScale)) * positionBlend;
-      this.visualScales.set(uid, visibleScale);
-      const targetGroundScale = this.targetGroundScales.get(uid) ?? targetScale;
-      const visibleGroundScale = (this.groundScales.get(uid) ?? targetGroundScale) + (targetGroundScale - (this.groundScales.get(uid) ?? targetGroundScale)) * positionBlend;
-      this.groundScales.set(uid, visibleGroundScale);
-      const view = this.views.get(uid);
-      if (view) {
-        view.position.set(visible.x, visible.y);
-        view.scale.set(visibleScale);
-        view.zIndex = visibleGround.y;
-        const plan = this.terrainContactPlans.get(uid);
-        if (plan) this.updateViewGrounding(view, visible, visibleGround, visibleScale, visibleGroundScale, plan);
-      }
+    // One coherent state record keeps projected body/ground anchors,
+    // velocities, and scales synchronized throughout redirected movement.
+    for (const frame of this.positionTracker.update(dt)) {
+      const view = this.views.get(frame.uid);
+      if (!view) continue;
+      view.position.set(frame.point.x, frame.point.y);
+      view.scale.set(frame.scale);
+      view.zIndex = frame.groundPoint.y;
+      const plan = this.terrainContactPlans.get(frame.uid);
+      if (plan) this.updateViewGrounding(view, frame.point, frame.groundPoint, frame.scale, frame.groundScale, plan);
     }
     const spec = battleEnvironmentFor(this.biomeId);
     this.camera.update(dt, [
