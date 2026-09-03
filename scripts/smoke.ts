@@ -12,7 +12,7 @@ import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentatio
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
-import { Graphics } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
@@ -20,7 +20,9 @@ import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environm
 import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
 import { spawnChainLightning, spawnSkyStrike } from '../packages/renderer-pixi/src/lightning-vfx.ts';
 import { spawnProjectile } from '../packages/renderer-pixi/src/projectile-vfx.ts';
+import { parseHexColor } from '../packages/renderer-pixi/src/pixi-color.ts';
 import { spawnRing } from '../packages/renderer-pixi/src/ring-vfx.ts';
+import { TerrainContactEffects } from '../packages/renderer-pixi/src/TerrainContactEffects.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -104,6 +106,45 @@ function assert(cond: boolean, msg: string): void {
   pool.clear();
   assert(pool.activeCount === 0 && pool.container.children.length === 0, 'effect pool clears pending graphics during stage teardown');
   console.log('✓ centralized Pixi battle effect lifecycle');
+}
+
+// Foot occlusion and contact particles are independent capabilities. Water,
+// dust, and rune terrains must still react even though they do not cover feet.
+{
+  const runtime = new BattleEffectPool();
+  const occlusionLayer = new Container();
+  const contacts = new TerrainContactEffects(runtime, occlusionLayer);
+  assert(parseHexColor('#173b42') === 0x173b42 && parseHexColor('not-a-color', 0x123456) === 0x123456, 'shared Pixi color parser preserves valid theme colors and explicit fallbacks');
+  const cases = [
+    BATTLE_ENVIRONMENTS.grass,
+    BATTLE_ENVIRONMENTS.cave,
+    BATTLE_ENVIRONMENTS.water,
+    BATTLE_ENVIRONMENTS.dragon,
+  ] as const;
+  for (const spec of cases) {
+    contacts.clear();
+    runtime.clear();
+    const plan = terrainContactPlan(spec.contactVisual, 'grounded');
+    contacts.update('unit', { x: 600, y: 440 }, plan, spec);
+    contacts.update('unit', { x: 602, y: 440 }, plan, spec);
+    assert(runtime.activeCount === 2, `${spec.id} movement creates pressure and ${plan.particleKind} contact effects`);
+    assert(occlusionLayer.children.length === (plan.occludesFeet ? 1 : 0), `${spec.id} foot occlusion follows its independent terrain policy`);
+    contacts.update('unit', { x: 604, y: 440 }, plan, spec);
+    assert(runtime.activeCount === 2, `${spec.id} contact cooldown prevents duplicate transient effects`);
+  }
+
+  contacts.clear();
+  runtime.clear();
+  const grassPlan = terrainContactPlan(BATTLE_ENVIRONMENTS.grass.contactVisual, 'grounded');
+  contacts.update('unit', { x: 600, y: 440 }, grassPlan, BATTLE_ENVIRONMENTS.grass);
+  contacts.update('unit', { x: 602, y: 440 }, grassPlan, BATTLE_ENVIRONMENTS.grass);
+  runtime.update(0.18);
+  assert(runtime.activeCount === 1, 'movement pressure settles at 180ms while ground contact remains visible');
+  runtime.update(0.06);
+  assert(runtime.activeCount === 0, 'standard ground contact settles at 240ms');
+  contacts.remove('unit');
+  assert(occlusionLayer.children.length === 0, 'removed combatants release their terrain occlusion graphic');
+  console.log('✓ independent terrain contact and foot-occlusion lifecycle');
 }
 
 // Lightning primitives remain standalone render recipes. Their effect counts

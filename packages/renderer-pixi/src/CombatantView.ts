@@ -2,6 +2,7 @@ import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPres
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
 
 /**
@@ -512,8 +513,8 @@ export class CombatantView extends Container {
     // read as a weak ring rather than a body wrapped in flame.
     this.sprite.alpha = wrapped ? 0.68 : 1;
     this.fallback.alpha = wrapped ? 0.62 : 1;
-    const color = colorNumber(active.theme.primary, 0xff824e);
-    const highlight = colorNumber(active.theme.highlight, 0xffeea8);
+    const color = parseHexColor(active.theme.primary, 0xff824e);
+    const highlight = parseHexColor(active.theme.highlight, 0xffeea8);
     const phase = progress * Math.PI * 7;
     const swell = 1 + Math.sin(phase) * 0.10;
     const width = 37 * swell;
@@ -547,7 +548,7 @@ export class CombatantView extends Container {
     this.decorations.clear();
     for (const spec of this.presentation.profile.layers) {
       const graphic = new Graphics();
-      const color = colorNumber(this.presentation.theme[spec.color], 0xffffff);
+      const color = parseHexColor(this.presentation.theme[spec.color], 0xffffff);
       if (spec.kind === 'aura') graphic.ellipse(0, -4, 34, 42).fill({ color, alpha: spec.alpha });
       else graphic.circle(0, -8, 39).stroke({ color, alpha: spec.alpha, width: 3 });
       if (spec.depth === 'behind') this.behindLayers.addChild(graphic);
@@ -576,8 +577,8 @@ export class CombatantView extends Container {
       return;
     }
     const progress = clamp01(this.chargeProgress);
-    const primary = colorNumber(this.presentation.theme.primary, 0xffe3a3);
-    const highlight = colorNumber(this.presentation.theme.highlight, 0xffffff);
+    const primary = parseHexColor(this.presentation.theme.primary, 0xffe3a3);
+    const highlight = parseHexColor(this.presentation.theme.highlight, 0xffffff);
     const phase = (this.motionElapsedMs / 1000) * 7.5;
     const radius = 26 + progress * 19 + Math.sin(phase) * 2;
     const alpha = 0.22 + progress * 0.43;
@@ -696,8 +697,8 @@ export class CombatantView extends Container {
 
   private drawFallback(): void {
     const theme = this.presentation.theme;
-    const primary = colorNumber(theme.primary, 0x69d4e7);
-    const secondary = colorNumber(theme.secondary, 0x7ee6ac);
+    const primary = parseHexColor(theme.primary, 0x69d4e7);
+    const secondary = parseHexColor(theme.secondary, 0x7ee6ac);
     this.shadow.clear().ellipse(0, 22, 43, 14).fill({ color: 0x07101a, alpha: 0.34 });
     this.fallback.clear()
       .circle(0, -8, 25).fill({ color: primary, alpha: 0.94 })
@@ -778,13 +779,6 @@ function lerp(from: number, to: number, amount: number): number {
 function cubicInOut(value: number): number {
   return value < 0.5 ? 4 * value * value * value : 1 - ((-2 * value + 2) ** 3) / 2;
 }
-
-function colorNumber(value: string, fallback: number): number {
-  const normalized = value.replace('#', '');
-  const parsed = Number.parseInt(normalized, 16);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 
 function choreographyThemeFor(element?: TypeName): BattleVisualTheme {
   return BATTLE_VISUAL_THEMES[`type:${element ?? 'normal'}`] ?? BATTLE_VISUAL_THEMES['type:normal']!;
