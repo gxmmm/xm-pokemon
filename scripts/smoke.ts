@@ -21,6 +21,7 @@ import { BattleCueScheduler } from '../packages/renderer-pixi/src/BattleCueSched
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
 import { BattlePositionTracker } from '../packages/renderer-pixi/src/BattlePositionTracker.ts';
 import { BattleVfxExecutor } from '../packages/renderer-pixi/src/BattleVfxExecutor.ts';
+import { CombatantStatusLayer } from '../packages/renderer-pixi/src/CombatantStatusLayer.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
 import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environment-reaction-vfx.ts';
 import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
@@ -677,6 +678,32 @@ function assert(cond: boolean, msg: string): void {
   console.log(`✓ battle art config and resolver: ${BATTLE_ART_PROFILES.length} profiles, ${BATTLE_ASSET_MANIFEST.length} assets`);
   const officialBattleView = readFileSync('apps/web/src/views/BattleView.vue', 'utf8');
   assert(officialBattleView.includes("import PixiBattleViewport from '../components/PixiBattleViewport.vue'"), 'official battle entry uses the Pixi 2D sequence renderer');
+}
+
+// Persistent combat statuses remain model-local GPU graphics with explicit
+// priority, clearing, and disposal behavior independent of CombatantView.
+{
+  const statusLayer = new CombatantStatusLayer();
+  for (const status of ['sleep', 'freeze', 'paralyze', 'confuse', 'burn', 'poison'] as const) {
+    statusLayer.refresh({ alive: true, status, stunActive: false });
+    statusLayer.render(0.37);
+    assert(statusLayer.statusVisual === status && statusLayer.context.instructions.length > 0, `${status} owns a visible model-local status silhouette`);
+  }
+  statusLayer.refresh({ alive: true, status: 'sleep', stunActive: true });
+  statusLayer.render(0.45);
+  assert(statusLayer.statusVisual === 'sleep', 'persistent status presentation takes priority over transient stun');
+  statusLayer.refresh({ alive: true, status: null, stunActive: true });
+  statusLayer.render(0.52);
+  assert(statusLayer.statusVisual === 'stun' && statusLayer.context.instructions.length > 0, 'stun fallback retains its orbiting star silhouette');
+  statusLayer.refresh({ alive: true, status: null, stunActive: false });
+  statusLayer.render(0.6);
+  assert(statusLayer.statusVisual === 'none' && statusLayer.context.instructions.length === 0, 'cleared combat status releases all status geometry');
+  statusLayer.refresh({ alive: false, status: 'burn', stunActive: false });
+  statusLayer.render(0.7);
+  assert(statusLayer.statusVisual === 'burn' && statusLayer.context.instructions.length === 0, 'defeated combatants suppress persistent status geometry');
+  statusLayer.destroy();
+  assert(statusLayer.destroyed, 'status layer releases its Pixi graphics resource');
+  console.log('✓ standalone combatant status visual layer');
 }
 
 // Stage B keeps the GPU asset boundary manifest-driven. Browser decoding is
