@@ -17,6 +17,7 @@ import { Graphics } from 'pixi.js';
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { spawnChainLightning, spawnSkyStrike } from '../packages/renderer-pixi/src/lightning-vfx.ts';
 import { spawnProjectile } from '../packages/renderer-pixi/src/projectile-vfx.ts';
+import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -153,6 +154,44 @@ function assert(cond: boolean, msg: string): void {
     runtime.clear();
   }
   console.log('✓ standalone projectile VFX contracts:', representativeProjectiles.length);
+}
+
+// Contact silhouettes, dive trails, and area bursts are target-readable
+// primitives with fixed settlement timing independent of BattleStage.
+{
+  const runtime = new BattleEffectPool();
+  const at = { x: 720, y: 390 };
+  const impactVariants = ['fist', 'claw', 'bite', 'horn', 'tail', 'body-slam', 'wing-slap', 'beak-peck', 'tusk-gore', 'pincer-snap', 'whip-lash', 'kick', 'shell-bash', 'fire-glyph', 'dive'] as const;
+  for (const variant of impactVariants) {
+    spawnImpact(runtime, at, 0xff9b5a, 0.9, variant);
+    runtime.update(0.1);
+    assert(runtime.activeCount === 1, `${variant} impact draws through the shared effect lifecycle`);
+    runtime.clear();
+  }
+  spawnImpact(runtime, at, 0xffffff, 1);
+  runtime.update(0.27);
+  assert(runtime.activeCount === 1, 'standard impact remains active before 280ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'standard impact settles at 280ms');
+
+  spawnDive(runtime, { x: 360, y: 330 }, at, 0xff7042, 1);
+  runtime.update(0.37);
+  assert(runtime.activeCount === 1, 'dive trail remains active before 380ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'dive trail settles at 380ms');
+
+  for (const element of ['fire', 'electric', 'psychic', 'water'] as const) {
+    spawnBurst(runtime, at, 0xb8e6ff, 1, 'surge', 16, element);
+    runtime.update(0.2);
+    assert(runtime.activeCount === 1, `${element} burst draws through the shared effect lifecycle`);
+    runtime.clear();
+  }
+  spawnBurst(runtime, at, 0xffffff, 1);
+  runtime.update(0.67);
+  assert(runtime.activeCount === 1, 'standard burst remains active before 680ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'standard burst settles at 680ms');
+  console.log('✓ standalone impact, dive, and burst VFX contracts:', impactVariants.length);
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
