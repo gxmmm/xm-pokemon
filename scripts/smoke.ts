@@ -12,7 +12,9 @@ import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentatio
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, selectQualityProfile } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
+import { Graphics } from 'pixi.js';
 
+import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -76,6 +78,26 @@ function assert(cond: boolean, msg: string): void {
   const settings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, qualityPreference: 'standard' as const, reduceFlicker: true, cameraIntensity: 'reduced' as const };
   assert(settings.qualityPreference === 'standard' && settings.reduceFlicker && settings.cameraIntensity === 'reduced' && Object.keys(settings).length === 3, 'visual runtime preferences remain presentation-only');
   console.log('✓ Stage 8 presentation-only visual settings contract');
+}
+
+// Transient Pixi effects share one owner so pause, accessibility opacity, and
+// disposal cannot drift between individual visual primitives.
+{
+  const pool = new BattleEffectPool();
+  const graphic = new Graphics();
+  let progress = 0;
+  pool.add(graphic, 0.4, (value) => { progress = value; });
+  pool.setReduceFlicker(true);
+  pool.update(0);
+  assert(pool.activeCount === 1 && progress === 0 && graphic.alpha === 0.46, 'effect pool pauses without aging effects and applies reduced flicker');
+  pool.update(0.1);
+  assert(Math.abs(progress - 0.25) < 1e-9, 'effect pool advances effects with normalized progress');
+  pool.update(0.3);
+  assert(pool.activeCount === 0 && progress === 1, 'effect pool completes and releases expired effects');
+  pool.add(new Graphics(), 1, () => undefined);
+  pool.clear();
+  assert(pool.activeCount === 0 && pool.container.children.length === 0, 'effect pool clears pending graphics during stage teardown');
+  console.log('✓ centralized Pixi battle effect lifecycle');
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;

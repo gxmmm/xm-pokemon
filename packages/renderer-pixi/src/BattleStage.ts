@@ -8,6 +8,7 @@ import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoin
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { movementPressurePlan, terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
+import { BattleEffectPool } from './BattleEffectPool.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
 
 const DESIGN_WIDTH = 1280;
@@ -29,7 +30,6 @@ export interface BattleStageDiagnostics {
   drawCallsSinceLastSample: number;
 }
 
-interface TimedEffect { graphic: Graphics; elapsed: number; duration: number; update(progress: number): void; }
 interface DelayedBattleCue { cue: BattleCue; remaining: number; }
 
 /** Minimal Stage-3 Pixi battle runtime. It consumes renderer contracts only;
@@ -44,7 +44,7 @@ export class BattleStage implements BattleRenderer {
   private readonly terrainOcclusion = new Container();
   private readonly foreground = new Container();
   private combatants = new Container();
-  private effects = new Container();
+  private readonly effectPool = new BattleEffectPool();
   private overlay = new Container();
   private views = new Map<string, CombatantView>();
   private readonly battleArtAssets = new BattleArtAssetLoader();
@@ -64,7 +64,6 @@ export class BattleStage implements BattleRenderer {
   private contactPositions = new Map<string, Point>();
   private contactCooldowns = new Map<string, number>();
   private pressureCooldowns = new Map<string, number>();
-  private activeEffects: TimedEffect[] = [];
   private delayedCues: DelayedBattleCue[] = [];
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
@@ -111,8 +110,7 @@ export class BattleStage implements BattleRenderer {
   unmount(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.activeEffects.forEach((effect) => effect.graphic.destroy());
-    this.activeEffects = [];
+    this.effectPool.clear();
     this.delayedCues = [];
     this.views.clear();
     this.positions.clear();
@@ -149,7 +147,7 @@ export class BattleStage implements BattleRenderer {
 
   setVisualSettings(settings?: VisualRuntimeSettings): void {
     this.visualSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, ...settings };
-    for (const effect of this.activeEffects) effect.graphic.alpha = this.visualSettings.reduceFlicker ? 0.46 : 1;
+    this.effectPool.setReduceFlicker(this.visualSettings.reduceFlicker);
     if (this.visualSettings.cameraIntensity === 'off') {
       this.cameraTargetScale = 1;
       this.cameraTargetOffset = { x: 0, y: 0 };
@@ -164,10 +162,10 @@ export class BattleStage implements BattleRenderer {
       quality: this.quality,
       biomeId: this.biomeId,
       combatantCount: this.views.size,
-      activeEffectCount: this.activeEffects.length,
+      activeEffectCount: this.effectPool.activeCount,
       environmentChildCount: this.environment.children.length + this.farBackdrop.children.length + this.horizonLayer.children.length + this.groundLayer.children.length + this.terrainOcclusion.children.length + this.foreground.children.length,
-      effectChildCount: this.effects.children.length,
-      totalChildCount: this.environment.children.length + this.farBackdrop.children.length + this.horizonLayer.children.length + this.groundLayer.children.length + this.combatants.children.length + this.terrainOcclusion.children.length + this.foreground.children.length + this.effects.children.length + this.overlay.children.length,
+      effectChildCount: this.effectPool.container.children.length,
+      totalChildCount: this.environment.children.length + this.farBackdrop.children.length + this.horizonLayer.children.length + this.groundLayer.children.length + this.combatants.children.length + this.terrainOcclusion.children.length + this.foreground.children.length + this.effectPool.container.children.length + this.overlay.children.length,
       canvasCount: canvas ? 1 : 0,
       canvasPixels: canvas ? canvas.width * canvas.height : 0,
       drawCallTotal: drawCalls.total,
@@ -358,7 +356,7 @@ export class BattleStage implements BattleRenderer {
     const normal = { x: -direction.y, y: direction.x };
     const plan = movementPressurePlan(this.quality);
     const graphic = new Graphics({ blendMode: 'add' });
-    this.addEffect(graphic, plan.durationSeconds, (progress) => {
+    this.effectPool.add(graphic, plan.durationSeconds, (progress) => {
       const alpha = (1 - progress) * 0.30;
       graphic.clear();
       for (let index = 0; index < plan.lineCount; index++) {
@@ -375,7 +373,7 @@ export class BattleStage implements BattleRenderer {
     if (kind === 'none' || budget <= 0) return;
     const graphic = new Graphics({ blendMode: kind === 'dust' ? 'normal' : 'add' });
     const color = kind === 'grass' ? colorNumber(spec.palette.groundDetail) : kind === 'ripples' ? colorNumber(spec.palette.mote) : kind === 'runes' ? colorNumber(spec.palette.accent) : colorNumber(spec.palette.groundDetail);
-    this.addEffect(graphic, kind === 'ripples' ? 0.34 : 0.24, (progress) => {
+    this.effectPool.add(graphic, kind === 'ripples' ? 0.34 : 0.24, (progress) => {
       graphic.clear();
       if (kind === 'ripples') {
         graphic.ellipse(at.x, at.y + 19, 13 + progress * 24, 3 + progress * 5).stroke({ color, alpha: (1 - progress) * 0.58, width: 2 });
@@ -410,7 +408,7 @@ export class BattleStage implements BattleRenderer {
   }
 
   isSettled(): boolean {
-    return this.activeEffects.length === 0 && this.delayedCues.length === 0 && this.hitStopSeconds <= 0.001 && [...this.views.values()].every((view) => view.isSettled());
+    return this.effectPool.activeCount === 0 && this.delayedCues.length === 0 && this.hitStopSeconds <= 0.001 && [...this.views.values()].every((view) => view.isSettled());
   }
 
   private installStage(): void {
@@ -418,7 +416,7 @@ export class BattleStage implements BattleRenderer {
     this.root = new Container();
     this.app.stage.addChild(this.root);
     this.combatants.sortableChildren = true;
-    this.root.addChild(this.environment, this.farBackdrop, this.horizonLayer, this.groundLayer, this.combatants, this.terrainOcclusion, this.foreground, this.effects, this.overlay);
+    this.root.addChild(this.environment, this.farBackdrop, this.horizonLayer, this.groundLayer, this.combatants, this.terrainOcclusion, this.foreground, this.effectPool.container, this.overlay);
     this.transitionLayer = new Graphics();
     this.overlay.addChild(this.transitionLayer);
     this.drawEnvironment();
@@ -761,13 +759,13 @@ export class BattleStage implements BattleRenderer {
     const shade = new Graphics();
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = this.visualSettings.reduceFlicker ? 0.56 : 0.48;
-    this.addEffect(shade, duration, (progress) => {
+    this.effectPool.add(shade, duration, (progress) => {
       const reduced = this.visualSettings.reduceFlicker;
       const rise = Math.min(1, progress / 0.16);
       const fall = progress < 0.42 ? 1 : Math.max(0, (1 - progress) / 0.58);
       shade.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: 0x06121d, alpha: rise * fall * (reduced ? 0.055 : 0.14) });
     });
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const reduced = this.visualSettings.reduceFlicker;
       const strikeStart = 0.16;
       const strikeEnd = reduced ? 0.62 : 0.56;
@@ -831,7 +829,7 @@ export class BattleStage implements BattleRenderer {
   private spawnChainLightning(from: Point, targets: readonly Point[], intensity: number): void {
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = 0.46;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const alpha = Math.sin(Math.PI * Math.min(1, progress * 1.16)) * (this.visualSettings.reduceFlicker ? 0.66 : 0.96);
       const phase = Math.floor(progress * (this.visualSettings.reduceFlicker ? 4 : 9));
       const points = [from, ...targets];
@@ -879,7 +877,7 @@ export class BattleStage implements BattleRenderer {
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = variant === 'fire-glyph' ? 0.48 : variant === 'flame-stream' ? 0.38 : variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
     const shape = elementalVfxShapeFor(element);
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const x = from.x + (to.x - from.x) * progress;
       const y = from.y + (to.y - from.y) * progress;
       const dx = to.x - from.x;
@@ -1061,7 +1059,7 @@ export class BattleStage implements BattleRenderer {
   private spawnImpact(at: Point, color: number, intensity: number, variant = 'default'): void {
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = variant === 'dive' ? 0.48 : 0.28;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const radius = 12 + progress * (34 + intensity * 28);
       graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.8, width: 5 * (1 - progress) + 1 })
         .star(at.x, at.y, variant === 'cross' ? 4 : 6, radius * 0.72, radius * 0.28).fill({ color, alpha: (1 - progress) * 0.36 });
@@ -1140,7 +1138,7 @@ export class BattleStage implements BattleRenderer {
   private spawnDive(from: Point, to: Point, color: number, intensity: number): void {
     const graphic = new Graphics({ blendMode: 'add' });
     const duration = 0.38;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const length = Math.max(1, Math.hypot(dx, dy));
@@ -1185,7 +1183,7 @@ export class BattleStage implements BattleRenderer {
     const graphic = new Graphics({ blendMode: 'add' });
     const shape = elementalVfxShapeFor(element);
     const duration = 0.38 + intensity * 0.18;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const alpha = Math.sin(Math.PI * progress) * 0.92;
       const dx = to.x - from.x;
       const dy = to.y - from.y;
@@ -1256,7 +1254,7 @@ export class BattleStage implements BattleRenderer {
     const particleCount = Math.min(Math.max(particleBudget ?? qualityCap, 9), qualityCap);
     const shape = elementalVfxShapeFor(element);
     const duration = 0.46 + intensity * 0.22;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const blast = 46 + intensity * 78;
       const alpha = (1 - progress) * 0.92;
       graphic.clear();
@@ -1311,7 +1309,7 @@ export class BattleStage implements BattleRenderer {
     const graphic = new Graphics({ blendMode: 'add' });
     const shape = elementalVfxShapeFor(element);
     const duration = variant === 'bind' || variant === 'snare' ? 0.64 : variant === 'dive' ? 0.80 : 0.48 + intensity * 0.16;
-    this.addEffect(graphic, duration, (progress) => {
+    this.effectPool.add(graphic, duration, (progress) => {
       const radius = 22 + progress * (62 + intensity * 58);
       const alpha = (1 - progress) * 0.86;
       graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: alpha * 0.68, width: 3 + intensity * 4 });
@@ -1372,19 +1370,13 @@ export class BattleStage implements BattleRenderer {
     const colors: Record<string, number> = { scorch: 0xff8a4c, spark: 0xffea68, frost: 0xb7edff, splash: 0x72d9ff, spore: 0xb8ef80, debris: 0xc4a16d, 'rune-pulse': 0xc093ff };
     const color = colors[reaction] ?? 0xffffff;
     const graphic = new Graphics({ blendMode: 'add' });
-    this.addEffect(graphic, 0.54, (progress) => {
+    this.effectPool.add(graphic, 0.54, (progress) => {
       graphic.clear();
       if (reaction === 'splash') graphic.circle(at.x, at.y + 16 - progress * 14, 12 + progress * 28).stroke({ color, alpha: (1 - progress) * 0.62, width: 3 });
       else if (reaction === 'debris') for (let index = 0; index < 5; index++) graphic.rect(at.x + (index - 2) * 10, at.y + 18 - progress * (18 + index % 2 * 12), 5, 5).fill({ color, alpha: (1 - progress) * 0.64 });
       else if (reaction === 'rune-pulse') graphic.star(at.x, at.y, 6, 16 + progress * 34, 8 + progress * 15).stroke({ color, alpha: (1 - progress) * 0.58, width: 2 });
       else graphic.ellipse(at.x, at.y + 24, 36 + progress * 18, 10 + progress * 4).fill({ color, alpha: (1 - progress) * 0.24 });
     });
-  }
-
-  private addEffect(graphic: Graphics, duration: number, update: (progress: number) => void): void {
-    graphic.alpha = this.visualSettings.reduceFlicker ? 0.46 : 1;
-    this.effects.addChild(graphic);
-    this.activeEffects.push({ graphic, elapsed: 0, duration, update });
   }
 
   private update(dt: number): void {
@@ -1454,7 +1446,7 @@ export class BattleStage implements BattleRenderer {
       { layer: this.combatants, factor: 1, shake: true },
       { layer: this.terrainOcclusion, factor: 1, shake: true },
       { layer: this.foreground, factor: spec.parallax.foreground, shake: false },
-      { layer: this.effects, factor: 1, shake: true },
+      { layer: this.effectPool.container, factor: 1, shake: true },
     ];
     for (const { layer, factor, shake } of layers) {
       const scale = 1 + (this.cameraScale - 1) * factor;
@@ -1469,13 +1461,7 @@ export class BattleStage implements BattleRenderer {
       if (entry.cue.type === 'animation') this.playAnimationCue(entry.cue);
       else for (const plan of planBattleCue(entry.cue)) this.spawnPlan(plan);
     }
-    this.activeEffects = this.activeEffects.filter((effect) => {
-      effect.elapsed += clock;
-      effect.update(Math.min(1, effect.elapsed / effect.duration));
-      if (effect.elapsed < effect.duration) return true;
-      effect.graphic.destroy();
-      return false;
-    });
+    this.effectPool.update(clock);
   }
 
   private resizeToContainer(): void {
