@@ -4,6 +4,7 @@ import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
 import { smoothBattlePresentationAxis } from './battle-motion.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { BattleCameraController } from './BattleCameraController.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
 import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import { terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
@@ -39,6 +40,7 @@ interface DelayedBattleCue { cue: BattleCue; remaining: number; }
 export class BattleStage implements BattleRenderer {
   private app: Application | null = null;
   private root: Container | null = null;
+  private readonly camera = new BattleCameraController();
   private readonly environmentView = new BattleEnvironmentView();
   private combatants = new Container();
   private readonly effectPool = new BattleEffectPool();
@@ -62,11 +64,6 @@ export class BattleStage implements BattleRenderer {
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
   private biomeId = 'grass';
-  private cameraScale = 1;
-  private cameraOffset: Point = { x: 0, y: 0 };
-  private cameraTargetScale = 1;
-  private cameraTargetOffset: Point = { x: 0, y: 0 };
-  private cameraShake = 0;
   private hitStopSeconds = 0;
   private transitionLayer: Graphics | null = null;
   private drawCallObserver: DrawCallObserver | null = null;
@@ -114,6 +111,7 @@ export class BattleStage implements BattleRenderer {
     this.targetGroundScales.clear();
     this.terrainContactPlans.clear();
     this.terrainContacts.clear();
+    this.camera.reset();
     this.environmentView.clear();
     this.battleArtAssets.clear();
     this.environmentBackgroundTexture = null;
@@ -130,11 +128,7 @@ export class BattleStage implements BattleRenderer {
   setVisualSettings(settings?: VisualRuntimeSettings): void {
     this.visualSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, ...settings };
     this.effectPool.setReduceFlicker(this.visualSettings.reduceFlicker);
-    if (this.visualSettings.cameraIntensity === 'off') {
-      this.cameraTargetScale = 1;
-      this.cameraTargetOffset = { x: 0, y: 0 };
-      this.cameraShake = 0;
-    }
+    this.camera.setIntensity(this.visualSettings.cameraIntensity);
   }
 
   getDiagnostics(): BattleStageDiagnostics {
@@ -285,7 +279,7 @@ export class BattleStage implements BattleRenderer {
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
     for (const cue of cues) {
       if (cue.type === 'camera') {
-        this.aimCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
+        this.focusCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
       } else if (cue.type === 'animation' && (cue.delayMs ?? 0) > 0) {
         this.delayedCues.push({ cue, remaining: (cue.delayMs ?? 0) / 1000 });
       } else if (cue.type === 'animation') {
@@ -329,29 +323,10 @@ export class BattleStage implements BattleRenderer {
     this.terrainContacts.clear();
     this.environmentView.draw(battleEnvironmentFor(this.biomeId), this.environmentBackgroundTexture);
   }
-  private aimCamera(ids: readonly string[], zoom: number, shake: number): void {
-    // Spectator framing: ordinary exchanges remain stable, while a configured
-    // track/impact/finisher cue may gently center the participating pair. The
-    // bounded offset keeps a 3v3 board legible instead of turning every skill
-    // into a disorienting close-up.
-    const intensity = this.cameraIntensityFactor();
-    const camera = battleEnvironmentFor(this.biomeId).camera;
-    const decisiveZoom = Math.max(camera.framing.minZoom, Math.min(camera.framing.maxZoom, zoom));
-    const points = ids.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
-    const center = points.length
-      ? { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length }
-      : { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT / 2 };
-    const rawOffset = {
-      x: Math.max(-camera.framing.maxPanX, Math.min(camera.framing.maxPanX, (DESIGN_WIDTH / 2 - center.x) * 0.18)),
-      y: Math.max(-camera.framing.maxPanY, Math.min(camera.framing.maxPanY, (DESIGN_HEIGHT * camera.framing.focusY - center.y) * 0.14)),
-    };
-    this.cameraTargetOffset = { x: rawOffset.x * intensity, y: rawOffset.y * intensity };
-    this.cameraTargetScale = 1 + (decisiveZoom - 1) * intensity;
-    this.cameraShake = Math.max(this.cameraShake, Math.min(2.5, shake * 2.5) * intensity);
-  }
 
-  private cameraIntensityFactor(): number {
-    return this.visualSettings.cameraIntensity === 'full' ? 1 : this.visualSettings.cameraIntensity === 'reduced' ? 0.45 : 0;
+  private focusCamera(ids: readonly string[], zoom: number, shake: number): void {
+    const points = ids.map((id) => this.positions.get(id)).filter((point): point is Point => !!point);
+    this.camera.focus(points, battleEnvironmentFor(this.biomeId).camera, zoom, shake);
   }
 
   private playAnimationCue(cue: Extract<BattleCue, { type: 'animation' }>): void {
@@ -439,14 +414,8 @@ export class BattleStage implements BattleRenderer {
         if (plan) this.updateViewGrounding(view, visible, visibleGround, visibleScale, visibleGroundScale, plan);
       }
     }
-    this.cameraScale += (this.cameraTargetScale - this.cameraScale) * Math.min(1, dt * 8);
-    this.cameraOffset.x += (this.cameraTargetOffset.x - this.cameraOffset.x) * Math.min(1, dt * 7);
-    this.cameraOffset.y += (this.cameraTargetOffset.y - this.cameraOffset.y) * Math.min(1, dt * 7);
-    this.cameraShake = Math.max(0, this.cameraShake - dt * 30);
-    const shakeX = this.cameraShake ? Math.sin(performance.now() * 0.05) * this.cameraShake : 0;
-    const shakeY = this.cameraShake ? Math.cos(performance.now() * 0.07) * this.cameraShake * 0.5 : 0;
     const spec = battleEnvironmentFor(this.biomeId);
-    const layers: ReadonlyArray<{ layer: Container; factor: number; shake: boolean }> = [
+    this.camera.update(dt, [
       { layer: this.environmentView.background, factor: 0, shake: false },
       { layer: this.environmentView.farBackdrop, factor: spec.parallax.far, shake: false },
       { layer: this.environmentView.horizonLayer, factor: spec.parallax.horizon, shake: false },
@@ -455,12 +424,7 @@ export class BattleStage implements BattleRenderer {
       { layer: this.environmentView.terrainOcclusion, factor: 1, shake: true },
       { layer: this.environmentView.foreground, factor: spec.parallax.foreground, shake: false },
       { layer: this.effectPool.container, factor: 1, shake: true },
-    ];
-    for (const { layer, factor, shake } of layers) {
-      const scale = 1 + (this.cameraScale - 1) * factor;
-      layer.scale.set(scale);
-      layer.position.set(this.cameraOffset.x * factor + (shake ? shakeX : 0), this.cameraOffset.y * factor + (shake ? shakeY : 0));
-    }
+    ]);
     if (!clock) return;
     for (const view of this.views.values()) view.update(clock);
     const due = this.delayedCues.filter((entry) => (entry.remaining -= clock) <= 0);
