@@ -12,9 +12,10 @@ import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentatio
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
-import { Container, Graphics } from 'pixi.js';
+import { Container, Graphics, Texture } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
+import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
 import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environment-reaction-vfx.ts';
 import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
@@ -145,6 +146,35 @@ function assert(cond: boolean, msg: string): void {
   contacts.remove('unit');
   assert(occlusionLayer.children.length === 0, 'removed combatants release their terrain occlusion graphic');
   console.log('✓ independent terrain contact and foot-occlusion lifecycle');
+}
+
+// Battle biome drawing owns a fixed six-layer order. Every environment must
+// retain a procedural fallback, while configured formal art replaces only the
+// distant backdrop and keeps ground detail, ambience, and foreground framing.
+{
+  const environment = new BattleEnvironmentView();
+  assert(
+    environment.layers[0] === environment.background
+      && environment.layers[1] === environment.farBackdrop
+      && environment.layers[2] === environment.horizonLayer
+      && environment.layers[3] === environment.groundLayer
+      && environment.layers[4] === environment.terrainOcclusion
+      && environment.layers[5] === environment.foreground,
+    'battle environment exposes its six layers in stable back-to-front order',
+  );
+  for (const spec of Object.values(BATTLE_ENVIRONMENTS)) {
+    const usedFormalArt = environment.draw(spec, null);
+    assert(!usedFormalArt, `${spec.id} uses procedural grammar when no formal texture is available`);
+    assert(environment.background.children.length === 1, `${spec.id} paints an overscanned sky base`);
+    assert(environment.farBackdrop.children.length > 0 && environment.horizonLayer.children.length > 0, `${spec.id} paints backdrop and horizon depth layers`);
+    assert(environment.groundLayer.children.length > 0 && environment.foreground.children.length === 1, `${spec.id} paints perspective ground and foreground framing`);
+    assert(environment.terrainOcclusion.children.length === 0, `${spec.id} leaves per-combatant foot occlusion to the contact system`);
+  }
+  assert(environment.draw(BATTLE_ENVIRONMENTS.grass, Texture.EMPTY), 'configured formal environment art replaces the procedural distant backdrop');
+  assert(environment.background.children.length === 3 && environment.farBackdrop.children.length === 0, 'formal environment art keeps sky and tone layers without duplicate backdrop geometry');
+  environment.clear();
+  assert(environment.childCount === 0, 'environment teardown releases every owned layer child');
+  console.log('✓ standalone layered battle environment view');
 }
 
 // Lightning primitives remain standalone render recipes. Their effect counts
