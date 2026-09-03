@@ -1,3 +1,4 @@
+import type { QualityProfile } from '@pokemon-online/renderer';
 import { Container, type Graphics } from 'pixi.js';
 
 interface TimedEffect {
@@ -12,9 +13,22 @@ export class BattleEffectPool {
   readonly container = new Container();
   private effects: TimedEffect[] = [];
   private reduceFlicker = false;
+  private qualityProfile: QualityProfile = 'standard';
 
   get activeCount(): number {
     return this.effects.length;
+  }
+
+  get quality(): QualityProfile {
+    return this.qualityProfile;
+  }
+
+  get isReduceFlickerEnabled(): boolean {
+    return this.reduceFlicker;
+  }
+
+  setQuality(profile: QualityProfile): void {
+    this.qualityProfile = profile;
   }
 
   setReduceFlicker(enabled: boolean): void {

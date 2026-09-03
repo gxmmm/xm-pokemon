@@ -15,6 +15,7 @@ import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, 
 import { Graphics } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
+import { spawnChainLightning, spawnSkyStrike } from '../packages/renderer-pixi/src/lightning-vfx.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -98,6 +99,26 @@ function assert(cond: boolean, msg: string): void {
   pool.clear();
   assert(pool.activeCount === 0 && pool.container.children.length === 0, 'effect pool clears pending graphics during stage teardown');
   console.log('✓ centralized Pixi battle effect lifecycle');
+}
+
+// Lightning primitives remain standalone render recipes. Their effect counts
+// and timing are acceptance-level contracts because cues wait for settlement.
+{
+  const runtime = new BattleEffectPool();
+  runtime.setQuality('cinematic');
+  spawnSkyStrike(runtime, { x: 640, y: 420 }, 0.8);
+  assert(runtime.activeCount === 2 && runtime.container.children.length === 2, 'sky strike owns separate shade and bolt effects');
+  runtime.update(0.47);
+  assert(runtime.activeCount === 2, 'full-motion sky strike preserves its warning and strike duration');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'full-motion sky strike settles at 480ms');
+
+  runtime.setReduceFlicker(true);
+  spawnChainLightning(runtime, { x: 360, y: 400 }, [{ x: 760, y: 360 }, { x: 900, y: 430 }], 0.7);
+  assert(runtime.activeCount === 1 && runtime.container.children[0]?.alpha === 0.46, 'chain lightning inherits reduced-flicker opacity');
+  runtime.update(0.46);
+  assert(runtime.activeCount === 0, 'chain lightning preserves its 460ms settlement timing');
+  console.log('✓ standalone lightning VFX contracts');
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
