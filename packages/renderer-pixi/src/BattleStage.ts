@@ -1,22 +1,16 @@
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation } from '@pokemon-online/config';
 import { Application, Container, Graphics, type Texture } from 'pixi.js';
-import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
+import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController } from './BattleCameraController.ts';
 import { BattleCombatantLayer } from './BattleCombatantLayer.ts';
 import { BattleCueScheduler } from './BattleCueScheduler.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
-import { battleContactPoint } from './battle-ground.ts';
 import { BattleEffectPool } from './BattleEffectPool.ts';
 import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH, type BattleStagePoint as Point } from './battle-stage-layout.ts';
-import { spawnBeam } from './beam-vfx.ts';
+import { BattleVfxExecutor } from './BattleVfxExecutor.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
-import { spawnEnvironmentReaction } from './environment-reaction-vfx.ts';
-import { spawnBurst, spawnDive, spawnImpact } from './impact-vfx.ts';
-import { spawnChainLightning, spawnSkyStrike } from './lightning-vfx.ts';
-import { spawnProjectile } from './projectile-vfx.ts';
-import { spawnRing } from './ring-vfx.ts';
 import { TerrainContactEffects } from './TerrainContactEffects.ts';
 
 export interface BattleStageDiagnostics {
@@ -44,6 +38,7 @@ export class BattleStage implements BattleRenderer {
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
   private readonly battleArtAssets = new BattleArtAssetLoader();
   private readonly combatants = new BattleCombatantLayer(this.battleArtAssets, this.terrainContacts);
+  private readonly vfx = new BattleVfxExecutor(this.effectPool, (uid) => this.combatants.getPosition(uid));
   private overlay = new Container();
   private environmentBackgroundTexture: Texture | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -214,40 +209,13 @@ export class BattleStage implements BattleRenderer {
     this.combatants.playAnimation(cue);
   }
 
-  private spawnPlan(plan: BattleStageVfxPlan): void {
-    const actor = plan.actorId ? this.combatants.getPosition(plan.actorId) : undefined;
-    const targetRoot = plan.targetIds.map((id) => this.combatants.getPosition(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
-    const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
-    const color = elementColor(plan.element);
-    if (plan.primitive === 'projectile' && actor) {
-      spawnProjectile(this.effectPool, actor, target, color, plan.intensity, plan.variant, plan.element);
-    } else if (plan.primitive === 'sky-strike') {
-      spawnSkyStrike(this.effectPool, target, plan.intensity);
-    } else if (plan.primitive === 'chain') {
-      const chainTargets = plan.targetIds.map((id) => this.combatants.getPosition(id)).filter((point): point is Point => !!point);
-      spawnChainLightning(this.effectPool, actor ?? target, chainTargets.length > 0 ? chainTargets : [target], plan.intensity);
-    } else if (plan.primitive === 'dive' && actor) {
-      spawnDive(this.effectPool, actor, target, color, plan.intensity);
-    } else if (plan.primitive === 'beam' && actor) {
-      spawnBeam(this.effectPool, actor, target, color, plan.intensity, plan.variant, plan.element);
-    } else if (plan.primitive === 'burst') {
-      spawnBurst(this.effectPool, target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element);
-    } else if (plan.primitive === 'ring') {
-      spawnRing(this.effectPool, target, color, plan.intensity, plan.variant, plan.element);
-    } else if (plan.primitive === 'environment') {
-      if (plan.actorId || plan.targetIds.length > 0) spawnEnvironmentReaction(this.effectPool, battleEnvironmentFor(this.biomeId), target, plan.reaction);
-    } else {
-      spawnImpact(this.effectPool, target, color, plan.intensity, plan.variant);
-    }
-  }
-
   private playReadyCue(cue: BattleCue): void {
     if (cue.type === 'camera') {
       this.focusCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
     } else if (cue.type === 'animation') {
       this.playAnimationCue(cue);
     } else if (cue.type === 'vfx' || cue.type === 'environment') {
-      for (const plan of planBattleCue(cue)) this.spawnPlan(plan);
+      this.vfx.spawnPlans(planBattleCue(cue), battleEnvironmentFor(this.biomeId));
     }
   }
 

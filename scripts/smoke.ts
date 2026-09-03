@@ -11,7 +11,7 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
 import { DEFAULT_VISUAL_RUNTIME_SETTINGS } from '@pokemon-online/renderer';
-import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan } from '@pokemon-online/renderer-pixi';
+import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan, type BattleStageVfxPlan } from '@pokemon-online/renderer-pixi';
 import { Container, Graphics, Texture } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
@@ -20,6 +20,7 @@ import { BattleCombatantLayer } from '../packages/renderer-pixi/src/BattleCombat
 import { BattleCueScheduler } from '../packages/renderer-pixi/src/BattleCueScheduler.ts';
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
 import { BattlePositionTracker } from '../packages/renderer-pixi/src/BattlePositionTracker.ts';
+import { BattleVfxExecutor } from '../packages/renderer-pixi/src/BattleVfxExecutor.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
 import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environment-reaction-vfx.ts';
 import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
@@ -475,6 +476,43 @@ function assert(cond: boolean, msg: string): void {
   runtime.update(0.01);
   assert(runtime.activeCount === 0, 'environment reaction settles at 540ms');
   console.log('✓ standalone beam, ring, and environment VFX contracts');
+}
+
+// Planned primitives share one anchor resolver and dispatch boundary. Source-
+// dependent effects skip safely without an actor instead of drawing from center.
+{
+  const runtime = new BattleEffectPool();
+  const positions = new Map([
+    ['actor', { x: 320, y: 410 }],
+    ['target-a', { x: 780, y: 350 }],
+    ['target-b', { x: 920, y: 430 }],
+  ]);
+  const executor = new BattleVfxExecutor(runtime, (uid) => positions.get(uid));
+  const environment = BATTLE_ENVIRONMENTS.grass;
+  const plans: readonly BattleStageVfxPlan[] = [
+    { primitive: 'projectile', element: 'fire', intensity: 0.8, actorId: 'actor', targetIds: ['target-a'] },
+    { primitive: 'dive', element: 'fire', intensity: 0.8, actorId: 'actor', targetIds: ['target-a'] },
+    { primitive: 'impact', element: 'fighting', intensity: 0.8, targetIds: ['target-a'] },
+    { primitive: 'beam', element: 'electric', intensity: 0.8, actorId: 'actor', targetIds: ['target-a'] },
+    { primitive: 'burst', element: 'water', intensity: 0.8, targetIds: ['target-a'] },
+    { primitive: 'ring', element: 'psychic', intensity: 0.8, targetIds: ['target-a'] },
+    { primitive: 'sky-strike', element: 'electric', intensity: 0.8, targetIds: ['target-a'] },
+    { primitive: 'chain', element: 'electric', intensity: 0.8, actorId: 'actor', targetIds: ['target-a', 'target-b'] },
+    { primitive: 'environment', intensity: 0.7, actorId: 'actor', targetIds: ['target-a'], reaction: environment.reactions[0] },
+  ];
+  for (const plan of plans) {
+    assert(executor.spawnPlans([plan], environment) === 1 && runtime.activeCount > 0, `${plan.primitive} plan dispatches through the centralized VFX executor`);
+    runtime.clear();
+  }
+
+  const sourceRequired: readonly BattleStageVfxPlan[] = [
+    { primitive: 'projectile', intensity: 1, actorId: 'missing', targetIds: ['target-a'] },
+    { primitive: 'dive', intensity: 1, actorId: 'missing', targetIds: ['target-a'] },
+    { primitive: 'beam', intensity: 1, actorId: 'missing', targetIds: ['target-a'] },
+  ];
+  assert(executor.spawnPlans(sourceRequired, environment) === 0 && runtime.activeCount === 0, 'source-dependent plans do not allocate effects when their actor anchor is unavailable');
+  assert(executor.spawnPlans([{ primitive: 'environment', intensity: 1, targetIds: [], reaction: environment.reactions[0] }], environment) === 0 && runtime.activeCount === 0, 'unanchored environment plans do not invent a center-screen reaction');
+  console.log('✓ centralized battle VFX anchor and dispatch executor');
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
