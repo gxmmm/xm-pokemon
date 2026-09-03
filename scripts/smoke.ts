@@ -16,6 +16,7 @@ import { Graphics } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { spawnChainLightning, spawnSkyStrike } from '../packages/renderer-pixi/src/lightning-vfx.ts';
+import { spawnProjectile } from '../packages/renderer-pixi/src/projectile-vfx.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -118,6 +119,40 @@ function assert(cond: boolean, msg: string): void {
   runtime.update(0.46);
   assert(runtime.activeCount === 0, 'chain lightning preserves its 460ms settlement timing');
   console.log('✓ standalone lightning VFX contracts');
+}
+
+// Projectile recipes own their drawing vocabulary and settlement timing while
+// BattleStage supplies only resolved anchors and cue data.
+{
+  const runtime = new BattleEffectPool();
+  const from = { x: 360, y: 420 };
+  const to = { x: 860, y: 350 };
+  spawnProjectile(runtime, from, to, 0xff7b45, 1, 'default', 'fire');
+  runtime.update(0.25);
+  assert(runtime.activeCount === 1, 'default projectile remains active before 260ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'default projectile settles at 260ms');
+
+  runtime.setReduceFlicker(true);
+  spawnProjectile(runtime, from, to, 0xff7b45, 1, 'fire-glyph', 'fire');
+  assert(runtime.container.children[0]?.alpha === 0.46, 'projectile inherits reduced-flicker opacity');
+  runtime.update(0.48);
+  assert(runtime.activeCount === 0, 'fire glyph projectile preserves its 480ms settlement timing');
+
+  const representativeProjectiles: ReadonlyArray<readonly [string, import('@pokemon-online/shared').TypeName]> = [
+    ['arc-bolt', 'electric'], ['flame-bolt', 'fire'], ['water-shot', 'water'], ['spark-bolt', 'electric'],
+    ['leaf-shot', 'grass'], ['shadow-orb', 'ghost'], ['stone-shot', 'rock'], ['wind-cutter', 'flying'],
+    ['fairy-spark', 'fairy'], ['neutral-star', 'normal'], ['flame-stream', 'fire'], ['psychic-bolt', 'psychic'],
+    ['bind', 'dark'], ['snare', 'ice'],
+    ['default', 'electric'], ['default', 'psychic'], ['default', 'water'], ['default', 'ice'], ['default', 'grass'],
+  ];
+  for (const [variant, element] of representativeProjectiles) {
+    spawnProjectile(runtime, from, to, 0xaedfff, 0.8, variant, element);
+    runtime.update(0.1);
+    assert(runtime.activeCount === 1, `${variant} projectile draws without bypassing the effect lifecycle`);
+    runtime.clear();
+  }
+  console.log('✓ standalone projectile VFX contracts:', representativeProjectiles.length);
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
