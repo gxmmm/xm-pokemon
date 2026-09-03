@@ -16,6 +16,7 @@ import { Container, Graphics, Texture } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { BattleCameraController } from '../packages/renderer-pixi/src/BattleCameraController.ts';
+import { BattleCueScheduler } from '../packages/renderer-pixi/src/BattleCueScheduler.ts';
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
 import { BattlePositionTracker } from '../packages/renderer-pixi/src/BattlePositionTracker.ts';
 import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
@@ -256,6 +257,35 @@ function assert(cond: boolean, msg: string): void {
   tracker.remove('unit');
   assert(tracker.size === 0 && tracker.getFrame('unit') === undefined, 'removed combatants release their complete position state');
   console.log('✓ coherent combatant position and projection tracker');
+}
+
+// Delayed renderer cues share the same visual clock as hit-stop. The frame
+// that consumes the final hit-stop remainder stays frozen, matching runtime
+// behavior and avoiding partial-frame animation jumps.
+{
+  const scheduler = new BattleCueScheduler();
+  const immediate = { type: 'camera', plan: { style: 'track', focusIds: ['unit'], durationMs: 200 } } as const;
+  assert(scheduler.accept(immediate) === immediate, 'camera cues remain immediately executable');
+  scheduler.accept({ type: 'animation', subjectId: 'unit', animation: 'attack', delayMs: 40 });
+  scheduler.accept({ type: 'vfx', recipe: { id: 'test' }, anchors: { targetIds: ['target'] }, intensity: 1, delayMs: 60 });
+  scheduler.accept({ type: 'hit-stop', milliseconds: 50 });
+  scheduler.accept({ type: 'hit-stop', milliseconds: 20 });
+  assert(scheduler.pendingCount === 2 && scheduler.remainingHitStopSeconds === 0.05 && !scheduler.isSettled, 'delayed cues queue while overlapping hit-stop keeps the longest duration');
+
+  let step = scheduler.advance(0.04);
+  assert(step.clockSeconds === 0 && step.due.length === 0 && scheduler.pendingCount === 2, 'delayed cues do not age during hit-stop');
+  step = scheduler.advance(0.02);
+  assert(step.clockSeconds === 0 && scheduler.remainingHitStopSeconds === 0, 'the frame clearing the final hit-stop remainder stays frozen');
+  step = scheduler.advance(0.02);
+  assert(step.clockSeconds === 0.02 && step.due.length === 0, 'visual clock resumes on the frame after hit-stop clears');
+  step = scheduler.advance(0.02);
+  assert(step.due.length === 1 && step.due[0]?.type === 'animation', 'animation cue becomes due at its configured 40ms visual delay');
+  step = scheduler.advance(0.02);
+  assert(step.due.length === 1 && step.due[0]?.type === 'vfx' && scheduler.isSettled, 'VFX cue becomes due at its configured 60ms visual delay');
+  scheduler.accept({ type: 'hit-stop', milliseconds: 100 });
+  scheduler.clear();
+  assert(scheduler.isSettled && scheduler.pendingCount === 0 && scheduler.remainingHitStopSeconds === 0, 'timeline teardown clears pending cues and hit-stop state');
+  console.log('✓ standalone delayed cue and hit-stop scheduler');
 }
 
 // Lightning primitives remain standalone render recipes. Their effect counts

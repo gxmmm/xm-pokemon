@@ -4,6 +4,7 @@ import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController } from './BattleCameraController.ts';
+import { BattleCueScheduler } from './BattleCueScheduler.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
 import { BattlePositionTracker } from './BattlePositionTracker.ts';
 import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
@@ -33,14 +34,13 @@ export interface BattleStageDiagnostics {
   drawCallsSinceLastSample: number;
 }
 
-interface DelayedBattleCue { cue: BattleCue; remaining: number; }
-
 /** Minimal Stage-3 Pixi battle runtime. It consumes renderer contracts only;
  * engine simulation, Vue HUD, and BattleDirector stay outside this package. */
 export class BattleStage implements BattleRenderer {
   private app: Application | null = null;
   private root: Container | null = null;
   private readonly camera = new BattleCameraController();
+  private readonly cueScheduler = new BattleCueScheduler();
   private readonly environmentView = new BattleEnvironmentView();
   private combatants = new Container();
   private readonly effectPool = new BattleEffectPool();
@@ -51,11 +51,9 @@ export class BattleStage implements BattleRenderer {
   private readonly positionTracker = new BattlePositionTracker();
   private environmentBackgroundTexture: Texture | null = null;
   private terrainContactPlans = new Map<string, TerrainContactPlan>();
-  private delayedCues: DelayedBattleCue[] = [];
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
   private biomeId = 'grass';
-  private hitStopSeconds = 0;
   private transitionLayer: Graphics | null = null;
   private drawCallObserver: DrawCallObserver | null = null;
   private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
@@ -88,7 +86,7 @@ export class BattleStage implements BattleRenderer {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.effectPool.clear();
-    this.delayedCues = [];
+    this.cueScheduler.clear();
     this.views.clear();
     this.positionTracker.clear();
     this.terrainContactPlans.clear();
@@ -237,24 +235,13 @@ export class BattleStage implements BattleRenderer {
 
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
     for (const cue of cues) {
-      if (cue.type === 'camera') {
-        this.focusCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
-      } else if (cue.type === 'animation' && (cue.delayMs ?? 0) > 0) {
-        this.delayedCues.push({ cue, remaining: (cue.delayMs ?? 0) / 1000 });
-      } else if (cue.type === 'animation') {
-        this.playAnimationCue(cue);
-      } else if (cue.type === 'hit-stop') {
-        this.hitStopSeconds = Math.max(this.hitStopSeconds, cue.milliseconds / 1000);
-      } else if (cue.type === 'vfx' && (cue.delayMs ?? 0) > 0) {
-        this.delayedCues.push({ cue, remaining: (cue.delayMs ?? 0) / 1000 });
-      } else if (cue.type === 'vfx' || cue.type === 'environment') {
-        for (const plan of planBattleCue(cue)) this.spawnPlan(plan);
-      }
+      const ready = this.cueScheduler.accept(cue);
+      if (ready) this.playReadyCue(ready);
     }
   }
 
   isSettled(): boolean {
-    return this.effectPool.activeCount === 0 && this.delayedCues.length === 0 && this.hitStopSeconds <= 0.001 && [...this.views.values()].every((view) => view.isSettled());
+    return this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && [...this.views.values()].every((view) => view.isSettled());
   }
 
   private installStage(): void {
@@ -327,9 +314,18 @@ export class BattleStage implements BattleRenderer {
     }
   }
 
+  private playReadyCue(cue: BattleCue): void {
+    if (cue.type === 'camera') {
+      this.focusCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
+    } else if (cue.type === 'animation') {
+      this.playAnimationCue(cue);
+    } else if (cue.type === 'vfx' || cue.type === 'environment') {
+      for (const plan of planBattleCue(cue)) this.spawnPlan(plan);
+    }
+  }
+
   private update(dt: number): void {
-    const clock = this.hitStopSeconds > 0 ? 0 : dt;
-    this.hitStopSeconds = Math.max(0, this.hitStopSeconds - dt);
+    const { clockSeconds: clock, due } = this.cueScheduler.advance(dt);
     this.terrainContacts.tick(dt);
     // One coherent state record keeps projected body/ground anchors,
     // velocities, and scales synchronized throughout redirected movement.
@@ -355,12 +351,7 @@ export class BattleStage implements BattleRenderer {
     ]);
     if (!clock) return;
     for (const view of this.views.values()) view.update(clock);
-    const due = this.delayedCues.filter((entry) => (entry.remaining -= clock) <= 0);
-    this.delayedCues = this.delayedCues.filter((entry) => entry.remaining > 0);
-    for (const entry of due) {
-      if (entry.cue.type === 'animation') this.playAnimationCue(entry.cue);
-      else for (const plan of planBattleCue(entry.cue)) this.spawnPlan(plan);
-    }
+    for (const cue of due) this.playReadyCue(cue);
     this.effectPool.update(clock);
   }
 
