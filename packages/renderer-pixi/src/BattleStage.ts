@@ -5,15 +5,17 @@ import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-p
 import { smoothBattlePresentationAxis } from './battle-motion.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
-import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { movementPressurePlan, terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
 import { CombatantView } from './CombatantView.ts';
 import { BattleEffectPool } from './BattleEffectPool.ts';
 import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH, type BattleStagePoint as Point } from './battle-stage-layout.ts';
+import { spawnBeam } from './beam-vfx.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
+import { spawnEnvironmentReaction } from './environment-reaction-vfx.ts';
+import { spawnBurst, spawnDive, spawnImpact } from './impact-vfx.ts';
 import { spawnChainLightning, spawnSkyStrike } from './lightning-vfx.ts';
 import { spawnProjectile } from './projectile-vfx.ts';
-import { spawnBurst, spawnDive, spawnImpact } from './impact-vfx.ts';
+import { spawnRing } from './ring-vfx.ts';
 
 export interface BattleStageDiagnostics {
   biomeId: string;
@@ -727,159 +729,16 @@ export class BattleStage implements BattleRenderer {
     } else if (plan.primitive === 'dive' && actor) {
       spawnDive(this.effectPool, actor, target, color, plan.intensity);
     } else if (plan.primitive === 'beam' && actor) {
-      this.spawnBeam(actor, target, color, plan.intensity, plan.variant, plan.element);
+      spawnBeam(this.effectPool, actor, target, color, plan.intensity, plan.variant, plan.element);
     } else if (plan.primitive === 'burst') {
       spawnBurst(this.effectPool, target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element);
     } else if (plan.primitive === 'ring') {
-      this.spawnRing(target, color, plan.intensity, plan.variant, plan.element);
+      spawnRing(this.effectPool, target, color, plan.intensity, plan.variant, plan.element);
     } else if (plan.primitive === 'environment') {
-      if (plan.actorId || plan.targetIds.length > 0) this.spawnEnvironmentReaction(target, plan.reaction);
+      if (plan.actorId || plan.targetIds.length > 0) spawnEnvironmentReaction(this.effectPool, battleEnvironmentFor(this.biomeId), target, plan.reaction);
     } else {
       spawnImpact(this.effectPool, target, color, plan.intensity, plan.variant);
     }
-  }
-
-  private spawnBeam(from: Point, to: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
-    const graphic = new Graphics({ blendMode: 'add' });
-    const shape = elementalVfxShapeFor(element);
-    const duration = 0.38 + intensity * 0.18;
-    this.effectPool.add(graphic, duration, (progress) => {
-      const alpha = Math.sin(Math.PI * progress) * 0.92;
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.max(1, Math.hypot(dx, dy));
-      const nx = dx / length;
-      const ny = dy / length;
-      const px = -ny;
-      const py = nx;
-      const width = 10 + intensity * 22;
-      graphic.clear();
-      if (shape === 'flame' && variant === 'flame-stream') {
-        const streamWidth = 18 + intensity * 24;
-        const tongueCount = 5;
-        for (let lane = -2; lane <= 2; lane++) {
-          const offset = lane * streamWidth * 0.28 + Math.sin(progress * 24 + lane * 2.1) * streamWidth * 0.10;
-          graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset * 0.34, to.y + py * offset * 0.34)
-            .stroke({ color: lane === 0 ? 0xfff4bd : lane % 2 ? 0xffc14f : color, alpha: alpha * (lane === 0 ? 0.96 : 0.58), width: streamWidth * (lane === 0 ? 0.48 : 0.34) });
-        }
-        for (let tongue = 0; tongue < tongueCount; tongue++) {
-          const t = (tongue / tongueCount + progress * 0.50) % 1;
-          const sway = Math.sin(progress * 22 + tongue * 1.7) * streamWidth * 0.62;
-          const cx = from.x + dx * t + px * sway;
-          const cy = from.y + dy * t + py * sway;
-          graphic.poly([cx - px * 5, cy - py * 5, cx + nx * (18 + intensity * 13), cy + ny * (18 + intensity * 13), cx + px * 5, cy + py * 5]).fill({ color: tongue % 3 ? color : 0xffef9d, alpha: alpha * 0.82 });
-        }
-      } else if (shape === 'flame') {
-        for (let lane = -1; lane <= 1; lane++) {
-          const offset = lane * width * 0.28;
-          graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset, to.y + py * offset).stroke({ color: lane === 0 ? 0xffefad : color, alpha: alpha * (lane === 0 ? 0.92 : 0.56), width: lane === 0 ? width * 0.46 : width * 0.38 });
-        }
-        for (let ember = 0; ember < 7; ember++) {
-          const t = (ember / 6 + progress * 0.42) % 1;
-          const sway = Math.sin(progress * 18 + ember * 2.2) * width * 0.34;
-          graphic.circle(from.x + dx * t + px * sway, from.y + dy * t + py * sway, 3 + intensity * 4).fill({ color: ember % 2 ? color : 0xffd56e, alpha: alpha * 0.78 });
-        }
-      } else if (shape === 'lightning') {
-        const segments = 9;
-        let previous = from;
-        for (let index = 1; index <= segments; index++) {
-          const t = index / segments;
-          const zig = index === segments ? 0 : (index % 2 ? 1 : -1) * width * (0.42 + Math.sin(progress * 15 + index) * 0.16);
-          const next = { x: from.x + dx * t + px * zig, y: from.y + dy * t + py * zig };
-          graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffe96a, alpha, width: width * 0.42 })
-            .moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha, width: 2.5 });
-          if (index === 3 || index === 6) graphic.moveTo(next.x, next.y).lineTo(next.x + px * width * 1.1 - nx * 12, next.y + py * width * 1.1 - ny * 12).stroke({ color, alpha: alpha * 0.72, width: 3 });
-          previous = next;
-        }
-      } else if (shape === 'psychic-orbit') {
-        graphic.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color, alpha: alpha * 0.48, width: width * 0.42 });
-        for (let ring = 0; ring < 6; ring++) {
-          const t = ring / 5;
-          const phase = progress * 10 + ring * 1.7;
-          const cx = from.x + dx * t + px * Math.sin(phase) * width * 0.46;
-          const cy = from.y + dy * t + py * Math.sin(phase) * width * 0.46;
-          graphic.ellipse(cx, cy, width * 0.70, width * 0.28).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * 0.75, width: 2.4 });
-        }
-      } else {
-        graphic.moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color, alpha, width })
-          .moveTo(from.x, from.y).lineTo(to.x, to.y).stroke({ color: 0xffffff, alpha: alpha * 0.75, width: 2 });
-      }
-      if (variant === 'meteor') graphic.circle(to.x, to.y, 22 + progress * (22 + intensity * 18)).stroke({ color, alpha: alpha * 0.48, width: 3 });
-    });
-  }
-
-  private spawnRing(at: Point, color: number, intensity: number, variant = 'default', element?: import('@pokemon-online/shared').TypeName): void {
-    const graphic = new Graphics({ blendMode: 'add' });
-    const shape = elementalVfxShapeFor(element);
-    const duration = variant === 'bind' || variant === 'snare' ? 0.64 : variant === 'dive' ? 0.80 : 0.48 + intensity * 0.16;
-    this.effectPool.add(graphic, duration, (progress) => {
-      const radius = 22 + progress * (62 + intensity * 58);
-      const alpha = (1 - progress) * 0.86;
-      graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: alpha * 0.68, width: 3 + intensity * 4 });
-      if (shape === 'flame') {
-        for (let flame = 0; flame < 7; flame++) {
-          const angle = flame / 7 * Math.PI * 2 + progress * 1.8;
-          const distance = radius * 0.58;
-          const x = at.x + Math.cos(angle) * distance;
-          const y = at.y + Math.sin(angle) * distance * 0.58;
-          graphic.poly([x - 6, y + 12, x + Math.cos(angle) * 12, y - 18 - intensity * 15, x + 7, y + 12]).fill({ color: flame % 2 ? color : 0xffe383, alpha: alpha * 0.88 });
-        }
-        graphic.circle(at.x, at.y, radius * 0.35).fill({ color: 0xffb353, alpha: alpha * 0.36 }).circle(at.x, at.y, radius * 0.17).fill({ color: 0xfff4b5, alpha: alpha * 0.86 });
-      } else if (shape === 'lightning') {
-        for (let bolt = 0; bolt < 4; bolt++) {
-          const angle = bolt / 4 * Math.PI * 2 + progress * 0.45;
-          const end = { x: at.x + Math.cos(angle) * radius, y: at.y + Math.sin(angle) * radius * 0.62 };
-          const middle = { x: at.x + Math.cos(angle + 0.6) * radius * 0.46, y: at.y + Math.sin(angle + 0.6) * radius * 0.30 };
-          graphic.moveTo(at.x, at.y).lineTo(middle.x, middle.y).lineTo(end.x, end.y).stroke({ color: 0xffe96a, alpha, width: 4 + intensity * 3 })
-            .moveTo(at.x, at.y).lineTo(middle.x, middle.y).lineTo(end.x, end.y).stroke({ color: 0xffffff, alpha, width: 1.6 });
-        }
-        graphic.circle(at.x, at.y, radius * 0.18).fill({ color: 0xfff4a5, alpha: alpha * 0.78 });
-      } else if (shape === 'psychic-orbit') {
-        for (let ring = 0; ring < 4; ring++) {
-          const orbit = radius * (0.34 + ring * 0.14);
-          const phase = progress * 9 + ring * 0.8;
-          graphic.ellipse(at.x + Math.cos(phase) * ring * 6, at.y + Math.sin(phase) * ring * 4, orbit, orbit * 0.36).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * (0.88 - ring * 0.13), width: 2.8 });
-        }
-        graphic.ellipse(at.x, at.y, radius * 0.24, radius * 0.12).fill({ color, alpha: alpha * 0.52 });
-      }
-      if (variant === 'hymn' || variant === 'chant') graphic.star(at.x, at.y, 5, radius * 0.66, radius * 0.34).stroke({ color: 0xffffff, alpha: alpha * 0.46, width: 1.8 });
-      if (variant === 'crown') graphic.star(at.x, at.y, 7, radius * 0.86, radius * 0.4).stroke({ color: 0xffffff, alpha: alpha * 0.56, width: 2.4 });
-      if (variant === 'bind' || variant === 'snare') {
-        const coils = variant === 'bind' ? 3 : 2;
-        for (let index = 0; index < coils; index++) {
-          const angle = progress * Math.PI * 3 + index * Math.PI * 2 / coils;
-          const coilRadius = radius * (0.46 + index * 0.12);
-          graphic.ellipse(at.x + Math.cos(angle) * coilRadius * 0.32, at.y - 5 + Math.sin(angle) * coilRadius * 0.16, coilRadius * 0.78, coilRadius * 0.28).stroke({ color, alpha: alpha * 0.78, width: 2.6 });
-        }
-      }
-      if (variant === 'dive') {
-        const core = 18 + intensity * 16 + Math.sin(progress * Math.PI * 5) * 4;
-        graphic.circle(at.x, at.y - 8, core).fill({ color, alpha: 0.30 + Math.sin(progress * Math.PI) * 0.20 })
-          .circle(at.x, at.y - 8, core * 0.52).fill({ color: 0xffefab, alpha: 0.62 });
-        for (let index = 0; index < 4; index++) {
-          const angle = progress * 7 + index * Math.PI * 2 / 4;
-          const orbit = 24 + intensity * 15;
-          const x = at.x + Math.cos(angle) * orbit;
-          const y = at.y - 12 + Math.sin(angle) * orbit * 0.46 - progress * 20;
-          graphic.moveTo(x, y + 12).lineTo(x + Math.cos(angle) * 7, y - 15 - intensity * 9).lineTo(x - Math.sin(angle) * 6, y + 5).fill({ color: index === 0 ? 0xfff0ae : color, alpha: 0.90 });
-        }
-      }
-    });
-  }
-
-  private spawnEnvironmentReaction(at: Point, reaction?: string): void {
-    const spec = battleEnvironmentFor(this.biomeId);
-    if (!reaction || !spec.reactions.includes(reaction as typeof spec.reactions[number])) return;
-    const colors: Record<string, number> = { scorch: 0xff8a4c, spark: 0xffea68, frost: 0xb7edff, splash: 0x72d9ff, spore: 0xb8ef80, debris: 0xc4a16d, 'rune-pulse': 0xc093ff };
-    const color = colors[reaction] ?? 0xffffff;
-    const graphic = new Graphics({ blendMode: 'add' });
-    this.effectPool.add(graphic, 0.54, (progress) => {
-      graphic.clear();
-      if (reaction === 'splash') graphic.circle(at.x, at.y + 16 - progress * 14, 12 + progress * 28).stroke({ color, alpha: (1 - progress) * 0.62, width: 3 });
-      else if (reaction === 'debris') for (let index = 0; index < 5; index++) graphic.rect(at.x + (index - 2) * 10, at.y + 18 - progress * (18 + index % 2 * 12), 5, 5).fill({ color, alpha: (1 - progress) * 0.64 });
-      else if (reaction === 'rune-pulse') graphic.star(at.x, at.y, 6, 16 + progress * 34, 8 + progress * 15).stroke({ color, alpha: (1 - progress) * 0.58, width: 2 });
-      else graphic.ellipse(at.x, at.y + 24, 36 + progress * 18, 10 + progress * 4).fill({ color, alpha: (1 - progress) * 0.24 });
-    });
   }
 
   private update(dt: number): void {

@@ -15,9 +15,12 @@ import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, 
 import { Graphics } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
+import { spawnBeam } from '../packages/renderer-pixi/src/beam-vfx.ts';
+import { spawnEnvironmentReaction } from '../packages/renderer-pixi/src/environment-reaction-vfx.ts';
+import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
 import { spawnChainLightning, spawnSkyStrike } from '../packages/renderer-pixi/src/lightning-vfx.ts';
 import { spawnProjectile } from '../packages/renderer-pixi/src/projectile-vfx.ts';
-import { spawnBurst, spawnDive, spawnImpact } from '../packages/renderer-pixi/src/impact-vfx.ts';
+import { spawnRing } from '../packages/renderer-pixi/src/ring-vfx.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
 
 function assert(cond: boolean, msg: string): void {
@@ -192,6 +195,65 @@ function assert(cond: boolean, msg: string): void {
   runtime.update(0.01);
   assert(runtime.activeCount === 0, 'standard burst settles at 680ms');
   console.log('✓ standalone impact, dive, and burst VFX contracts:', impactVariants.length);
+}
+
+// Beam, ring, and environment modules retain their complete visual vocabulary
+// and settlement timing without relying on BattleStage implementation details.
+{
+  const runtime = new BattleEffectPool();
+  const from = { x: 340, y: 410 };
+  const to = { x: 840, y: 360 };
+  const representativeBeams: ReadonlyArray<readonly [string, import('@pokemon-online/shared').TypeName]> = [
+    ['flame-stream', 'fire'], ['default', 'fire'], ['default', 'electric'],
+    ['default', 'psychic'], ['meteor', 'water'],
+  ];
+  for (const [variant, element] of representativeBeams) {
+    spawnBeam(runtime, from, to, 0xffd06a, 1, variant, element);
+    runtime.update(0.2);
+    assert(runtime.activeCount === 1, `${variant}/${element} beam draws through the shared effect lifecycle`);
+    runtime.clear();
+  }
+  spawnBeam(runtime, from, to, 0xffffff, 1);
+  runtime.update(0.55);
+  assert(runtime.activeCount === 1, 'standard beam remains active before 560ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'standard beam settles at 560ms');
+
+  const representativeRings: ReadonlyArray<readonly [string, import('@pokemon-online/shared').TypeName]> = [
+    ['default', 'fire'], ['default', 'electric'], ['default', 'psychic'],
+    ['hymn', 'normal'], ['chant', 'fairy'], ['crown', 'dragon'],
+    ['bind', 'dark'], ['snare', 'ice'], ['dive', 'fire'],
+  ];
+  for (const [variant, element] of representativeRings) {
+    spawnRing(runtime, to, 0xc7a1ff, 1, variant, element);
+    runtime.update(0.2);
+    assert(runtime.activeCount === 1, `${variant}/${element} ring draws through the shared effect lifecycle`);
+    runtime.clear();
+  }
+  spawnRing(runtime, to, 0xffffff, 1);
+  runtime.update(0.63);
+  assert(runtime.activeCount === 1, 'standard ring remains active before 640ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'standard ring settles at 640ms');
+  spawnRing(runtime, to, 0xff8a4c, 1, 'dive', 'fire');
+  runtime.update(0.79);
+  assert(runtime.activeCount === 1, 'dive ring remains active before 800ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'dive ring settles at 800ms');
+
+  for (const reaction of BATTLE_ENVIRONMENTS.grass.reactions) {
+    assert(spawnEnvironmentReaction(runtime, BATTLE_ENVIRONMENTS.grass, to, reaction), `${reaction} reaction is accepted by a supporting environment`);
+    runtime.update(0.2);
+    assert(runtime.activeCount === 1, `${reaction} reaction draws through the shared effect lifecycle`);
+    runtime.clear();
+  }
+  assert(!spawnEnvironmentReaction(runtime, BATTLE_ENVIRONMENTS.water, to, 'debris') && runtime.activeCount === 0, 'unsupported environment reaction is rejected without allocating an effect');
+  spawnEnvironmentReaction(runtime, BATTLE_ENVIRONMENTS.grass, to, 'splash');
+  runtime.update(0.53);
+  assert(runtime.activeCount === 1, 'environment reaction remains active before 540ms');
+  runtime.update(0.01);
+  assert(runtime.activeCount === 0, 'environment reaction settles at 540ms');
+  console.log('✓ standalone beam, ring, and environment VFX contracts');
 }
 
 // Visual runtime Stage 1 contracts: fixtures are fixed-input pure-core runs;
