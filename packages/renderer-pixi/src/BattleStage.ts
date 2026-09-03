@@ -4,12 +4,10 @@ import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { elementColor, planBattleCue, type BattleStageVfxPlan } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController } from './BattleCameraController.ts';
+import { BattleCombatantLayer } from './BattleCombatantLayer.ts';
 import { BattleCueScheduler } from './BattleCueScheduler.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
-import { BattlePositionTracker } from './BattlePositionTracker.ts';
-import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
-import { terrainContactPlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
-import { CombatantView } from './CombatantView.ts';
+import { battleContactPoint } from './battle-ground.ts';
 import { BattleEffectPool } from './BattleEffectPool.ts';
 import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH, type BattleStagePoint as Point } from './battle-stage-layout.ts';
 import { spawnBeam } from './beam-vfx.ts';
@@ -42,15 +40,12 @@ export class BattleStage implements BattleRenderer {
   private readonly camera = new BattleCameraController();
   private readonly cueScheduler = new BattleCueScheduler();
   private readonly environmentView = new BattleEnvironmentView();
-  private combatants = new Container();
   private readonly effectPool = new BattleEffectPool();
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
-  private overlay = new Container();
-  private views = new Map<string, CombatantView>();
   private readonly battleArtAssets = new BattleArtAssetLoader();
-  private readonly positionTracker = new BattlePositionTracker();
+  private readonly combatants = new BattleCombatantLayer(this.battleArtAssets, this.terrainContacts);
+  private overlay = new Container();
   private environmentBackgroundTexture: Texture | null = null;
-  private terrainContactPlans = new Map<string, TerrainContactPlan>();
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
   private biomeId = 'grass';
@@ -87,10 +82,7 @@ export class BattleStage implements BattleRenderer {
     this.resizeObserver = null;
     this.effectPool.clear();
     this.cueScheduler.clear();
-    this.views.clear();
-    this.positionTracker.clear();
-    this.terrainContactPlans.clear();
-    this.terrainContacts.clear();
+    this.combatants.clear();
     this.camera.reset();
     this.environmentView.clear();
     this.battleArtAssets.clear();
@@ -116,11 +108,11 @@ export class BattleStage implements BattleRenderer {
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
     return {
       biomeId: this.biomeId,
-      combatantCount: this.views.size,
+      combatantCount: this.combatants.size,
       activeEffectCount: this.effectPool.activeCount,
       environmentChildCount: this.environmentView.childCount,
       effectChildCount: this.effectPool.container.children.length,
-      totalChildCount: this.environmentView.childCount + this.combatants.children.length + this.effectPool.container.children.length + this.overlay.children.length,
+      totalChildCount: this.environmentView.childCount + this.combatants.container.children.length + this.effectPool.container.children.length + this.overlay.children.length,
       canvasCount: canvas ? 1 : 0,
       canvasPixels: canvas ? canvas.width * canvas.height : 0,
       drawCallTotal: drawCalls.total,
@@ -174,63 +166,7 @@ export class BattleStage implements BattleRenderer {
   }
 
   applyBattleSnapshot(snapshot: BattleRenderSnapshot): void {
-    const active = new Set(snapshot.combatants.map((combatant) => combatant.uid));
-    for (const [uid, view] of this.views) {
-      if (!active.has(uid)) {
-        view.destroy();
-        this.views.delete(uid);
-        this.positionTracker.remove(uid);
-        this.terrainContactPlans.delete(uid);
-        this.terrainContacts.remove(uid);
-      }
-    }
-    for (const combatant of snapshot.combatants) {
-      const visualCombatant = { ...combatant, stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
-      const spec = battleEnvironmentFor(this.biomeId);
-      const hasContinuousWorldPosition = visualCombatant.worldPosition !== undefined;
-      const worldPosition = visualCombatant.worldPosition ?? battleWorldPositionFromGrid(visualCombatant.pixel.x, visualCombatant.pixel.y);
-      const projection = projectBattleWorldPoint(worldPosition, spec.camera);
-      const groundProjection = projectBattleWorldPoint({ ...worldPosition, z: 0 }, spec.camera);
-      const point = { x: projection.x, y: projection.y };
-      const groundPoint = { x: groundProjection.x, y: groundProjection.y };
-      const profile = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).profile;
-      const contactPlan = terrainContactPlan(spec.contactVisual, profile.locomotionMode);
-      this.terrainContactPlans.set(visualCombatant.uid, contactPlan);
-      let view = this.views.get(visualCombatant.uid);
-      const isNewView = !view;
-      if (!view) {
-        view = new CombatantView(visualCombatant, this.battleArtAssets);
-        this.views.set(combatant.uid, view);
-        this.combatants.addChild(view);
-      } else {
-        view.refresh(visualCombatant);
-      }
-      // Presentation-owned world positions are already continuously
-      // interpolated, so they bypass the legacy pixel spring. Engine
-      // castProgress remains the only authoritative movement lock;
-      // CombatantView adds action offsets locally.
-      const frame = this.positionTracker.setTarget(visualCombatant.uid, {
-        point,
-        groundPoint,
-        scale: projection.scale,
-        groundScale: groundProjection.scale,
-      }, hasContinuousWorldPosition || isNewView);
-      view.position.set(frame.point.x, frame.point.y);
-      view.scale.set(frame.scale);
-      view.zIndex = frame.groundPoint.y;
-      this.updateViewGrounding(view, frame.point, frame.groundPoint, frame.scale, frame.groundScale, contactPlan);
-      this.terrainContacts.update(combatant.uid, frame.groundPoint, contactPlan, spec);
-    }
-  }
-
-  private updateViewGrounding(view: CombatantView, point: Point, groundPoint: Point, scale: number, groundScale: number, plan: TerrainContactPlan): void {
-    const safeScale = Math.max(0.001, scale);
-    view.setGrounding(
-      { x: (groundPoint.x - point.x) / safeScale, y: (groundPoint.y - point.y) / safeScale },
-      Math.max(0, groundPoint.y - point.y),
-      plan.shadowAlphaMultiplier,
-      plan.shadowScaleMultiplier * groundScale / safeScale,
-    );
+    this.combatants.applySnapshot(snapshot, this.biomeId);
   }
 
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
@@ -241,20 +177,19 @@ export class BattleStage implements BattleRenderer {
   }
 
   isSettled(): boolean {
-    return this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && [...this.views.values()].every((view) => view.isSettled());
+    return this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && this.combatants.isSettled();
   }
 
   private installStage(): void {
     if (!this.app) return;
     this.root = new Container();
     this.app.stage.addChild(this.root);
-    this.combatants.sortableChildren = true;
     this.root.addChild(
       this.environmentView.background,
       this.environmentView.farBackdrop,
       this.environmentView.horizonLayer,
       this.environmentView.groundLayer,
-      this.combatants,
+      this.combatants.container,
       this.environmentView.terrainOcclusion,
       this.environmentView.foreground,
       this.effectPool.container,
@@ -271,25 +206,17 @@ export class BattleStage implements BattleRenderer {
   }
 
   private focusCamera(ids: readonly string[], zoom: number, shake: number): void {
-    const points = ids.map((id) => this.positionTracker.getPosition(id)).filter((point): point is Point => !!point);
+    const points = ids.map((id) => this.combatants.getPosition(id)).filter((point): point is Point => !!point);
     this.camera.focus(points, battleEnvironmentFor(this.biomeId).camera, zoom, shake);
   }
 
   private playAnimationCue(cue: Extract<BattleCue, { type: 'animation' }>): void {
-    const target = cue.targetIds?.map((id) => this.positionTracker.getPosition(id)).find((point): point is Point => !!point);
-    this.views.get(cue.subjectId)?.playAnimation(
-      cue.animation,
-      cue.schedule,
-      cue.durationMs,
-      cue.actorChoreography,
-      target,
-      cue.element,
-    );
+    this.combatants.playAnimation(cue);
   }
 
   private spawnPlan(plan: BattleStageVfxPlan): void {
-    const actor = plan.actorId ? this.positionTracker.getPosition(plan.actorId) : undefined;
-    const targetRoot = plan.targetIds.map((id) => this.positionTracker.getPosition(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
+    const actor = plan.actorId ? this.combatants.getPosition(plan.actorId) : undefined;
+    const targetRoot = plan.targetIds.map((id) => this.combatants.getPosition(id)).find((point): point is Point => !!point) ?? actor ?? { x: DESIGN_WIDTH / 2, y: DESIGN_HEIGHT * 0.58 };
     const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
     const color = elementColor(plan.element);
     if (plan.primitive === 'projectile' && actor) {
@@ -297,7 +224,7 @@ export class BattleStage implements BattleRenderer {
     } else if (plan.primitive === 'sky-strike') {
       spawnSkyStrike(this.effectPool, target, plan.intensity);
     } else if (plan.primitive === 'chain') {
-      const chainTargets = plan.targetIds.map((id) => this.positionTracker.getPosition(id)).filter((point): point is Point => !!point);
+      const chainTargets = plan.targetIds.map((id) => this.combatants.getPosition(id)).filter((point): point is Point => !!point);
       spawnChainLightning(this.effectPool, actor ?? target, chainTargets.length > 0 ? chainTargets : [target], plan.intensity);
     } else if (plan.primitive === 'dive' && actor) {
       spawnDive(this.effectPool, actor, target, color, plan.intensity);
@@ -327,30 +254,19 @@ export class BattleStage implements BattleRenderer {
   private update(dt: number): void {
     const { clockSeconds: clock, due } = this.cueScheduler.advance(dt);
     this.terrainContacts.tick(dt);
-    // One coherent state record keeps projected body/ground anchors,
-    // velocities, and scales synchronized throughout redirected movement.
-    for (const frame of this.positionTracker.update(dt)) {
-      const view = this.views.get(frame.uid);
-      if (!view) continue;
-      view.position.set(frame.point.x, frame.point.y);
-      view.scale.set(frame.scale);
-      view.zIndex = frame.groundPoint.y;
-      const plan = this.terrainContactPlans.get(frame.uid);
-      if (plan) this.updateViewGrounding(view, frame.point, frame.groundPoint, frame.scale, frame.groundScale, plan);
-    }
+    this.combatants.update(dt, clock);
     const spec = battleEnvironmentFor(this.biomeId);
     this.camera.update(dt, [
       { layer: this.environmentView.background, factor: 0, shake: false },
       { layer: this.environmentView.farBackdrop, factor: spec.parallax.far, shake: false },
       { layer: this.environmentView.horizonLayer, factor: spec.parallax.horizon, shake: false },
       { layer: this.environmentView.groundLayer, factor: spec.parallax.ground, shake: true },
-      { layer: this.combatants, factor: 1, shake: true },
+      { layer: this.combatants.container, factor: 1, shake: true },
       { layer: this.environmentView.terrainOcclusion, factor: 1, shake: true },
       { layer: this.environmentView.foreground, factor: spec.parallax.foreground, shake: false },
       { layer: this.effectPool.container, factor: 1, shake: true },
     ]);
     if (!clock) return;
-    for (const view of this.views.values()) view.update(clock);
     for (const cue of due) this.playReadyCue(cue);
     this.effectPool.update(clock);
   }

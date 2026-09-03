@@ -16,6 +16,7 @@ import { Container, Graphics, Texture } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { BattleCameraController } from '../packages/renderer-pixi/src/BattleCameraController.ts';
+import { BattleCombatantLayer } from '../packages/renderer-pixi/src/BattleCombatantLayer.ts';
 import { BattleCueScheduler } from '../packages/renderer-pixi/src/BattleCueScheduler.ts';
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
 import { BattlePositionTracker } from '../packages/renderer-pixi/src/BattlePositionTracker.ts';
@@ -257,6 +258,44 @@ function assert(cond: boolean, msg: string): void {
   tracker.remove('unit');
   assert(tracker.size === 0 && tracker.getFrame('unit') === undefined, 'removed combatants release their complete position state');
   console.log('✓ coherent combatant position and projection tracker');
+}
+
+// Actor views, projected positions, and terrain plans share one lifecycle.
+// Removing a snapshot actor must release every companion record and Pixi child.
+{
+  const pool = new BattleEffectPool();
+  const occlusionLayer = new Container();
+  const contacts = new TerrainContactEffects(pool, occlusionLayer);
+  const layer = new BattleCombatantLayer(new BattleArtAssetLoader(), contacts);
+  const fixture = new BattleSim({
+    mode: 'pve',
+    player: [createWildInstance(25, 10)],
+    enemy: [createWildInstance(143, 10)],
+    seed: 9032026,
+  }).state.combatants.map((combatant, index) => ({
+    ...combatant,
+    uid: `layer-${index}`,
+    speciesId: -1,
+    position: { x: 4 + index * 8, y: 5 + index * 3 },
+    pixel: { x: 4 + index * 8, y: 5 + index * 3 },
+  }));
+
+  layer.applySnapshot({ time: 0, combatants: fixture }, 'grass');
+  let diagnostics = layer.getDiagnostics();
+  assert(diagnostics.viewCount === 2 && diagnostics.positionCount === 2 && diagnostics.terrainPlanCount === 2 && diagnostics.childCount === 2, 'combatant layer creates one coherent record set per snapshot actor');
+  const initialX = layer.getPosition('layer-0')!.x;
+  const movedFixture = { ...fixture[0]!, pixel: { x: fixture[0]!.pixel.x + 4, y: fixture[0]!.pixel.y } };
+  layer.applySnapshot({ time: 0.1, combatants: [movedFixture, fixture[1]!] }, 'grass');
+  layer.update(0.05, 0.05);
+  assert(layer.getPosition('layer-0')!.x !== initialX, 'combatant layer advances projected body and ground state together');
+
+  layer.applySnapshot({ time: 0.2, combatants: [movedFixture] }, 'grass');
+  diagnostics = layer.getDiagnostics();
+  assert(diagnostics.viewCount === 1 && diagnostics.positionCount === 1 && diagnostics.terrainPlanCount === 1 && diagnostics.childCount === 1, 'snapshot removal releases the actor view and every companion state record');
+  layer.clear();
+  diagnostics = layer.getDiagnostics();
+  assert(diagnostics.viewCount === 0 && diagnostics.positionCount === 0 && diagnostics.terrainPlanCount === 0 && diagnostics.childCount === 0 && occlusionLayer.children.length === 0, 'combatant layer teardown leaves no actor or terrain-occlusion children');
+  console.log('✓ cohesive battle combatant view lifecycle');
 }
 
 // Delayed renderer cues share the same visual clock as hit-stop. The frame
