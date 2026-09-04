@@ -6,7 +6,7 @@ import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
 import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
 import { decide, isHardCc } from './ai.ts';
-import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance } from './grid.ts';
+import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance, findGridApproachStep } from './grid.ts';
 
 export interface BattleSimOptions {
   mode: 'pve' | 'pvp';
@@ -368,6 +368,13 @@ export class BattleSim {
     return isCellInArena(cell.x, cell.y) && !this.state.combatants.some((other) => {
       if (!other.alive || other.uid === c.uid) return false;
       if (other.position.x === cell.x && other.position.y === cell.y) return true;
+      if (other.side === c.side) {
+        const destinationGap = distCells(cell, other.position);
+        // Reserve room when choosing a stop, without enlarging melee range or
+        // moving an in-range actor just to spread out. Crowded saves can escape.
+        if (destinationGap < BATTLE_MOVEMENT.allyDestinationClearance
+          && destinationGap <= distCells(c.position, other.position)) return true;
+      }
       const gap = travelPathDistance(c.pixel, c.pixel, other.pixel, other.position);
       const clearance = Math.min(BATTLE_MOVEMENT.pathClearance, gap);
       if (travelPathDistance(c.pixel, cell, other.pixel, other.position) < clearance - 1e-9) return true;
@@ -424,7 +431,7 @@ export class BattleSim {
     // In a valid attack band, stand your ground. Skill casts and local VFX are
     // easier to read when the whole squad does not orbit every decision cycle.
     if (!tooFar && !tooClose) return;
-    this.tryStepToward(c, movementTarget.position, tooClose);
+    this.tryStepToward(c, movementTarget.position, tooClose, tooFar ? desiredRangeCells + MOVE_BUFFER : undefined);
   }
 
   /** Is a combatant closer to the enemy side than its intended cover ally? */
@@ -433,20 +440,24 @@ export class BattleSim {
   }
 
   /** Take one deterministic lane-aware step toward a point, or away when retreating. */
-  private tryStepToward(c: BattleCombatant, point: { x: number; y: number }, retreat: boolean): boolean {
+  private tryStepToward(c: BattleCombatant, point: { x: number; y: number }, retreat: boolean, approachRange?: number): boolean {
     const dx = point.x - c.position.x;
     const dy = point.y - c.position.y;
     const bx = (retreat ? -1 : 1) * Math.sign(dx);
     const by = (retreat ? -1 : 1) * Math.sign(dy);
     if (bx === 0 && by === 0) return false;
-    // Deterministic per-unit lane preference: direct approach first, then step
-    // around a teammate instead of waiting behind it and forming a static pile.
+    // Approach searches to the attack band; retreat and tactical positioning
+    // retain their local candidates. Both share occupancy and step timing.
     const lane = (c.uid.charCodeAt(c.uid.length - 1) & 1) === 0 ? 1 : -1;
     const candidates: { x: number; y: number }[] = [];
     const add = (x: number, y: number) => {
       if (!candidates.some((cell) => cell.x === x && cell.y === y)) candidates.push({ x, y });
     };
-    if (bx !== 0 && by !== 0) {
+    if (approachRange !== undefined) {
+      const approach = findGridApproachStep(c.position, point, approachRange, lane, (from, to) =>
+        this.canStepTo(from === c.position ? c : { ...c, position: from, pixel: from }, to));
+      if (approach) candidates.push(approach);
+    } else if (bx !== 0 && by !== 0) {
       add(c.position.x + bx, c.position.y + by);
       add(c.position.x + bx, c.position.y);
       add(c.position.x, c.position.y + by);
@@ -463,15 +474,12 @@ export class BattleSim {
       add(c.position.x + lane, c.position.y);
       add(c.position.x - lane, c.position.y);
     }
-    for (const cell of candidates) {
-      if (this.canStepTo(c, cell)) {
-        c.position.x = cell.x;
-        c.position.y = cell.y;
-        c.moveCd = this.stepDelay(c);
-        return true;
-      }
-    }
-    return false;
+    const cell = candidates.find((candidate) => this.canStepTo(c, candidate));
+    if (!cell) return false;
+    c.position.x = cell.x;
+    c.position.y = cell.y;
+    c.moveCd = this.stepDelay(c);
+    return true;
   }
 
   private startCast(c: BattleCombatant, skillId: string): void {

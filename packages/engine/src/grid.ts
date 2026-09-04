@@ -31,6 +31,31 @@ export function distCells(a: { x: number; y: number }, b: { x: number; y: number
 
 type GridPoint = { x: number; y: number };
 
+/** Shortest legal approach to an attack band, returning only the next cell.
+ * A bounded grid search can go behind a blocker; greedy sidesteps can oscillate
+ * forever once allied destination spacing closes the direct lane. */
+export function findGridApproachStep(from: GridPoint, target: GridPoint, range: number, lane: number,
+  canTravel: (from: GridPoint, to: GridPoint) => boolean): GridPoint | undefined {
+  const queue: { cell: GridPoint; first?: GridPoint }[] = [{ cell: from }];
+  const visited = new Set([`${from.x},${from.y}`]);
+  for (let index = 0; index < queue.length; index++) {
+    const { cell, first } = queue[index]!;
+    if (distCells(cell, target) <= range) return first;
+    const neighbors: GridPoint[] = [];
+    for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) {
+      if (dx !== 0 || dy !== 0) neighbors.push({ x: cell.x + dx, y: cell.y + dy });
+    }
+    neighbors.sort((a, b) => distCells(a, target) - distCells(b, target) || lane * (b.y - a.y) || a.x - b.x);
+    for (const next of neighbors) {
+      const key = `${next.x},${next.y}`;
+      if (visited.has(key) || !isCellInArena(next.x, next.y) || !canTravel(cell, next)) continue;
+      visited.add(key);
+      queue.push({ cell: next, first: first ?? next });
+    }
+  }
+  return undefined;
+}
+
 /** Minimum distance between two remaining travel segments, regardless of each
  * actor's progress. Covers crossing diagonals, followers and cast-position snaps. */
 export function travelPathDistance(a: GridPoint, b: GridPoint, c: GridPoint, d: GridPoint): number {

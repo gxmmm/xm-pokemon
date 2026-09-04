@@ -62,21 +62,25 @@ export async function createBattleReadabilityFixture() {
         await stage.playBattleCues([{ type: 'animation', subjectId: 'unit-2', animation: 'interrupt' }]);
       }
     },
-    async movement() {
-      label.textContent = '移动避让验收 · 固定 3v3 / 0.55 秒 · 无攻击与镜头偏移';
+    async movement(ticks = 11) {
+      label.textContent = `移动与停靠间距验收 · 固定 3v3 / ${(ticks * 0.05).toFixed(2)} 秒 · 中性姿态`;
       const team = (ids: number[], side: string) => ids.map((id, index) => ({ ...createWildInstance(id, 100, { rng: () => 0.5 }), uid: `${side}${index}` }));
       const battle = new BattleSim({ mode: 'pvp', player: team([6, 25, 94], 'p'), enemy: team([3, 9, 143], 'e'), seed: 904 });
       let minimum = Infinity;
-      for (let tick = 0; tick < 11; tick++) {
+      let allyDestinationMinimum = Infinity;
+      for (let tick = 0; tick < ticks; tick++) {
         battle.tick(0.05);
         const alive = battle.state.combatants.filter((c) => c.alive);
         alive.forEach((a, index) => alive.slice(index + 1).forEach((b) => {
           minimum = Math.min(minimum, Math.hypot(a.pixel.x - b.pixel.x, a.pixel.y - b.pixel.y));
+          if (a.side === b.side) allyDestinationMinimum = Math.min(allyDestinationMinimum,
+            Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y));
         }));
       }
       stage.setVisualSettings({ cameraIntensity: 'off' });
-      await stage.enterBattle({ biomeId: 'grass', combatants: battle.state.combatants });
-      return { minimum, time: battle.state.time };
+      // Keep authoritative positions; remove only charge poses to isolate spacing.
+      await stage.enterBattle({ biomeId: 'grass', combatants: battle.state.combatants.map((c) => ({ ...c, castProgress: null })) });
+      return { minimum, allyDestinationMinimum, time: battle.state.time };
     },
     destroy() { stage.unmount(); section.remove(); },
   };

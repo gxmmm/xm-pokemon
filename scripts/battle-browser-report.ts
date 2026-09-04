@@ -307,16 +307,25 @@ async function main(): Promise<void> {
     assert((await page.evaluate(() => window.__READABILITY_FIXTURE__.read())).settled);
     const movement = await page.evaluate(() => window.__READABILITY_FIXTURE__.movement());
     assert(movement.minimum >= 0.5 - 1e-7, 'real engine opening respects movement clearance');
+    assert(movement.allyDestinationMinimum >= 2, 'allied stops stay two cells apart during approach');
     await page.clock.runFor(400);
     const movingScene = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
     assert.equal(movingScene.combatantCount, 6);
     assert(Object.values(movingScene.motions).every((model) => model.spriteReady && model.motion === 'idle'));
     await page.screenshot({ path: resolve(OUTPUT, 'occlusion-movement-fixed.png') });
+    const standing = await page.evaluate(() => window.__READABILITY_FIXTURE__.movement(60));
+    assert(standing.minimum >= 0.5 - 1e-7 && standing.allyDestinationMinimum >= 2, 'mid-fight travel and allied stops keep their respective clearance');
+    await page.clock.runFor(400);
+    const standingScene = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+    assert.equal(standingScene.combatantCount, 6);
+    assert(Object.values(standingScene.motions).every((model) => model.spriteReady && model.motion === 'idle'));
+    await page.screenshot({ path: resolve(OUTPUT, 'occlusion-standing-fixed.png') });
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
     console.log('✓ actual browser: concurrent attacks survive repeated damage; real interruption clears charge');
     console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
     assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
+    console.log('✓ actual browser: engine-owned allied stops and neutral opening/mid-fight snapshots');
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {
