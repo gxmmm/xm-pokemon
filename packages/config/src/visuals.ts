@@ -7,6 +7,9 @@ export const BATTLE_EFFECT_COMPOSITION = {
 } as const;
 export type BattleEffectLayer = 'ground' | 'front';
 
+/** Ordinary damage accents never replace the actor's ongoing skill timeline. */
+export const BATTLE_HIT_REACTION = { durationMs: 160, offsetX: 4 } as const;
+
 /** Shared world/battle visual vocabulary. These are static data contracts;
  * renderer implementations must not add map- or skill-id branches to replace
  * them. The first two scene packs are configuration-only Stage 1 prototypes. */

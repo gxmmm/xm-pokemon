@@ -1,6 +1,7 @@
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import type { BattleCue, CameraPlan } from '@pokemon-online/presentation';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
+import type { CombatantView } from '../packages/renderer-pixi/src/CombatantView.ts';
 
 /** Test-only dense 3v3 composition; no simulation, login or saved data is changed. */
 export async function createBattleReadabilityFixture() {
@@ -22,8 +23,11 @@ export async function createBattleReadabilityFixture() {
   await stage.mount(host);
   await stage.enterBattle({ biomeId: 'grass', combatants });
   const targetIds = combatants.slice(3).map((combatant) => combatant.uid);
+  // Test-only inspection keeps per-model diagnostic plumbing out of the app API.
+  const views = (stage as unknown as { combatants: { views: Map<string, CombatantView> } }).combatants.views;
   return {
-    read: () => ({ ...stage.getDiagnostics(), settled: stage.isSettled() }),
+    read: () => ({ ...stage.getDiagnostics(), settled: stage.isSettled(),
+      motions: Object.fromEntries([...views].map(([uid, view]) => [uid, view.getDiagnostics()])) }),
     async play(reduceFlicker = false) {
       stage.setVisualSettings({ reduceFlicker, cameraIntensity: 'reduced' });
       const cues: BattleCue[] = (['fire', 'water', 'psychic'] as const).flatMap((element, index) => [
@@ -37,6 +41,26 @@ export async function createBattleReadabilityFixture() {
       stage.setVisualSettings({ reduceFlicker: false, cameraIntensity: 'full' });
       label.textContent = '3v3 镜头验收 · 同帧合焦 / 关键目标 / 回归全景';
       await stage.playBattleCues(plans.map((plan) => ({ type: 'camera', plan })));
+    },
+    async exchange(action: 'start' | 'hit' | 'interrupt') {
+      if (action === 'start') {
+        label.textContent = '3v3 连续受击验收 · 攻击 / 持续施法 / 蓄力';
+        stage.setVisualSettings({ cameraIntensity: 'off' });
+        stage.applyBattleSnapshot({ time: 0, combatants: combatants.map((combatant, index) => index === 2
+          ? { ...combatant, castProgress: { skillId: 'hyper-beam', remaining: 0.6 } } : combatant) });
+        await stage.playBattleCues((['beam', 'melee'] as const).flatMap((animation, index) => [
+          { type: 'animation', subjectId: `unit-${index}`, animation, durationMs: 600 },
+          { type: 'animation', subjectId: `unit-${index}`, animation: 'recoil', schedule: 'after-current-motion', durationMs: 160 },
+        ]));
+      } else if (action === 'hit') {
+        await stage.playBattleCues([0, 1, 2].flatMap((index) => [
+          { type: 'animation', subjectId: `unit-${index}`, animation: 'hit' },
+          { type: 'vfx', recipe: { id: 'impact:normal', delivery: 'aura' }, anchors: { targetIds: [`unit-${index}`] }, intensity: 0.3 },
+        ]));
+      } else {
+        stage.applyBattleSnapshot({ time: 0.3, combatants });
+        await stage.playBattleCues([{ type: 'animation', subjectId: 'unit-2', animation: 'interrupt' }]);
+      }
     },
     destroy() { stage.unmount(); section.remove(); },
   };

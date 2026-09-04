@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { BATTLE_ART_PROFILES, resolveBattleArtPresentation, validateBattleArtConfiguration } from '@pokemon-online/config';
+import { BATTLE_ART_PROFILES, BATTLE_HIT_REACTION, resolveBattleArtPresentation, validateBattleArtConfiguration } from '@pokemon-online/config';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import { BattleArtAssetLoader } from '../packages/renderer-pixi/src/BattleArtAssets.ts';
 import { CombatantView } from '../packages/renderer-pixi/src/CombatantView.ts';
@@ -34,6 +34,24 @@ export function testCombatantMotion(): void {
     view.update(0.11);
     view.update(0.2);
     assert(view.isSettled(), 'authored recovery returns to neutral');
+    view.playAnimation('hit');
+    view.playAnimation('projectile');
+    assert.equal(view.getDiagnostics().motion, 'cast', 'a ready action does not wait behind ordinary hit feedback');
+    view.update(0.8); view.update(0.2);
+    view.playAnimation('beam', 'immediate', 400);
+    view.playAnimation('recoil', 'after-current-motion', 100);
+    view.update(0.08);
+    view.playAnimation('hit');
+    assert.equal(view.getDiagnostics().motion, 'channel', 'ordinary damage cannot interrupt a released skill');
+    assert.equal(view.getDiagnostics().queuedMotionCount, 1, 'damage cannot change the recovery queue');
+    view.update(0.08);
+    view.playAnimation('hit');
+    view.update(0.09);
+    assert(!view.getDiagnostics().hitReacting, 'repeated hits do not restart or stack the same reaction');
+    view.update(0.16);
+    assert.equal(view.getDiagnostics().motion, 'recover', 'the main action keeps its original clock');
+    view.update(0.11); view.update(0.2);
+    assert(view.isSettled());
     assert.equal(JSON.stringify(actor), snapshot, 'pose playback cannot change battle facts');
     const profile = resolveBattleArtPresentation({ speciesId, side: 'player' }).profile;
     const tracks = profile.motionTracks!.cast!;
@@ -49,6 +67,8 @@ export function testCombatantMotion(): void {
     view.refresh({ ...actor, castProgress: { skillId: 'hyper-beam', remaining: 0.6 } });
     view.update(0.1);
     assert(view.getDiagnostics().casting && view.getDiagnostics().motion === 'charge');
+    view.playAnimation('hit'); view.update(0.05);
+    assert(view.getDiagnostics().casting && view.getDiagnostics().motion === 'charge', 'damage is not an authoritative cast interruption');
     view.playAnimation('windup', 'after-current-motion');
     view.playAnimation('interrupt');
     assert(!view.getDiagnostics().casting && view.getDiagnostics().chargeProgress === 0);
@@ -62,9 +82,28 @@ export function testCombatantMotion(): void {
     view.playAnimation('faint');
     view.playAnimation('interrupt');
     assert.equal(view.getDiagnostics().motion, 'faint', 'interruption never revives a fainted actor');
+    view.playAnimation('hit'); view.playAnimation('projectile');
+    view.playAnimation('recoil', 'after-current-motion');
+    assert.equal(view.getDiagnostics().motion, 'faint', 'late damage and action cues cannot overwrite faint');
+    assert.equal(view.getDiagnostics().queuedMotionCount, 0);
     view.destroy({ children: true });
   }
   const fallbackPose = { offsetX: 5 };
+  for (const facing of [1, -1] as const) {
+    const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
+    const hit = new CombatantView(actor, assets), reference = new CombatantView(actor, assets);
+    for (const view of [hit, reference]) { view.playAnimation('beam', 'immediate', 400); view.update(0.1); }
+    hit.playAnimation('hit');
+    for (const view of [hit, reference]) view.update(BATTLE_HIT_REACTION.durationMs / 2000);
+    assert(Math.abs(hit.children[1]!.x - reference.children[1]!.x + facing * BATTLE_HIT_REACTION.offsetX) < 1e-9, 'reaction is a bounded facing-relative accent');
+    const frozen = hit.children[1]!.x;
+    hit.update(0);
+    assert.equal(hit.children[1]!.x, frozen, 'hit-stop freezes the accent with its primary action');
+    for (const view of [hit, reference]) view.update(BATTLE_HIT_REACTION.durationMs / 2000);
+    assert.equal(hit.children[1]!.x, reference.children[1]!.x, 'reaction ends without accumulated displacement');
+    assert.equal(hit.x, reference.x, 'the authoritative ground root never recoils');
+    for (const view of [hit, reference]) view.destroy({ children: true });
+  }
   assert.equal(sampleBattleMotionPose(fallbackPose, undefined, 0.5), fallbackPose, 'other profiles retain their existing poses');
   assert.equal(BATTLE_ART_PROFILES.filter((profile) => profile.motionTracks).length, 2, 'only the two reviewed showcase profiles opt in');
   assets.clear();

@@ -1,4 +1,4 @@
-import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtAnchor, resolveBattleArtPresentation, type BattleArtAnchorId, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
+import { BATTLE_HIT_REACTION, BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtAnchor, resolveBattleArtPresentation, type BattleArtAnchorId, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics } from 'pixi.js';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -19,6 +19,7 @@ export interface CombatantViewDiagnostics {
   layerCount: number;
   motion: BattleArtMotionId;
   queuedMotionCount: number;
+  hitReacting: boolean;
   facing: 1 | -1;
   casting: boolean;
   /** True while delayed battle snapshots indicate locomotion. */
@@ -59,6 +60,8 @@ export class CombatantView extends Container {
   private motionDurationOverrideMs: number | null = null;
   private activeChoreography: ActiveActorChoreography | null = null;
   private queuedMotions: QueuedMotion[] = [];
+  private hitReactionElapsedMs: number | null = null;
+  private hitOffsetX = 0;
   private transitionElapsedMs = 0;
   private transitionDurationMs = 0;
   private transitionFrom: MotionTransform | null = null;
@@ -165,6 +168,7 @@ export class CombatantView extends Container {
     target?: { x: number; y: number },
     element?: TypeName,
   ): void {
+    if (this.motion === 'faint' || (!this.alive && animation !== 'faint')) return;
     if (animation === 'interrupt') {
       this.casting = false;
       this.chargeProgress = 0;
@@ -174,6 +178,15 @@ export class CombatantView extends Container {
       return;
     }
     const motion = battleArtMotionForAnimation(animation);
+    if (motion === 'hit') {
+      if (this.motion === 'hit') return;
+      if (isActionMotion(this.motion) || this.motion === 'recover') {
+        // Coalesce concurrent damage into one bounded accent. Do not rewind the
+        // primary clip, its asset, choreography, or queued recovery.
+        this.hitReactionElapsedMs ??= 0;
+        return;
+      }
+    }
     const entry = { motion, durationMs, choreography, target, element };
     if (schedule === 'after-current-motion') {
       this.queuedMotions.push(entry);
@@ -188,11 +201,15 @@ export class CombatantView extends Container {
       this.queuedMotions.push(entry);
       return;
     }
-    if (motion === 'faint') this.queuedMotions = [];
+    if (motion === 'faint') {
+      this.queuedMotions = [];
+      this.hitReactionElapsedMs = null;
+    }
     this.setMotion(motion, durationMs, choreography, target, element);
   }
 
   isSettled(): boolean {
+    if (this.hitReactionElapsedMs !== null) return false;
     if (this.transitionFrom || this.queuedMotions.length > 0) return false;
     if (this.motion === 'idle' || this.motion === 'locomotion') return true;
     if (this.motion !== 'faint') return false;
@@ -229,6 +246,7 @@ export class CombatantView extends Container {
       layerCount: this.decorations.size,
       motion: this.motion,
       queuedMotionCount: this.queuedMotions.length,
+      hitReacting: this.hitReactionElapsedMs !== null,
       facing: this.facing,
       casting: this.casting,
       moving: this.moving,
@@ -302,7 +320,13 @@ export class CombatantView extends Container {
     // same sign on the selected bitmap cancels that mirror only for the source
     // sprite sheet, preserving its authored front/back head direction.
     this.sprite.scale.x = Math.abs(this.sprite.scale.x) * this.facing;
-    this.body.position.set(transform.x, transform.y + hover.offsetY);
+    if (this.hitReactionElapsedMs !== null) {
+      this.hitReactionElapsedMs += elapsedMs;
+      if (this.hitReactionElapsedMs >= BATTLE_HIT_REACTION.durationMs) this.hitReactionElapsedMs = null;
+    }
+    this.hitOffsetX = this.hitReactionElapsedMs === null ? 0
+      : -this.facing * BATTLE_HIT_REACTION.offsetX * Math.sin(this.hitReactionElapsedMs / BATTLE_HIT_REACTION.durationMs * Math.PI);
+    this.body.position.set(transform.x + this.hitOffsetX, transform.y + hover.offsetY);
     this.body.rotation = transform.rotation;
     this.updateShadowForHover(hover.heightRatio);
     this.updateLayers(progress, pose.glowAlpha, pose.glowScale);
@@ -390,7 +414,7 @@ export class CombatantView extends Container {
     this.transitionFrom = {
       scaleX: this.body.scale.x,
       scaleY: this.body.scale.y,
-      x: this.body.position.x,
+      x: this.body.position.x - this.hitOffsetX,
       y: this.body.position.y - this.visualHoverOffsetY,
       rotation: this.body.rotation,
     };
@@ -404,7 +428,7 @@ export class CombatantView extends Container {
   }
 
   private shouldQueueAction(): boolean {
-    if (this.motion === 'idle' || this.motion === 'locomotion' || this.motion === 'faint') return false;
+    if (this.motion === 'idle' || this.motion === 'locomotion' || this.motion === 'hit' || this.motion === 'faint') return false;
     // A gameplay-timed cast enters charge with no visual work behind it; its
     // release cue must replace charge immediately. A generic visual windup has
     // already queued action/recover, so later ready skills serialize after it.
