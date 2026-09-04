@@ -87,17 +87,17 @@ export interface SoundCue {
 /** A renderer may schedule these cues but may not reinterpret battle rules. */
 export type AnimationSchedule = 'immediate' | 'after-current-motion';
 
-export type BattleCue =
+export type BattleCue = { /** Relative visual delay; never changes simulation timing. */ delayMs?: number } & (
   | { type: 'camera'; plan: CameraPlan }
-  | { type: 'vfx'; recipe: VfxRecipeRef; anchors: VfxAnchors; intensity: number; eventType: BattlePresentationEventType; skillId?: string; vfxKind?: BattleVfx['kind']; outcome?: BattlePresentationOutcome; status?: StatusKind; /** Presentation-only delay used to release VFX after a visual windup. */ delayMs?: number }
-  | { type: 'animation'; subjectId: string; animation: CombatantAnimation; skillId?: string; targetIds?: readonly string[]; delivery?: VfxRecipeRef['delivery']; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: AnimationSchedule; /** Presentation-only clip hold; never changes simulation timing. */ durationMs?: number; /** Presentation-only release delay for impact reactions. */ delayMs?: number }
+  | { type: 'vfx'; recipe: VfxRecipeRef; anchors: VfxAnchors; intensity: number; eventType: BattlePresentationEventType; skillId?: string; vfxKind?: BattleVfx['kind']; outcome?: BattlePresentationOutcome; status?: StatusKind }
+  | { type: 'animation'; subjectId: string; animation: CombatantAnimation; skillId?: string; targetIds?: readonly string[]; delivery?: VfxRecipeRef['delivery']; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: AnimationSchedule; /** Presentation-only clip hold; never changes simulation timing. */ durationMs?: number }
   /** Timeline-owned playback window. The bridge pauses its visual cursor while
    * renderer consumers play the matching action; no game facts are changed. */
   | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
   | { type: 'environment'; reaction: EnvironmentReaction; anchors?: VfxAnchors }
-  | { type: 'sound'; cue: SoundCue };
+  | { type: 'sound'; cue: SoundCue });
 
 /** Converts the existing pure engine event DTO into the new presentation DTO.
  * The adapter is intentionally one-way; presentation never mutates core data. */

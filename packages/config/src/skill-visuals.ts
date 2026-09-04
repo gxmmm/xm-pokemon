@@ -2,6 +2,17 @@ import type { BattleActorChoreography, Skill, TypeName } from '@pokemon-online/s
 import { SKILLS } from './skills.ts';
 import type { DeliveryKind, EnvironmentReaction, SkillRecipeVariant, SkillVisualImpact, SkillVisualRecipe, SkillVisualTier } from './visuals.ts';
 
+/** Shared visual-only flight timing: direction and drawing must agree on contact. */
+export function projectileTimingFor(variant = 'default', intensity = 0.24): { durationMs: number; contactMs: number } {
+  const strength = Math.max(0.15, Math.min(1, intensity));
+  const durationMs = variant === 'fire-glyph' ? 480 : variant === 'flame-stream' ? 380
+    : variant === 'bind' || variant === 'snare' ? 340 : 260 + (1 - strength) * 100;
+  return { durationMs, contactMs: variant === 'arc-bolt' ? durationMs / 1.22 : durationMs };
+}
+
+/** Contact after a beam's initial opacity ramp, not after its channel ends. */
+export const BEAM_CONTACT_DELAY_MS = 80;
+
 export interface SkillVisualGrammar {
   element: TypeName;
   defaultImpact: SkillVisualImpact;

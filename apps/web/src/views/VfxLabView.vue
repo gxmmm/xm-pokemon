@@ -6,7 +6,7 @@ import { BattleDirector, snapshotBattle, type BattlePresentation } from '@pokemo
 import type { BattleCombatant } from '@pokemon-online/shared';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { VfxLabForcedStatus } from '../battle/VfxLab.ts';
-import { buildVfxLabEvents, vfxLabTargetState } from '../battle/VfxLab.ts';
+import { buildVfxLabCues, vfxLabTargetState } from '../battle/VfxLab.ts';
 
 const CASTER_ID = 'vfx-lab:caster';
 const DUMMY_ID = 'vfx-lab:dummy';
@@ -73,19 +73,8 @@ function playSkill(skillId: string): void {
 
 function playSkillBatch(skillId: string, count: number): void {
   if (!stageReady.value || !presentation.value) return;
-  const batches = Array.from({ length: count }, (_, index) => {
-    const events = buildVfxLabEvents({ actorId: CASTER_ID, targetId: DUMMY_ID, skillId, sequence: sequence + index * 10 });
-    const delayMs = index * 720;
-    const boostedEvents = events.map((event) => event.type === 'damage' || event.type === 'skill'
-      ? { ...event, outcome: event.outcome ? { ...event.outcome, damage: Math.round((event.outcome.damage ?? 1) * intensity.value * 5), critical: intensity.value >= 1.5 } : event.outcome }
-      : event);
-    return director.direct(boostedEvents).map((entry) => ({
-      ...entry,
-      cue: 'delayMs' in entry.cue ? { ...entry.cue, delayMs: (entry.cue.delayMs ?? 0) + delayMs } : entry.cue,
-    }));
-  });
+  cues.value = buildVfxLabCues(director, { actorId: CASTER_ID, targetId: DUMMY_ID, skillId, sequence }, count, intensity.value);
   sequence += count * 10;
-  cues.value = batches.flat();
   const skill = SKILL_MAP[skillId];
   status.value = `${skill?.name ?? skillId} 连播 ${count} 次：${skill?.effect?.target === 'self' || skill?.effect?.kind === 'heal' ? '对自身' : '对训练假人'}，强度 ${intensity.value.toFixed(1)}x。`;
 }

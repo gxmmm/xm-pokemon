@@ -68,15 +68,15 @@ export interface BattleRenderSnapshot {
 
 /** Kept independent from presentation so a renderer package never has to
  * import a director implementation. Presentation is structurally compatible. */
-export type BattleCue =
+export type BattleCue = { delayMs?: number } & (
   | { type: 'camera'; plan: { style: string; focusIds: readonly string[]; durationMs: number; zoom?: number; shake?: number } }
-  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[] }; intensity: number; delayMs?: number }
-  | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number; delayMs?: number }
+  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[] }; intensity: number }
+  | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number }
   | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }
   | { type: 'time-scale'; scale: number; durationMs: number }
   | { type: 'environment'; reaction: string; anchors?: { actorId?: string; targetIds?: readonly string[] } }
-  | { type: 'sound'; cue: { id: string; volume?: number } };
+  | { type: 'sound'; cue: { id: string; volume?: number } });
 
 export interface WorldRenderer extends GameRenderer {
   enterWorld(input: WorldRenderInput): Promise<void>;

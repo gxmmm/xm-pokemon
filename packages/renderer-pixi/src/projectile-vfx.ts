@@ -1,4 +1,5 @@
 import type { TypeName } from '@pokemon-online/shared';
+import { projectileTimingFor } from '@pokemon-online/config';
 import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
@@ -15,9 +16,9 @@ export function spawnProjectile(
 ): void {
   // A shadow needs to occlude the bright stage, not add light to it.
   const graphic = new Graphics({ blendMode: variant === 'shadow-orb' ? 'normal' : 'add' });
-  const duration = variant === 'fire-glyph' ? 0.48 : variant === 'flame-stream' ? 0.38 : variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
+  const timing = projectileTimingFor(variant, intensity);
   const shape = elementalVfxShapeFor(element);
-  runtime.add(graphic, duration, (progress) => {
+  runtime.add(graphic, timing.durationMs / 1000, (progress) => {
     const x = from.x + (to.x - from.x) * progress;
     const y = from.y + (to.y - from.y) * progress;
     const dx = to.x - from.x;
@@ -29,7 +30,7 @@ export function spawnProjectile(
     const py = nx;
     graphic.clear();
     if (variant === 'arc-bolt') {
-      const head = Math.min(1, progress * 1.22);
+      const head = Math.min(1, progress * timing.durationMs / timing.contactMs);
       const tail = Math.max(0, head - 0.46);
       const phase = Math.floor(progress * 18);
       const segments = 11;

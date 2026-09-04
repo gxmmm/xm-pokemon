@@ -1,4 +1,4 @@
-import { DEFAULT_SKILL_CAST_PRESENTATION, SKILL_CAST_PRESENTATION_BY_SKILL_ID, SKILL_VISUAL_RECIPE_MAP } from '@pokemon-online/config';
+import { BEAM_CONTACT_DELAY_MS, DEFAULT_SKILL_CAST_PRESENTATION, projectileTimingFor, SKILL_CAST_PRESENTATION_BY_SKILL_ID, SKILL_VISUAL_RECIPE_MAP } from '@pokemon-online/config';
 import type { TypeName } from '@pokemon-online/shared';
 import {
   type BattleCue,
@@ -43,18 +43,36 @@ export class BattleDirector {
   private consumed = new Set<number>();
 
   direct(events: readonly BattlePresentationEvent[]): DirectedBattleCue[] {
+    const pending = events.filter((event) => !this.consumed.has(event.sequence));
+    // Only pair facts submitted together at the same simulation instant. A later
+    // poison tick or reflected hit must never replay an earlier flight delay.
+    const releases = new Map(pending.filter((event) => event.type === 'move' || event.type === 'skill')
+      .map((event) => [actionKey(event), event]));
+    const contactDelays = new Map<number, number>();
+    const knockoutDelays = new Map<string, number>();
+    for (const event of pending) {
+      if (event.type !== 'damage' && event.type !== 'status' && event.type !== 'heal') continue;
+      const release = releases.get(actionKey(event));
+      if (!release || !event.targetIds?.some((id) => release.targetIds?.includes(id))) continue;
+      const delay = contactDelayFor(release);
+      contactDelays.set(event.sequence, delay);
+      if (event.outcome?.ko) for (const target of event.targetIds) knockoutDelays.set(JSON.stringify([event.at, target]), delay);
+    }
     const result: DirectedBattleCue[] = [];
-    for (const event of events) {
+    for (const event of pending) {
       if (this.consumed.has(event.sequence)) continue;
       this.consumed.add(event.sequence);
-      result.push(...this.cuesFor(event));
+      const contactDelay = event.type === 'faint'
+        ? knockoutDelays.get(JSON.stringify([event.at, event.targetIds?.[0] ?? event.actorId]))
+        : contactDelays.get(event.sequence);
+      result.push(...this.cuesFor(event, contactDelay));
     }
     return result;
   }
 
   reset(): void { this.consumed.clear(); }
 
-  private cuesFor(event: BattlePresentationEvent): DirectedBattleCue[] {
+  private cuesFor(event: BattlePresentationEvent, contactDelayMs?: number): DirectedBattleCue[] {
     const score = scoreBattlePresentation(event);
     const recipe = recipeFor(event);
     const targets = event.targetIds ?? [];
@@ -127,11 +145,29 @@ export class BattleDirector {
     }
 
     return output.filter((cue) => !('subjectId' in cue) || cue.subjectId.length > 0)
-      .map((cue, index) => ({ id: `${event.id}:cue:${index}`, eventId: event.id, sequence: event.sequence, at: event.at, cue }));
+      .map((cue, index) => ({ id: `${event.id}:cue:${index}`, eventId: event.id, sequence: event.sequence, at: event.at,
+        cue: contactDelayMs === undefined ? cue : { ...cue, delayMs: contactDelayMs } }));
   }
 }
 
 interface RecipeLike { id: string; element?: TypeName; delivery: 'melee' | 'projectile' | 'beam' | 'area' | 'aura'; camera: 'light' | 'track' | 'impact' | 'finisher'; variant?: string; actorChoreography?: import('@pokemon-online/shared').BattleActorChoreography; particleBudget?: number; }
+function actionKey(event: BattlePresentationEvent): string {
+  return JSON.stringify([event.at, event.actorId, event.skillId]);
+}
+
+function contactDelayFor(release: BattlePresentationEvent): number {
+  const recipe = recipeFor(release);
+  const cast = castPresentationFor(release.skillId);
+  const lead = release.type === 'move' || !cast.charge ? cast.visualWindupMs : 0;
+  if (recipe.actorChoreography) return lead + Math.round(recipe.actorChoreography.durationMs * recipe.actorChoreography.impactAt);
+  // These target-owned motifs bypass projectile drawing in the renderer plan.
+  if (recipe.variant === 'sky-strike') return lead + 80;
+  if (recipe.variant === 'chain') return lead;
+  if (recipe.delivery === 'projectile') return lead + projectileTimingFor(recipe.variant, scoreBattlePresentation(release).intensity).contactMs;
+  if (recipe.delivery === 'beam') return lead + BEAM_CONTACT_DELAY_MS;
+  return lead;
+}
+
 function recipeFor(event: BattlePresentationEvent): RecipeLike {
   if (event.skillId && SKILL_VISUAL_RECIPE_MAP[event.skillId]) return SKILL_VISUAL_RECIPE_MAP[event.skillId]!;
   const delivery = event.vfxKind === 'melee' ? 'melee' : event.vfxKind === 'beam' ? 'beam' : event.vfxKind === 'burst' ? 'area' : event.vfxKind === 'cast' ? 'aura' : 'projectile';
