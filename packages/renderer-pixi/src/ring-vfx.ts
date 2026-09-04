@@ -1,11 +1,17 @@
 import type { TypeName } from '@pokemon-online/shared';
 import { Graphics } from 'pixi.js';
+import { BATTLE_EFFECT_COMPOSITION, type BattleEffectLayer } from '@pokemon-online/config';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 
-export function spawnRing(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', element?: TypeName): void {
+export function spawnRing(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', element?: TypeName, layer: BattleEffectLayer = 'front'): void {
   const graphic = new Graphics({ blendMode: 'add' });
+  if (layer === 'ground') {
+    graphic.pivot.set(at.x, at.y);
+    graphic.position.set(at.x, at.y);
+    graphic.scale.y = BATTLE_EFFECT_COMPOSITION.groundRingScaleY;
+  }
   const shape = elementalVfxShapeFor(element);
   const duration = variant === 'bind' || variant === 'snare' ? 0.64 : variant === 'dive' ? 0.80 : 0.48 + intensity * 0.16;
   runtime.add(graphic, duration, (progress) => {
@@ -60,5 +66,5 @@ export function spawnRing(runtime: BattleEffectPool, at: BattleStagePoint, color
         graphic.moveTo(x, y + 12).lineTo(x + Math.cos(angle) * 7, y - 15 - intensity * 9).lineTo(x - Math.sin(angle) * 6, y + 5).fill({ color: index === 0 ? 0xfff0ae : color, alpha: 0.90 });
       }
     }
-  });
+  }, layer);
 }

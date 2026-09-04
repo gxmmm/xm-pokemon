@@ -23,7 +23,13 @@ export class BattleVfxExecutor {
   spawnPlans(plans: readonly BattleStageVfxPlan[], environment: BattleEnvironmentSpec): number {
     let spawned = 0;
     for (const plan of plans) {
-      if (this.spawnPlan(plan, environment)) spawned++;
+      // Explicit targets never fall back to a different actor or screen center.
+      // Chain is one connected path; other primitives address each unique victim.
+      const targetIds = [...new Set(plan.targetIds)].filter((uid) => !!this.resolvePosition(uid));
+      if (plan.targetIds.length && !targetIds.length) continue;
+      const resolved = plan.primitive === 'chain' || !targetIds.length
+        ? [{ ...plan, targetIds }] : targetIds.map((uid) => ({ ...plan, targetIds: [uid] }));
+      for (const targetPlan of resolved) if (this.spawnPlan(targetPlan, environment)) spawned++;
     }
     return spawned;
   }
@@ -61,10 +67,10 @@ export class BattleVfxExecutor {
         return true;
       }
       case 'burst':
-        spawnBurst(this.effects, target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element);
+        spawnBurst(this.effects, target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element, plan.opacity);
         return true;
       case 'ring':
-        spawnRing(this.effects, target, color, plan.intensity, plan.variant, plan.element);
+        spawnRing(this.effects, plan.layer === 'ground' ? targetRoot : target, color, plan.intensity, plan.variant, plan.element, plan.layer);
         return true;
       case 'environment':
         if (!plan.actorId && plan.targetIds.length === 0) return false;

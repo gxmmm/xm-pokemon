@@ -1,6 +1,6 @@
 import type { BattleCue } from '@pokemon-online/renderer';
 import type { TypeName } from '@pokemon-online/shared';
-import type { BattleArtAnchorId, SkillRecipeVariant } from '@pokemon-online/config';
+import { BATTLE_EFFECT_COMPOSITION, type BattleEffectLayer, type BattleArtAnchorId, type SkillRecipeVariant } from '@pokemon-online/config';
 
 export type BattleStagePrimitive = 'projectile' | 'dive' | 'impact' | 'beam' | 'burst' | 'ring' | 'sky-strike' | 'chain' | 'environment';
 
@@ -14,6 +14,8 @@ export interface BattleStageVfxPlan {
   reaction?: string;
   variant?: SkillRecipeVariant;
   particleBudget?: number;
+  layer?: BattleEffectLayer;
+  opacity?: number;
 }
 
 /** Pure cue-to-primitive policy. The Pixi implementation only draws this plan;
@@ -44,7 +46,10 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
   // recipe variant and generic anchors; it never sees a skill ID.
   if (delivery === 'melee' && base.variant === 'dive') return [{ ...base, primitive: 'dive' }];
   if (delivery === 'beam') return [{ ...base, primitive: 'beam' }];
-  if (delivery === 'area') return [{ ...base, primitive: 'burst' }, { ...base, primitive: 'ring' }];
+  if (delivery === 'area') return [
+    { ...base, primitive: 'burst', opacity: targetIds.length > 1 ? BATTLE_EFFECT_COMPOSITION.spreadBurstOpacity : 1 },
+    { ...base, primitive: 'ring', layer: 'ground' },
+  ];
   if (isImpact) return [{ ...base, primitive: 'impact' }];
   if (delivery === 'melee') return [{ ...base, primitive: 'impact' }, { ...base, primitive: 'ring' }];
   return [{ ...base, primitive: 'ring' }];

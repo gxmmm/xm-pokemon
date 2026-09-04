@@ -105,7 +105,7 @@ export class TerrainContactEffects {
         const end = { x: start.x - direction.x * (15 + index * 4), y: start.y - direction.y * (15 + index * 4) };
         graphic.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke({ color: 0xdff7ff, alpha: alpha * (1 - index * 0.14), width: 1.5 + (index % 2) * 0.5 });
       }
-    });
+    }, 'ground');
   }
 
   private spawnTerrainContact(at: BattleStagePoint, kind: TerrainContactPlan['particleKind'], budget: number, spec: BattleEnvironmentSpec): void {
@@ -129,6 +129,6 @@ export class TerrainContactEffects {
         if (kind === 'runes') graphic.star(x, y, 4, 3.5, 1.4).fill({ color, alpha: (1 - progress) * 0.6 });
         else graphic.rect(x - 2, y - 2, 4, 4 + index % 2 * 2).fill({ color, alpha: (1 - progress) * 0.60 });
       }
-    });
+    }, 'ground');
   }
 }

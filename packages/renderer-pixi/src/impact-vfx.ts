@@ -152,7 +152,7 @@ export function spawnDive(runtime: BattleEffectPool, from: BattleStagePoint, to:
   });
 }
 
-export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: TypeName): void {
+export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: TypeName, opacity = 1): void {
   const graphic = new Graphics({ blendMode: 'add' });
   const particleCap = 16;
   const particleCount = Math.min(Math.max(particleBudget ?? particleCap, 9), particleCap);
@@ -206,5 +206,5 @@ export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, colo
         graphic.circle(at.x + Math.cos(angle) * radius, at.y + Math.sin(angle) * radius * (variant === 'surge' ? 0.82 : 0.55), 4 + intensity * 5).fill({ color, alpha: alpha * 0.82 });
       }
     }
-  });
+  }, 'front', opacity);
 }

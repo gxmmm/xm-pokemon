@@ -1,5 +1,12 @@
 import type { BattleActorChoreography, TypeName } from '@pokemon-online/shared';
 
+/** One standard composition: spread accents support, rather than bury, actors. */
+export const BATTLE_EFFECT_COMPOSITION = {
+  groundRingScaleY: 0.38,
+  spreadBurstOpacity: 0.28,
+} as const;
+export type BattleEffectLayer = 'ground' | 'front';
+
 /** Shared world/battle visual vocabulary. These are static data contracts;
  * renderer implementations must not add map- or skill-id branches to replace
  * them. The first two scene packs are configuration-only Stage 1 prototypes. */

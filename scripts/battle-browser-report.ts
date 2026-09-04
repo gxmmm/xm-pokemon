@@ -13,6 +13,7 @@ declare global {
   interface Window {
     __BATTLE_BROWSER_TASKS__: () => { frames: number; observers: number };
     __OUTCOME_FIXTURE__: Awaited<ReturnType<typeof import('./battle-outcome-browser-fixture.ts').createBattleOutcomeFixture>>;
+    __READABILITY_FIXTURE__: Awaited<ReturnType<typeof import('./battle-readability-browser-fixture.ts').createBattleReadabilityFixture>>;
   }
 }
 
@@ -234,6 +235,26 @@ async function main(): Promise<void> {
     await page.evaluate(() => window.__OUTCOME_FIXTURE__.destroy());
     console.log('✓ actual browser: charge, contact, interruption and control recovery synchronized');
     assert.equal(errors.length, 0, `outcome fixture errors: ${errors.join('\n')}`);
+    await page.evaluate(async (url) => {
+      const fixture = await import(/* @vite-ignore */ url);
+      window.__READABILITY_FIXTURE__ = await fixture.createBattleReadabilityFixture();
+    }, `/@fs/${resolve('scripts/battle-readability-browser-fixture.ts').replaceAll('\\', '/')}`);
+    await page.clock.runFor(200);
+    for (const reduced of [false, true]) {
+      await page.evaluate((reduced) => window.__READABILITY_FIXTURE__.play(reduced), reduced);
+      await page.clock.runFor(160);
+      const dense = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+      assert.equal(dense.combatantCount, 6);
+      assert.equal(dense.activeEffectCount, 27, 'three spread releases cover three targets plus their ground responses');
+      assert.equal(dense.effectChildCount, 27);
+      await page.locator('#readability-fixture').screenshot({ path: resolve(OUTPUT, `readability-spread-${reduced ? 'reduced' : 'standard'}.png`) });
+      await page.clock.runFor(1200);
+      const settled = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+      assert(settled.settled && settled.effectChildCount === 0, 'all spread and ground effects settle');
+    }
+    await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
+    assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
+    console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {

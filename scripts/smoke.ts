@@ -39,6 +39,7 @@ import { testBattleAnchors } from './battle-anchor-smoke.ts';
 import { testBattleCueTiming } from './battle-cue-timing-smoke.ts';
 import { testBattleOutcomes } from './battle-outcome-smoke.ts';
 import { testBattleControl } from './battle-control-smoke.ts';
+import { testBattleReadability } from './battle-readability-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -52,6 +53,7 @@ testBattleAnchors();
 testBattleCueTiming();
 testBattleOutcomes();
 testBattleControl();
+testBattleReadability();
 
 // Pixi is the sole supported battle renderer. Three/GLB experiments must not
 // leave a route, package, asset cache, or runtime dependency in this project.

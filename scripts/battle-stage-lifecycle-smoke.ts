@@ -91,17 +91,20 @@ export async function testBattleStageLifecycle(): Promise<void> {
     const actor = new BattleSim({ mode: 'pve', player: [createWildInstance(25, 10)], enemy: [createWildInstance(143, 10)], seed: 904 }).state.combatants[0]!;
     stage.applyBattleSnapshot({ time: 0, combatants: [{ ...actor, speciesId: -1 }] });
     const descendants = (node: Container): Container[] => [node, ...node.children.flatMap(descendants)];
-    const actorNodes = descendants(reusableLayers[4]!.children[0]!);
+    const actorNodes = descendants(reusableLayers[5]!.children[0]!);
     stage.applyBattleSnapshot({ time: 1, combatants: [{ ...actor, speciesId: -1, currentHp: 0, alive: false }] });
     await stage.playBattleCues([
       { type: 'vfx', recipe: { id: 'impact:normal', delivery: 'aura' }, anchors: { targetIds: [actor.uid] }, intensity: 1 },
       { type: 'animation', subjectId: actor.uid, animation: 'faint' },
       { type: 'hit-stop', milliseconds: 70 },
+      { type: 'environment', reaction: 'splash', anchors: { targetIds: [actor.uid] } },
     ]);
     tickers.get(currentApp)!({ deltaTime: 1 });
-    const impact = reusableLayers[7]!.children[0]!;
+    const impact = reusableLayers[8]!.children[0]!;
     const impactWidth = impact.getLocalBounds().width;
-    assert(impactWidth > 0 && reusableLayers[4]!.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
+    assert.equal(reusableLayers[4]!.children.length, 1, 'ground response is below the actor layer');
+    assert.equal(stage.getDiagnostics().effectChildCount, 2, 'stage diagnostics include ground and front effects');
+    assert(impactWidth > 0 && reusableLayers[5]!.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
     tickers.get(currentApp)!({ deltaTime: 1 });
     assert.equal(impact.getLocalBounds().width, impactWidth, 'hit-stop holds the rendered impact instead of an empty graphic');
 
