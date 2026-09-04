@@ -31,10 +31,13 @@ import { parseHexColor } from '../packages/renderer-pixi/src/pixi-color.ts';
 import { spawnRing } from '../packages/renderer-pixi/src/ring-vfx.ts';
 import { TerrainContactEffects } from '../packages/renderer-pixi/src/TerrainContactEffects.ts';
 import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visual-runtime-fixtures.ts';
+import { testCombatantSprite } from './combatant-sprite-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
 }
+
+await testCombatantSprite();
 
 // Pixi is the sole supported battle renderer. Three/GLB experiments must not
 // leave a route, package, asset cache, or runtime dependency in this project.

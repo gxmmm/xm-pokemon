@@ -1,7 +1,8 @@
-import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleArtSpriteSheetMetadata, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
+import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
-import { Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { Container, Graphics } from 'pixi.js';
+import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
+import { CombatantSprite } from './CombatantSprite.ts';
 import { CombatantStatusLayer, type CombatantStatusVisual } from './CombatantStatusLayer.ts';
 import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
@@ -50,10 +51,8 @@ export class CombatantView extends Container {
   private readonly statusLayer = new CombatantStatusLayer();
   private readonly fallback = new Graphics();
   private readonly decorations = new Map<string, { graphic: Graphics; spec: BattleArtLayerSpec }>();
-  private readonly sprite = new Sprite(Texture.EMPTY);
+  private readonly sprite: CombatantSprite;
   private presentation: ResolvedBattleArtPresentation;
-  private loadToken = 0;
-  private clipRequestToken = 0;
   private motionElapsedMs = 0;
   private motion: BattleArtMotionId;
   private motionDurationOverrideMs: number | null = null;
@@ -62,11 +61,6 @@ export class CombatantView extends Container {
   private transitionElapsedMs = 0;
   private transitionDurationMs = 0;
   private transitionFrom: MotionTransform | null = null;
-  private clipFrames: readonly Texture[] | null = null;
-  private clipMotion: BattleArtMotionId | null = null;
-  private clipElapsedMs = 0;
-  private clipFps = 12;
-  private spriteSheetMetadata: BattleArtSpriteSheetMetadata | null = null;
   /** Renderer-facing direction comes from the battle snapshot, never model IDs. */
   private facing: 1 | -1 = 1;
   private alive = true;
@@ -91,9 +85,10 @@ export class CombatantView extends Container {
 
   constructor(
     combatant: BattleCombatant,
-    private readonly assets: BattleArtAssetLoader,
+    assets: BattleArtAssetLoader,
   ) {
     super();
+    this.sprite = new CombatantSprite(assets, this.fallback, () => this.destroyed);
     this.presentation = resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing });
     // Resolver defaults describe a potential skill cast; a newly mounted
     // combatant must always begin from the neutral visual state.
@@ -101,15 +96,13 @@ export class CombatantView extends Container {
     this.baseScale = this.presentation.profile.scale;
     this.drawFallback();
     this.rebuildLayers();
-    this.sprite.anchor.set(0.5, 0.58);
-    this.sprite.visible = false;
     this.body.addChild(this.behindLayers, this.chargeAura, this.fallback, this.sprite, this.choreographyOutline, this.statusLayer, this.frontLayers);
     // The contact shadow belongs to the projected ground root, not the animated
     // body. Attacks, recoil, tilt, hover, and future world-z motion must not drag
     // it away from the terrain.
     this.addChild(this.shadow, this.body);
     this.refresh(combatant);
-    this.requestTexture();
+    void this.sprite.setAsset(this.presentation.asset, this.motion);
   }
 
   refresh(combatant: BattleCombatant): void {
@@ -156,7 +149,10 @@ export class CombatantView extends Container {
       }
     }
     if (changedProfile) this.rebuildLayers();
-    if (changedAsset) this.requestTexture();
+    if (changedAsset) {
+      this.drawFallback();
+      void this.sprite.setAsset(this.presentation.asset, this.motion);
+    }
   }
 
   playAnimation(
@@ -272,7 +268,7 @@ export class CombatantView extends Container {
       y: (pose.offsetY ?? 0) + choreography.y + this.movementBobOffsetY,
       rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + this.movementTiltRad,
     };
-    this.advanceClip(elapsedMs);
+    this.sprite.advance(elapsedMs, this.presentation.profile.motions[this.motion].loop);
     const transform = this.interpolateTransition(target, elapsedMs);
     const hover = this.hoverTransform(elapsedMs);
     this.visualHoverOffsetY = hover.offsetY;
@@ -386,37 +382,7 @@ export class CombatantView extends Container {
     this.motionDurationOverrideMs = durationMs ?? null;
     this.motionElapsedMs = 0;
     this.activeChoreography = choreography && target ? { spec: choreography, target, theme: choreographyThemeFor(element) } : null;
-    this.clipFrames = null;
-    this.clipMotion = null;
-    this.clipElapsedMs = 0;
-    this.requestClip(motion);
-  }
-
-  private requestClip(motion: BattleArtMotionId): void {
-    const asset = this.presentation.asset;
-    if (asset.kind !== 'sprite-sheet') return;
-    const requestToken = ++this.clipRequestToken;
-    // Keep the last valid frame visible through an action change. On the first
-    // load the procedural fallback remains visible; a full sprite sheet is
-    // never assigned to the Sprite while metadata/frames are still loading.
-    const framesForMotion = this.assets.loadClip(asset, motion).then((frames) => {
-      // A sequence may intentionally omit a bespoke recover frame. Reusing its
-      // declared idle clip lets the generic pose/transition perform recovery
-      // without a model-specific renderer branch or a bitmap fallback.
-      return frames?.length || motion === 'idle' ? frames : this.assets.loadClip(asset, 'idle');
-    });
-    void Promise.all([framesForMotion, this.assets.loadMetadata(asset)]).then(([frames, metadata]) => {
-      if (requestToken !== this.clipRequestToken || this.destroyed || this.motion !== motion || !frames?.length) return;
-      this.spriteSheetMetadata = metadata;
-      this.clipFrames = frames;
-      this.clipMotion = motion;
-      this.clipElapsedMs = 0;
-      this.clipFps = metadata?.fps ?? 12;
-      this.sprite.texture = frames[0]!;
-      this.sprite.visible = true;
-      this.fallback.visible = false;
-      this.sizeSprite(this.sprite.texture);
-    });
+    void this.sprite.setMotion(this.presentation.asset, motion);
   }
 
   private shouldQueueAction(): boolean {
@@ -433,22 +399,7 @@ export class CombatantView extends Container {
   }
 
   private transitionDurationFor(from: BattleArtMotionId, to: BattleArtMotionId): number {
-    const declared = this.spriteSheetMetadata?.transitions.find((transition) => transition.from === from && transition.to === to);
-    return declared?.durationMs ?? this.presentation.profile.motions[to].blendInMs;
-  }
-
-  private advanceClip(elapsedMs: number): void {
-    if (!this.clipFrames?.length || this.clipMotion !== this.motion) return;
-    this.clipElapsedMs += elapsedMs;
-    const clip = this.presentation.profile.motions[this.motion];
-    const index = clip.loop
-      ? Math.floor(this.clipElapsedMs / (1000 / this.clipFps)) % this.clipFrames.length
-      : Math.min(this.clipFrames.length - 1, Math.floor(this.clipElapsedMs / (1000 / this.clipFps)));
-    const texture = this.clipFrames[index]!;
-    if (this.sprite.texture !== texture) {
-      this.sprite.texture = texture;
-      this.sizeSprite(texture);
-    }
+    return this.sprite.transitionDuration(from, to) ?? this.presentation.profile.motions[to].blendInMs;
   }
 
   private interpolateTransition(target: MotionTransform, elapsedMs: number): MotionTransform {
@@ -602,40 +553,6 @@ export class CombatantView extends Container {
       .circle(-8, -16, 8).fill({ color: 0xffffff, alpha: 0.35 })
       .rect(-26, 26, 52, 6).fill({ color: 0x172331, alpha: 0.9 })
       .rect(-25, 27, 50, 4).fill({ color: secondary });
-  }
-
-  private requestTexture(): void {
-    const requestId = ++this.loadToken;
-    const asset = this.presentation.asset;
-    this.clipRequestToken++;
-    this.clipFrames = null;
-    this.clipMotion = null;
-    this.clipElapsedMs = 0;
-    this.spriteSheetMetadata = null;
-    this.sprite.visible = false;
-    this.fallback.visible = true;
-    this.drawFallback();
-    if (asset.kind === 'sprite-sheet') {
-      // Sequence sheets must only be displayed through loadClip(), which crops
-      // one declared frame. Assigning the sheet Texture here would squash the
-      // entire atlas into a combatant silhouette.
-      this.requestClip(this.motion);
-      return;
-    }
-    void this.assets.load(asset).then((texture) => {
-      if (requestId !== this.loadToken || this.destroyed || !texture) return;
-      this.sprite.texture = texture;
-      this.sizeSprite(texture);
-      this.sprite.visible = true;
-      this.fallback.visible = false;
-    });
-  }
-
-  private sizeSprite(texture: Texture): void {
-    const ratio = texture.height > 0 ? texture.width / texture.height : 1;
-    const height = 106;
-    this.sprite.height = height;
-    this.sprite.width = Math.max(54, Math.min(142, height * ratio));
   }
 }
 
