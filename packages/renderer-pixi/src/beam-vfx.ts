@@ -3,10 +3,15 @@ import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
+import { spawnFlameStream } from './flame-stream-vfx.ts';
 
 export function spawnBeam(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number, variant = 'default', element?: TypeName): void {
-  const graphic = new Graphics({ blendMode: 'add' });
   const shape = elementalVfxShapeFor(element);
+  if (shape === 'flame' && variant === 'flame-stream') {
+    spawnFlameStream(runtime, from, to, color, intensity);
+    return;
+  }
+  const graphic = new Graphics({ blendMode: 'add' });
   const duration = 0.38 + intensity * 0.18;
   runtime.add(graphic, duration, (progress) => {
     const alpha = Math.sin(Math.PI * progress) * 0.92;
@@ -19,22 +24,7 @@ export function spawnBeam(runtime: BattleEffectPool, from: BattleStagePoint, to:
     const py = nx;
     const width = 10 + intensity * 22;
     graphic.clear();
-    if (shape === 'flame' && variant === 'flame-stream') {
-      const streamWidth = 18 + intensity * 24;
-      const tongueCount = 5;
-      for (let lane = -2; lane <= 2; lane++) {
-        const offset = lane * streamWidth * 0.28 + Math.sin(progress * 24 + lane * 2.1) * streamWidth * 0.10;
-        graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset * 0.34, to.y + py * offset * 0.34)
-          .stroke({ color: lane === 0 ? 0xfff4bd : lane % 2 ? 0xffc14f : color, alpha: alpha * (lane === 0 ? 0.96 : 0.58), width: streamWidth * (lane === 0 ? 0.48 : 0.34) });
-      }
-      for (let tongue = 0; tongue < tongueCount; tongue++) {
-        const t = (tongue / tongueCount + progress * 0.50) % 1;
-        const sway = Math.sin(progress * 22 + tongue * 1.7) * streamWidth * 0.62;
-        const cx = from.x + dx * t + px * sway;
-        const cy = from.y + dy * t + py * sway;
-        graphic.poly([cx - px * 5, cy - py * 5, cx + nx * (18 + intensity * 13), cy + ny * (18 + intensity * 13), cx + px * 5, cy + py * 5]).fill({ color: tongue % 3 ? color : 0xffef9d, alpha: alpha * 0.82 });
-      }
-    } else if (shape === 'flame') {
+    if (shape === 'flame') {
       for (let lane = -1; lane <= 1; lane++) {
         const offset = lane * width * 0.28;
         graphic.moveTo(from.x + px * offset, from.y + py * offset).lineTo(to.x + px * offset, to.y + py * offset).stroke({ color: lane === 0 ? 0xffefad : color, alpha: alpha * (lane === 0 ? 0.92 : 0.56), width: lane === 0 ? width * 0.46 : width * 0.38 });

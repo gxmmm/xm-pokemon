@@ -1,7 +1,7 @@
-import { Container, type Graphics } from 'pixi.js';
+import { Container } from 'pixi.js';
 
 interface TimedEffect {
-  graphic: Graphics;
+  graphic: Container;
   elapsed: number;
   duration: number;
   update(progress: number): void;
@@ -26,7 +26,7 @@ export class BattleEffectPool {
     for (const effect of this.effects) effect.graphic.alpha = enabled ? 0.46 : 1;
   }
 
-  add(graphic: Graphics, duration: number, update: (progress: number) => void): void {
+  add(graphic: Container, duration: number, update: (progress: number) => void): void {
     graphic.alpha = this.reduceFlicker ? 0.46 : 1;
     this.container.addChild(graphic);
     this.effects.push({ graphic, elapsed: 0, duration, update });

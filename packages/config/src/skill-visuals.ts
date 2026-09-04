@@ -40,6 +40,7 @@ const SIGNATURE_VARIANTS: Readonly<Record<string, SkillRecipeVariant>> = {
   'psyonic-annihilation': 'meteor', 'sunfire-pursuit': 'surge', 'tempest-breaker': 'surge',
   'blazing-dive': 'dive', 'shadow-trap': 'bind', 'chilling-snare': 'snare', 'toxic-bind': 'bind',
   'flamethrower': 'flame-stream', 'fire-blast': 'fire-glyph',
+  'shadow-ball': 'shadow-orb',
 };
 
 /** Signature choreography remains a property of one shared skill recipe. Any

@@ -13,7 +13,8 @@ export function spawnProjectile(
   variant = 'default',
   element?: TypeName,
 ): void {
-  const graphic = new Graphics({ blendMode: 'add' });
+  // A shadow needs to occlude the bright stage, not add light to it.
+  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' ? 'normal' : 'add' });
   const duration = variant === 'fire-glyph' ? 0.48 : variant === 'flame-stream' ? 0.38 : variant === 'bind' || variant === 'snare' ? 0.34 : 0.26 + (1 - intensity) * 0.1;
   const shape = elementalVfxShapeFor(element);
   runtime.add(graphic, duration, (progress) => {
@@ -76,8 +77,24 @@ export function spawnProjectile(
     } else if (variant === 'leaf-shot') {
       for (let leaf = 0; leaf < 3; leaf++) { const angle = progress * 13 + leaf * Math.PI * 2 / 3; graphic.ellipse(x + Math.cos(angle) * 10, y + Math.sin(angle) * 7, 12 + intensity * 4, 5).fill({ color, alpha: 0.84 }); }
     } else if (variant === 'shadow-orb') {
-      for (let ring = 0; ring < 3; ring++) graphic.ellipse(x + Math.cos(progress * 12 + ring * 2.1) * (8 + ring * 4), y + Math.sin(progress * 12 + ring * 2.1) * (6 + ring * 3), 12 + intensity * 4, 5 + ring).stroke({ color, alpha: 0.78 - ring * 0.14, width: 2 });
-      graphic.circle(x, y, 9 + intensity * 6).fill({ color: 0x2d174a, alpha: 0.88 });
+      const radius = (16 + intensity * 10) * (1 + Math.sin(progress * 18) * 0.06);
+      for (let wisp = 4; wisp >= 1; wisp--) {
+        const distance = Math.min(length * progress, wisp * radius * 0.65);
+        const sway = Math.sin(progress * 16 - wisp * 1.4) * radius * 0.22;
+        graphic.circle(x - nx * distance + px * sway, y - ny * distance + py * sway, radius * (1 - wisp * 0.15))
+          .fill({ color, alpha: 0.38 - wisp * 0.055 });
+      }
+      graphic.circle(x, y, radius * 1.18).fill({ color, alpha: 0.22 })
+        .circle(x, y, radius).fill({ color: 0x382050, alpha: 0.96 })
+        .circle(x, y, radius * 0.72).fill({ color: 0x190d2c, alpha: 0.96 })
+        .circle(x, y, radius).stroke({ color, alpha: 0.92, width: 2.5 });
+      for (let arc = 0; arc < 3; arc++) {
+        const angle = progress * 10 + arc * Math.PI * 2 / 3;
+        const orbit = radius * (1.13 + arc * 0.08);
+        graphic.moveTo(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit)
+          .arc(x, y, orbit, angle, angle + 1.05)
+          .stroke({ color, alpha: 0.76 - arc * 0.12, width: 2 });
+      }
     } else if (variant === 'stone-shot') {
       graphic.poly([x + nx * 16, y + ny * 16, x + px * 14, y + py * 14, x - nx * 14, y - ny * 14, x - px * 14, y - py * 14]).fill({ color, alpha: 0.9 });
     } else if (variant === 'wind-cutter') {
@@ -114,9 +131,11 @@ export function spawnProjectile(
         const angle = ember / 8 * Math.PI * 2 + progress * 7;
         graphic.circle(glyphX + Math.cos(angle) * arm * 0.9, glyphY + Math.sin(angle) * arm * 0.58, 3 + intensity * 2).fill({ color: ember % 2 ? color : 0xfff0a7, alpha: 0.72 });
       }
+    } else if (shape === 'generic') {
+      // Fallback only: never paint a generic light disc over an explicit motif.
+      graphic.moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
+        .circle(x, y, 8 + intensity * 10).fill({ color, alpha: 0.9 });
     } else drawElementalProjectile(graphic, shape, { x, y }, { nx, ny, px, py }, color, intensity, progress);
-    if (shape === 'generic') graphic.moveTo(from.x, from.y).lineTo(x, y).stroke({ color, alpha: (1 - progress) * 0.46, width: 6 * intensity })
-      .circle(x, y, 8 + intensity * 10).fill({ color, alpha: 0.9 });
     if (variant === 'psychic-bolt' && shape !== 'psychic-orbit') {
       const orbit = 11 + intensity * 7;
       for (let index = 0; index < 3; index++) {

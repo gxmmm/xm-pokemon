@@ -5,15 +5,42 @@ import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 
 export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default'): void {
-  const graphic = new Graphics({ blendMode: 'add' });
+  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' || variant === 'flame-stream' ? 'normal' : 'add' });
   const duration = variant === 'dive' ? 0.48 : 0.28;
   runtime.add(graphic, duration, (progress) => {
+    graphic.clear();
+    const alpha = (1 - progress) * 0.92;
+    if (variant === 'shadow-orb') {
+      const core = (23 + intensity * 13) * (1 - progress * 0.85);
+      graphic.circle(at.x, at.y, core).fill({ color: 0x190d2c, alpha })
+        .circle(at.x, at.y, core * 1.18).stroke({ color, alpha, width: 3 });
+      for (let wisp = 0; wisp < 6; wisp++) {
+        const angle = wisp * Math.PI / 3 + progress * 2;
+        const distance = core + progress * (24 + intensity * 20);
+        graphic.moveTo(at.x + Math.cos(angle) * distance, at.y + Math.sin(angle) * distance)
+          .arc(at.x, at.y, distance, angle, angle + 0.48)
+          .stroke({ color, alpha: alpha * 0.78, width: 4 * (1 - progress) + 1 });
+      }
+      return;
+    }
+    if (variant === 'flame-stream') {
+      for (let ember = 0; ember < 7; ember++) {
+        const angle = ember * Math.PI * 2 / 7;
+        const distance = 8 + progress * (26 + intensity * 18);
+        const x = at.x + Math.cos(angle) * distance;
+        const y = at.y + Math.sin(angle) * distance * 0.65 - progress * 16;
+        const size = (8 + intensity * 5) * (1 - progress * 0.7);
+        graphic.poly([x - size, y + size, x + Math.sin(angle) * size * 0.5, y - size * 2, x + size, y + size])
+          .fill({ color: ember % 2 ? color : 0xe85225, alpha })
+          .circle(x, y, size * 0.35).fill({ color: 0xffd276, alpha });
+      }
+      return;
+    }
     const radius = 12 + progress * (34 + intensity * 28);
-    graphic.clear().circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.8, width: 5 * (1 - progress) + 1 })
+    graphic.circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.8, width: 5 * (1 - progress) + 1 })
       .star(at.x, at.y, variant === 'cross' ? 4 : 6, radius * 0.72, radius * 0.28).fill({ color, alpha: (1 - progress) * 0.36 });
     // Normal-attack motifs are supplied by static config through the cue. This
     // generic primitive only interprets a vocabulary; it never knows a species.
-    const alpha = (1 - progress) * 0.92;
     if (variant === 'fist') {
       graphic.circle(at.x - radius * 0.2, at.y, radius * 0.42).fill({ color, alpha })
         .circle(at.x + radius * 0.22, at.y - radius * 0.14, radius * 0.28).fill({ color: 0xffffff, alpha: alpha * 0.58 });
