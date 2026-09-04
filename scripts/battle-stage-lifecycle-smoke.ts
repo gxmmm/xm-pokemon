@@ -24,6 +24,7 @@ export async function testBattleStageLifecycle(): Promise<void> {
   const initQueue: ReturnType<typeof deferred>[] = [];
   const preloadQueue: ReturnType<typeof deferred>[] = [];
   const frames = new Map<number, FrameRequestCallback>();
+  const tickers = new Map<Application, (ticker: { deltaTime: number }) => void>();
   let frameId = 0;
   let observers = 0;
   const host = {
@@ -46,7 +47,7 @@ export async function testBattleStageLifecycle(): Promise<void> {
       apps.push(this);
       await initQueue.shift()?.promise;
       this.renderer = { canvas: { style: {}, width: 1280, height: 720 }, resize() {} } as unknown as Application['renderer'];
-      this.ticker = { add() {} } as unknown as Application['ticker'];
+      this.ticker = { add: (tick: (ticker: { deltaTime: number }) => void) => tickers.set(this, tick) } as unknown as Application['ticker'];
     };
     Application.prototype.destroy = function (_rendererOptions, options) {
       assert(!destroyed.includes(this), 'application must be destroyed once');
@@ -91,6 +92,18 @@ export async function testBattleStageLifecycle(): Promise<void> {
     stage.applyBattleSnapshot({ time: 0, combatants: [{ ...actor, speciesId: -1 }] });
     const descendants = (node: Container): Container[] => [node, ...node.children.flatMap(descendants)];
     const actorNodes = descendants(reusableLayers[4]!.children[0]!);
+    stage.applyBattleSnapshot({ time: 1, combatants: [{ ...actor, speciesId: -1, currentHp: 0, alive: false }] });
+    await stage.playBattleCues([
+      { type: 'vfx', recipe: { id: 'impact:normal', delivery: 'aura' }, anchors: { targetIds: [actor.uid] }, intensity: 1 },
+      { type: 'animation', subjectId: actor.uid, animation: 'faint' },
+      { type: 'hit-stop', milliseconds: 70 },
+    ]);
+    tickers.get(currentApp)!({ deltaTime: 1 });
+    const impact = reusableLayers[7]!.children[0]!;
+    const impactWidth = impact.getLocalBounds().width;
+    assert(impactWidth > 0 && reusableLayers[4]!.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
+    tickers.get(currentApp)!({ deltaTime: 1 });
+    assert.equal(impact.getLocalBounds().width, impactWidth, 'hit-stop holds the rendered impact instead of an empty graphic');
 
     const transition = stage.transition({ kind: 'fade', durationMs: 100 });
     const cancelledDraw = [...frames.values()][0]!;

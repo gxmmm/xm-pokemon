@@ -584,6 +584,8 @@ export interface BattleEvent {
   amount?: number;
   message?: string;
   vfx?: BattleVfx;
+  /** Immutable post-event health facts, used only to time their presentation. */
+  health?: { uid: string; currentHp: number; alive: boolean; /** Unrounded snapshot time. */ at?: number };
 }
 
 /** A brief, battle-local intent shared by one side's AI. It is recalculated by

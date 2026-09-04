@@ -104,7 +104,11 @@ export type BattleCue = { /** Relative visual delay; never changes simulation ti
 export function toBattlePresentationEvent(event: BattleEvent): BattlePresentationEvent {
   const vfx = event.vfx;
   const type = presentationTypeFor(event, vfx);
-  const targetIds = vfx?.targetUids?.length
+  // A spread release lists all victims, but each damage record describes one
+  // actual victim. Do not flash the first target repeatedly for every hit.
+  const outcomeTarget = event.type === 'damage' || event.type === 'heal' || event.type === 'faint'
+    ? event.health?.uid ?? event.target ?? (event.type !== 'damage' ? event.actor : undefined) : undefined;
+  const targetIds = outcomeTarget ? [outcomeTarget] : vfx?.targetUids?.length
     ? [...vfx.targetUids]
     : event.target ? [event.target] : undefined;
   const outcome: BattlePresentationOutcome | undefined = (

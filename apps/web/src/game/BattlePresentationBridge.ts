@@ -1,5 +1,6 @@
 import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentationEvent, type BattlePresentation, type BattlePresentationCombatantInput, type BattleSnapshot, type DirectedBattleCue } from '@pokemon-online/presentation';
 import type { BattleEvent } from '@pokemon-online/shared';
+import { BattleOutcomeTimeline } from './BattleOutcomeTimeline.ts';
 
 /** The renderer-facing subset of a BattleSim. Keeping the bridge on structured
  * shared DTOs prevents it from depending on simulation internals or a concrete
@@ -18,7 +19,7 @@ export interface BattlePresentationFrame {
   /** Newly directed cues since the previous advance. Consumers deduplicate by
    * cue id, so this remains safe across delayed Vue component updates. */
   cues: readonly DirectedBattleCue[];
-  /** Events that crossed the delayed presentation cursor this advance. */
+  /** Newly visible events; health outcomes wait for their contact frame. */
   newEvents: readonly BattleEvent[];
   isCaughtUp: boolean;
 }
@@ -40,6 +41,7 @@ export class BattlePresentationBridge {
   private readonly presentationDelay: number;
   private readonly snapshotHistory: number;
   private readonly director = new BattleDirector();
+  private readonly outcomes = new BattleOutcomeTimeline();
   private snapshots: BattleSnapshot[] = [];
   private presentationTime = 0;
   private presentationHold = 0;
@@ -61,6 +63,7 @@ export class BattlePresentationBridge {
     this.lastPresentationSequence = 0;
     this.current = null;
     this.director.reset();
+    this.outcomes.clear();
     if (!source) return null;
     this.captureSnapshot(source);
     this.current = { time: 0, combatants: this.presentationCombatants(0), events: [] };
@@ -79,14 +82,16 @@ export class BattlePresentationBridge {
     this.presentationHold = Math.max(this.presentationHold, Math.min(1.3, milliseconds / 1000));
   }
 
-  advance(source: BattlePresentationSource, dtScaled: number): BattlePresentationFrame {
+  advance(source: BattlePresentationSource, dtScaled: number, visualSeconds = dtScaled): BattlePresentationFrame {
     this.captureSnapshot(source);
+    // Pixi plays at wall-clock speed even when simulation is accelerated/paused.
+    const completed = this.outcomes.advance(visualSeconds);
     // Never snap presentation to a far-ahead simulation clock. Action windows
     // intentionally create a visible delay; snapshot history keeps the player
     // on a continuous earlier timeline until every shown action has played.
     const target = source.isOver ? source.state.time : Math.max(0, source.state.time - this.presentationDelay);
     if (this.presentationHold > 0) {
-      this.presentationHold = Math.max(0, this.presentationHold - dtScaled);
+      this.presentationHold = Math.max(0, this.presentationHold - visualSeconds);
     } else {
       const gap = Math.max(0, target - this.presentationTime);
       this.presentationTime = Math.min(target, this.presentationTime + dtScaled * (gap > 2 ? 1.18 : 1));
@@ -96,25 +101,29 @@ export class BattlePresentationBridge {
     const newEvents = events.filter((event) => (event.seq ?? 0) > this.lastPresentationSequence);
     if (events.length) this.lastPresentationSequence = Math.max(this.lastPresentationSequence, events[events.length - 1]!.seq ?? 0);
 
+    const directed = this.director.direct(events.map(toBattlePresentationEvent));
+    const dispatched = this.outcomes.enqueue(newEvents, directed, this.current?.combatants ?? [], (event) =>
+      this.snapshots.find((snapshot) => snapshot.time >= (event.health?.at ?? event.t)) ?? this.snapshots[this.snapshots.length - 1]!);
+    const cues = [...completed.cues, ...dispatched.cues];
     const presentation: BattlePresentation = {
       time: this.presentationTime,
-      combatants: this.presentationCombatants(this.presentationTime),
-      events,
+      combatants: this.outcomes.apply(this.presentationCombatants(this.presentationTime), this.presentationTime),
+      events: this.outcomes.visibleEvents(events),
     };
     this.current = presentation;
-    const cues = this.director.direct(events.map(toBattlePresentationEvent));
     const actionWindowMs = cues.reduce((longest, directed) => directed.cue.type === 'action-window' ? Math.max(longest, directed.cue.milliseconds) : longest, 0);
     if (actionWindowMs > 0) this.requestActionWindow(actionWindowMs);
+    for (const { cue } of cues) if (cue.type === 'hit-stop') this.requestHitStop(Math.max(0, (cue.milliseconds - 30) / 70));
     return {
       presentation,
       cues,
-      newEvents,
+      newEvents: [...completed.events, ...dispatched.events],
       isCaughtUp: this.isCaughtUp(source),
     };
   }
 
   isCaughtUp(source: BattlePresentationSource): boolean {
-    return this.presentationTime >= source.state.time - 0.001;
+    return this.presentationTime >= source.state.time - 0.001 && this.outcomes.isSettled;
   }
 
   private captureSnapshot(source: BattlePresentationSource): void {

@@ -12,6 +12,7 @@ const BIOMES = ['grass', 'cave', 'water', 'dragon', 'arena'] as const;
 declare global {
   interface Window {
     __BATTLE_BROWSER_TASKS__: () => { frames: number; observers: number };
+    __OUTCOME_FIXTURE__: Awaited<ReturnType<typeof import('./battle-outcome-browser-fixture.ts').createBattleOutcomeFixture>>;
   }
 }
 
@@ -186,6 +187,28 @@ async function main(): Promise<void> {
       console.log(`✓ actual browser: ${showcase.skill} pose sequence captured`);
     }
     assert.equal(errors.length, 0, `motion showcase errors: ${errors.join('\n')}`);
+    await page.goto(`${BASE}/battle-sandbox`, { waitUntil: 'networkidle' });
+    for (const ko of [false, true]) {
+      await page.evaluate(async ({ url, ko }) => {
+        const fixture = await import(/* @vite-ignore */ url);
+        window.__OUTCOME_FIXTURE__ = await fixture.createBattleOutcomeFixture(ko);
+      }, { url: `/@fs/${resolve('scripts/battle-outcome-browser-fixture.ts').replaceAll('\\', '/')}`, ko });
+      await page.clock.runFor(200);
+      await page.evaluate(() => window.__OUTCOME_FIXTURE__.release());
+      await page.clock.runFor(320);
+      const flying = await page.evaluate(() => window.__OUTCOME_FIXTURE__.read());
+      assert(flying.hp === 100 && flying.alive && flying.effects > 0 && !flying.caughtUp, 'flight must retain pre-hit HP and life state');
+      await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, `outcome-${ko ? 'ko' : 'hit'}-flight.png`) });
+      await page.clock.runFor(240);
+      const contact = await page.evaluate(() => window.__OUTCOME_FIXTURE__.read());
+      assert(contact.hp === (ko ? 0 : 37) && contact.alive === !ko && contact.effects > 0, 'health changes with visible impact');
+      await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, `outcome-${ko ? 'ko' : 'hit'}-contact.png`) });
+      await page.clock.runFor(2000);
+      assert((await page.evaluate(() => window.__OUTCOME_FIXTURE__.read())).settled, 'final outcome animation must settle');
+      await page.evaluate(() => window.__OUTCOME_FIXTURE__.destroy());
+      console.log(`✓ actual browser: ${ko ? 'KO' : 'hit'} health and contact synchronized`);
+    }
+    assert.equal(errors.length, 0, `outcome fixture errors: ${errors.join('\n')}`);
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {

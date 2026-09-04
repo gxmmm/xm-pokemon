@@ -33,6 +33,7 @@ export class BattleStage implements BattleRenderer {
   private root: Container | null = null;
   private readonly camera = new BattleCameraController();
   private readonly cueScheduler = new BattleCueScheduler();
+  private hitStopAfterFrameMs = 0;
   private readonly environmentView = new BattleEnvironmentView();
   private readonly effectPool = new BattleEffectPool();
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
@@ -100,6 +101,7 @@ export class BattleStage implements BattleRenderer {
     this.resizeObserver = null;
     this.effectPool.clear();
     this.cueScheduler.clear();
+    this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
     this.camera.reset();
     this.environmentView.clear();
@@ -207,6 +209,7 @@ export class BattleStage implements BattleRenderer {
     if (!this.app || lifecycle !== this.lifecycleVersion || battle !== this.battleVersion) return;
     this.effectPool.clear();
     this.cueScheduler.clear();
+    this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
     this.camera.reset();
     this.biomeId = input.biomeId;
@@ -223,13 +226,19 @@ export class BattleStage implements BattleRenderer {
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
     if (!this.app) return;
     for (const cue of cues) {
+      if (cue.type === 'hit-stop' && !cue.delayMs) {
+        // Newly created graphics have not drawn yet. Freeze the impact frame,
+        // not the empty frame before it (health may already have reached zero).
+        this.hitStopAfterFrameMs = Math.max(this.hitStopAfterFrameMs, cue.milliseconds);
+        continue;
+      }
       const ready = this.cueScheduler.accept(cue);
       if (ready) this.playReadyCue(ready);
     }
   }
 
   isSettled(): boolean {
-    return this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && this.combatants.isSettled();
+    return this.hitStopAfterFrameMs === 0 && this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && this.combatants.isSettled();
   }
 
   private installStage(): void {
@@ -294,6 +303,10 @@ export class BattleStage implements BattleRenderer {
     if (!clock) return;
     for (const cue of due) this.playReadyCue(cue);
     this.effectPool.update(clock);
+    if (this.hitStopAfterFrameMs > 0) {
+      this.cueScheduler.accept({ type: 'hit-stop', milliseconds: this.hitStopAfterFrameMs });
+      this.hitStopAfterFrameMs = 0;
+    }
   }
 
   private resizeToContainer(): void {

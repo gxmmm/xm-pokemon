@@ -197,7 +197,9 @@ export class BattleSim {
   }
 
   private emit(type: BattleEvent['type'], actor?: string, target?: string, skillId?: string, amount?: number, message?: string, vfx?: BattleVfx): void {
-    this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx });
+    const subject = type === 'damage' ? this.find(target) : type === 'heal' || type === 'faint' ? this.find(target ?? actor) : undefined;
+    const health = subject ? { uid: subject.uid, currentHp: subject.currentHp, alive: subject.alive, at: this.state.time } : undefined;
+    this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx, health });
     if (this.state.events.length > 400) this.state.events.splice(0, this.state.events.length - 400);
   }
 

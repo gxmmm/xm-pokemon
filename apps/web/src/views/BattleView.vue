@@ -135,8 +135,8 @@ const enemyTactic = computed(() => tacticPresentation(sim.value?.state.teamTacti
 
 function syncHud(s: BattleSim): void {
   hudCombatants.value = presentation.value?.combatants ?? s.state.combatants;
-  battleLog.value = s.state.events.map((event) => event.message).filter((message): message is string => !!message);
-  hudOver.value = s.isOver;
+  battleLog.value = (presentation.value?.events ?? []).map((event) => event.message).filter((message): message is string => !!message);
+  hudOver.value = s.isOver && presentationCaughtUp;
 }
 
 function hpRatio(c: BattleCombatant): number {
@@ -179,16 +179,13 @@ function skillCds(c: BattleCombatant): { id: string; name: string; char: string;
 }
 const STATUS_TAG: Record<string, string> = { burn: '灼', poison: '毒', paralyze: '痹', freeze: '冰', sleep: '眠', confuse: '乱' };
 
-function updatePresentation(s: BattleSim, dtScaled: number): void {
-  const frame = presentationBridge.advance(s, dtScaled);
+function updatePresentation(s: BattleSim, dtScaled: number, visualSeconds: number): void {
+  const frame = presentationBridge.advance(s, dtScaled, visualSeconds);
   presentation.value = frame.presentation;
   presentationCues.value = [...frame.cues];
-  // Pixi consumes the same director hit-stop cue. The bridge pauses only its
-  // delayed visual cursor, never BattleSim's authoritative rule clock.
-  for (const directed of frame.cues) {
-    if (directed.cue.type === 'hit-stop') presentationBridge.requestHitStop(Math.max(0, (directed.cue.milliseconds - 30) / 70));
-  }
   presentationCaughtUp = frame.isCaughtUp;
+  // Health changes are event-driven; other HUD details keep their 12fps budget.
+  if (frame.newEvents.some((event) => event.type === 'damage' || event.type === 'heal' || event.type === 'faint')) syncHud(s);
   processPresentationEvents(frame.newEvents);
 }
 
@@ -209,7 +206,7 @@ function frame(now: number): void {
     if (!s.isOver && running.value) {
       s.tick(dtScaled);
     }
-    updatePresentation(s, dtScaled);
+    updatePresentation(s, dtScaled, realDt);
     if (now >= nextHudSyncAt) {
       syncHud(s);
       nextHudSyncAt = now + 1000 / 12;
