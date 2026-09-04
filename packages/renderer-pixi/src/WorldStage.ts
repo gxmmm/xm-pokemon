@@ -95,11 +95,16 @@ export class WorldStage implements WorldRenderer {
   private motionEnabled = true;
   private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
   private drawCallObserver: DrawCallObserver | null = null;
+  private cancelTransition: (() => void) | null = null;
+  private lifecycleVersion = 0;
+  private sceneVersion = 0;
 
   async mount(host: HTMLElement): Promise<void> {
     this.unmount();
+    const version = this.lifecycleVersion;
     this.host = host;
     const app = new Application();
+    try {
     await app.init({
       width: DESIGN_WIDTH,
       height: DESIGN_HEIGHT,
@@ -108,6 +113,10 @@ export class WorldStage implements WorldRenderer {
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       preference: 'webgl',
     });
+    if (version !== this.lifecycleVersion) {
+      this.disposeApplication(app);
+      return;
+    }
     app.canvas.style.cssText = 'display:block;width:100%;height:100%;';
     host.replaceChildren(app.canvas);
     this.app = app;
@@ -121,9 +130,18 @@ export class WorldStage implements WorldRenderer {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
+    } catch (error) {
+      const current = version === this.lifecycleVersion;
+      if (this.app === app) this.unmount();
+      else this.disposeApplication(app);
+      if (current) throw error;
+    }
   }
 
   unmount(): void {
+    this.lifecycleVersion++;
+    this.sceneVersion++;
+    this.cancelTransition?.();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.ambientParticles.length = 0;
@@ -131,12 +149,22 @@ export class WorldStage implements WorldRenderer {
     this.characterViews.clear();
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
-    this.app?.destroy(true, { children: true, texture: true, textureSource: true });
+    for (const layer of [this.terrain, this.scenery, this.entities, this.occlusion, this.foreground, this.overlay]) {
+      layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    }
+    this.root?.removeChildren();
+    if (this.app) this.disposeApplication(this.app);
     this.app = null;
     this.root = null;
     this.transitionGraphic = null;
     this.host?.replaceChildren();
     this.host = null;
+    this.activeScene = null;
+  }
+
+  private disposeApplication(app: Application): void {
+    if (app.renderer) app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true });
+    else app.stage?.destroy({ children: true });
   }
 
   setMotionEnabled(enabled: boolean): void { this.motionEnabled = enabled; }
@@ -174,17 +202,30 @@ export class WorldStage implements WorldRenderer {
   }
 
   private async animateTransitionOverlay(fill: string, peakAlpha: number, durationMs: number): Promise<void> {
+    this.cancelTransition?.();
     const overlay = this.transitionGraphic;
     if (!overlay) return;
     const startedAt = performance.now();
     await new Promise<void>((resolve) => {
+      let frame = 0;
+      let finished = false;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        cancelAnimationFrame(frame);
+        if (!overlay.destroyed) overlay.clear();
+        if (this.cancelTransition === finish) this.cancelTransition = null;
+        resolve();
+      };
+      this.cancelTransition = finish;
       const draw = (now: number): void => {
+        if (finished) return;
         const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
         overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: fill, alpha: Math.min(this.visualSettings.reduceFlicker ? 0.32 : peakAlpha, peakAlpha) * Math.sin(progress * Math.PI) });
-        if (progress < 1) requestAnimationFrame(draw);
-        else { overlay.clear(); resolve(); }
+        if (progress < 1) frame = requestAnimationFrame(draw);
+        else finish();
       };
-      requestAnimationFrame(draw);
+      frame = requestAnimationFrame(draw);
     });
   }
 
@@ -194,15 +235,20 @@ export class WorldStage implements WorldRenderer {
   }
 
   async enterScene(_input: WorldRenderInput, scene: WorldStageSceneSpec): Promise<void> {
+    if (!this.app) return;
+    const lifecycle = this.lifecycleVersion;
+    const version = ++this.sceneVersion;
     this.activeScene = scene;
     // Scene-local only: switching packs discards prior preload ownership rather
     // than retaining assets for every world map.
     this.scenePreloadKeys.clear();
     await this.preload((scene.resources?.preloadKeys ?? []).map((key) => key as AssetKey));
+    if (!this.app || lifecycle !== this.lifecycleVersion || version !== this.sceneVersion) return;
     this.drawScene();
   }
 
   applyWorldSnapshot(snapshot: WorldRenderSnapshot): void {
+    if (!this.app) return;
     const dynamicIds = new Set(snapshot.entities.map((entity) => entity.id));
     const staticCharacters = (this.activeScene?.characters ?? [])
       .filter((character) => character.x !== undefined && character.y !== undefined && !dynamicIds.has(character.id))

@@ -125,7 +125,7 @@ export class BattleStage implements BattleRenderer {
   private disposeApplication(app: Application): void {
     // init() can fail before a renderer exists. Shared asset textures must not
     // be destroyed here: Pixi Assets may reuse them in the next mounted stage.
-    if (app.renderer) app.destroy(true, { children: true });
+    if (app.renderer) app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true });
     else app.stage?.destroy({ children: true });
   }
 

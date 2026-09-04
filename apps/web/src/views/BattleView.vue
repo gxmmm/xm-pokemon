@@ -20,9 +20,11 @@ const battle = useBattleStore();
 const game = useGameStore();
 const router = useRouter();
 const enteredFromGpuWorld = consumeBattleVisualTransition();
-const speed = ref(1);
+const savedSpeed = game.save?.settings.battleSpeed ?? 1;
+const speed = ref([1, 2, 3].includes(savedSpeed) ? savedSpeed : 1);
 const running = ref(true);
 const ended = ref(false);
+const skipped = ref(false);
 const resultMsg = ref('');
 const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
@@ -196,7 +198,7 @@ function frame(now: number): void {
   const realDt = Math.min(0.05, (now - (frame as unknown as { last?: number }).last!) / 1000);
   (frame as unknown as { last?: number }).last = now;
   const s = sim.value;
-  if (s) {
+  if (s && !ended.value) {
     const dtScaled = running.value ? realDt * speed.value : 0;
     // Authoritative simulation is intentionally never slowed for spectacle.
     if (!s.isOver && running.value) {
@@ -220,7 +222,7 @@ function frame(now: number): void {
   // final delayed event (especially a KO burst/faint) must finish its local VFX
   // before the result modal becomes visible.
   if (s && s.isOver && !ended.value && presentationCaughtUp && activeRendererSettled()) onEnd();
-  raf = requestAnimationFrame(frame);
+  if (!ended.value) raf = requestAnimationFrame(frame);
 }
 function onEnd(): void {
   const s = sim.value;
@@ -323,7 +325,16 @@ async function leave(): Promise<void> {
 
 function skip(): void {
   const s = sim.value;
-  if (s && !s.isOver) { s.resolve(180); syncHud(s); }
+  if (!s || ended.value) return;
+  if (!s.isOver) s.resolve(180);
+  // Skip omits remaining choreography, including while paused. Publish the
+  // authoritative final snapshot and dispose the visual work being skipped.
+  const final = presentationBridge.reset(s);
+  presentation.value = final ? { ...final, time: s.state.time, events: [...s.state.events] } : null;
+  presentationCues.value = [];
+  presentationCaughtUp = true;
+  skipped.value = true;
+  onEnd();
 }
 
 onMounted(() => {
@@ -364,7 +375,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>

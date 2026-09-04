@@ -18,29 +18,35 @@ const emit = defineEmits<{
 const host = ref<HTMLElement | null>(null);
 const stage = new WorldStage();
 let mounted = false;
+let disposed = false;
 let stopObservation: (() => void) | null = null;
 let enteredSceneId: string | null = null;
 
 async function syncScene(): Promise<void> {
-  if (!mounted) return;
-  if (enteredSceneId !== props.scene.id) {
-    await stage.enterScene({ sceneId: props.scene.id, biomeId: props.scene.biome }, props.scene);
-    enteredSceneId = props.scene.id;
+  if (!mounted || disposed) return;
+  const scene = props.scene;
+  if (enteredSceneId !== scene.id) {
+    await stage.enterScene({ sceneId: scene.id, biomeId: scene.biome }, scene);
+    if (disposed || scene.id !== props.scene.id) return;
+    enteredSceneId = scene.id;
   }
   stage.applyWorldSnapshot({ time: performance.now() / 1000, entities: props.entities });
 }
 
 onMounted(async () => {
   await nextTick();
-  if (!host.value) return;
+  if (disposed || !host.value) return;
   try {
     await stage.mount(host.value);
+    if (disposed) return;
     mounted = true;
     stage.setVisualSettings(props.visualSettings);
     await syncScene();
+    if (disposed) return;
     stopObservation = startRendererObservation('world', () => stage.getDiagnostics() as unknown as Record<string, unknown>);
     emit('ready');
   } catch (error) {
+    if (disposed) return;
     const message = error instanceof Error ? error.message : '无法初始化 GPU 世界渲染器';
     emit('unavailable', message);
   }
@@ -61,6 +67,7 @@ watch(() => props.entities, () => { void syncScene(); }, { deep: true });
 defineExpose({ getDiagnostics, playTransition });
 
 onUnmounted(() => {
+  disposed = true;
   stopObservation?.();
   stopObservation = null;
   mounted = false;

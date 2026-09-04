@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { Application, Texture, type Container } from 'pixi.js';
+import { Application, Graphics, Texture, type Container } from 'pixi.js';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
+import { WorldStage } from '../packages/renderer-pixi/src/WorldStage.ts';
 import { BattleArtAssetLoader } from '../packages/renderer-pixi/src/BattleArtAssets.ts';
 
 function deferred() {
@@ -50,6 +51,7 @@ export async function testBattleStageLifecycle(): Promise<void> {
       this.ticker = { add: (tick: (ticker: { deltaTime: number }) => void) => tickers.set(this, tick) } as unknown as Application['ticker'];
     };
     Application.prototype.destroy = function (_rendererOptions, options) {
+      assert.deepEqual(_rendererOptions, { removeView: true, releaseGlobalResources: false }, 'scene teardown must not destroy pools shared by another renderer');
       assert(!destroyed.includes(this), 'application must be destroyed once');
       destroyed.push(this);
       this.stage.destroy(options);
@@ -136,6 +138,28 @@ export async function testBattleStageLifecycle(): Promise<void> {
     draw(performance.now() + 1000);
     await latestTransition;
     assert.equal(frames.size, 0, 'completed transition leaves no queued frame');
+
+    const world = new WorldStage();
+    const lateWorldInit = deferred();
+    initQueue.push(lateWorldInit);
+    const worldMount = world.mount(host as unknown as HTMLElement);
+    world.unmount();
+    const hostAfterWorldExit = [...host.nodes];
+    lateWorldInit.resolve();
+    await worldMount;
+    assert.deepEqual(host.nodes, hostAfterWorldExit, 'late world initialization cannot restore a departed canvas');
+    const worldOverlay = new Graphics();
+    Object.assign(world, { transitionGraphic: worldOverlay });
+    const oldWorldTransition = world.transition({ kind: 'fade' });
+    const worldTransition = world.transition({ kind: 'fade' });
+    await oldWorldTransition;
+    assert.equal(frames.size, 1, 'world transition replacement cancels the previous frame');
+    const staleWorldDraw = [...frames.values()][0]!;
+    world.unmount();
+    worldOverlay.destroy();
+    await worldTransition;
+    staleWorldDraw(performance.now() + 1000);
+    assert.equal(frames.size, 0, 'world exit cancels transition and a stale frame never touches destroyed graphics');
 
     const abandonedBattle = deferred();
     preloadQueue.push(abandonedBattle);
