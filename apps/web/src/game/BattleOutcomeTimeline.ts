@@ -1,19 +1,20 @@
 import type { BattleEvent } from '@pokemon-online/shared';
 import type { BattlePresentationCombatant, DirectedBattleCue } from '@pokemon-online/presentation';
 
-type Health = NonNullable<BattleEvent['health']>;
+type OutcomePatch = Partial<Pick<BattlePresentationCombatant, 'currentHp' | 'alive' | 'status' | 'statusTimer' | 'flinchUntil' | 'castProgress'>>;
 interface PendingOutcome {
   event: BattleEvent;
-  health: Health;
+  uid: string;
+  patch: OutcomePatch;
   cues: readonly DirectedBattleCue[];
   remaining: number;
 }
 
-/** Holds only displayed health and outcome cues; never derives HP from damage.
- * An outcome and its health record are delivered on one presentation frame. */
+/** Delivers recorded health/control facts and their cues on one presentation
+ * frame. Never derives health, status or interruption from visual effects. */
 export class BattleOutcomeTimeline {
   private pending: PendingOutcome[] = [];
-  private visible = new Map<string, { health: Health; snapshotTime: number }>();
+  private visible = new Map<string, { patch: OutcomePatch; snapshotTime: number }>();
   private hitStop = 0;
 
   get isSettled(): boolean { return this.pending.length === 0; }
@@ -29,26 +30,38 @@ export class BattleOutcomeTimeline {
     snapshotFor: (event: BattleEvent) => { time: number; combatants: readonly BattlePresentationCombatant[] }): { cues: DirectedBattleCue[]; events: BattleEvent[] } {
     const heldSequences = new Set<number>();
     for (const event of events) {
-      if (event.type !== 'damage' && event.type !== 'heal' && event.type !== 'faint') continue;
+      const healthEvent = event.type === 'damage' || event.type === 'heal' || event.type === 'faint';
+      if (!healthEvent && !event.control) continue;
       const snapshot = snapshotFor(event);
-      const uid = event.health?.uid ?? event.target ?? event.actor;
+      const uid = event.health?.uid ?? event.control?.uid ?? event.target ?? event.actor;
+      if (!uid) continue;
       const after = snapshot.combatants.find((combatant) => combatant.uid === uid);
       // Older DTOs fall back to a recorded snapshot, never to damage arithmetic.
-      const health = event.health ?? (after ? { uid: after.uid, currentHp: after.currentHp, alive: after.alive } : undefined);
-      if (!health) continue;
+      const health = healthEvent ? event.health ?? after : undefined;
+      const patch: OutcomePatch = {};
+      if (health) Object.assign(patch, { currentHp: health.currentHp, alive: health.alive });
+      if (event.control) {
+        const { uid: _uid, at: _at, ...control } = event.control;
+        Object.assign(patch, control);
+      }
+      if (!Object.keys(patch).length) continue;
       const feedback = cues.filter((entry) => entry.sequence === event.seq);
       const delay = feedback.reduce((ms, entry) => Math.max(ms, entry.cue.delayMs ?? 0), 0) / 1000;
-      // A later heal/faint cannot overtake a pending hit then be overwritten.
-      const previousDelay = this.pending.filter((entry) => entry.health.uid === health.uid)
+      // Healing, control and interruption cannot overtake an earlier hit.
+      const previousDelay = this.pending.filter((entry) => entry.uid === uid)
         .reduce((latest, entry) => Math.max(latest, entry.remaining), 0);
-      const previous = before.find((combatant) => combatant.uid === health.uid);
-      let held = this.visible.get(health.uid);
+      const previous = before.find((combatant) => combatant.uid === uid);
+      let held = this.visible.get(uid);
       if (!held) {
-        held = { health: previous ? { uid: previous.uid, currentHp: previous.currentHp, alive: previous.alive } : health, snapshotTime: snapshot.time };
-        this.visible.set(health.uid, held);
+        held = { patch: {}, snapshotTime: snapshot.time };
+        this.visible.set(uid, held);
+      }
+      // Hold only fields changed by these events; control must not freeze HP.
+      for (const key of Object.keys(patch) as (keyof OutcomePatch)[]) {
+        if (!(key in held.patch)) Object.assign(held.patch, { [key]: previous ? previous[key] : patch[key] });
       }
       held.snapshotTime = Math.max(held.snapshotTime, snapshot.time);
-      this.pending.push({ event, health, cues: feedback, remaining: Math.max(delay, previousDelay) });
+      this.pending.push({ event, uid, patch, cues: feedback, remaining: Math.max(delay, previousDelay) });
       heldSequences.add(event.seq ?? 0);
     }
     const immediate = cues.filter((entry) => !heldSequences.has(entry.sequence));
@@ -59,15 +72,18 @@ export class BattleOutcomeTimeline {
   }
 
   apply(combatants: BattlePresentationCombatant[], snapshotTime: number): BattlePresentationCombatant[] {
-    const pendingIds = new Set(this.pending.map((entry) => entry.health.uid));
+    const pendingIds = new Set(this.pending.map((entry) => entry.uid));
     return combatants.map((combatant) => {
-      const held = this.visible.get(combatant.uid);
-      if (!held) return combatant;
-      if (!pendingIds.has(combatant.uid) && snapshotTime > held.snapshotTime) {
+      let held = this.visible.get(combatant.uid);
+      if (held && !pendingIds.has(combatant.uid) && snapshotTime > held.snapshotTime) {
         this.visible.delete(combatant.uid);
-        return combatant;
+        held = undefined;
       }
-      return { ...combatant, currentHp: held.health.currentHp, alive: held.health.alive };
+      const shown = held ? { ...combatant, ...held.patch } : combatant;
+      // A hard-controlled actor stops visibly charging at contact, even if the
+      // engine emits cancellation on its next tick. Never synthesize that event.
+      const disabled = !shown.alive || shown.status === 'sleep' || shown.status === 'freeze' || (shown.flinchUntil ?? 0) > snapshotTime;
+      return disabled && shown.castProgress ? { ...shown, castProgress: null } : shown;
     });
   }
 
@@ -83,7 +99,7 @@ export class BattleOutcomeTimeline {
     this.pending = this.pending.filter((entry) => entry.remaining > 0.000001);
     const cues: DirectedBattleCue[] = [];
     for (const entry of ready) {
-      this.visible.get(entry.health.uid)!.health = entry.health;
+      Object.assign(this.visible.get(entry.uid)!.patch, entry.patch);
       cues.push(...entry.cues.map((directed) => ({ ...directed, cue: { ...directed.cue, delayMs: undefined } })));
     }
     this.observeHitStop(cues);

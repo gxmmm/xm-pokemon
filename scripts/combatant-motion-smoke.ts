@@ -46,6 +46,22 @@ export function testCombatantMotion(): void {
     for (const invalid of [[], [{ at: 0 }, { at: 0 }], [{ at: 0 }, { at: 1, scaleY: -1 }], [{ at: 0 }, { at: 1, offsetY: NaN }]]) {
       assert(validateBattleArtConfiguration([{ ...profile, motionTracks: { cast: invalid } }]).invalidMotionProfileIds.includes(profile.id), 'malformed motion tracks must fail config validation');
     }
+    view.refresh({ ...actor, castProgress: { skillId: 'hyper-beam', remaining: 0.6 } });
+    view.update(0.1);
+    assert(view.getDiagnostics().casting && view.getDiagnostics().motion === 'charge');
+    view.playAnimation('windup', 'after-current-motion');
+    view.playAnimation('interrupt');
+    assert(!view.getDiagnostics().casting && view.getDiagnostics().chargeProgress === 0);
+    assert.equal(view.getDiagnostics().queuedMotionCount, 0, 'interruption removes queued charge');
+    assert.equal(view.getDiagnostics().motion, 'idle');
+    view.playAnimation('projectile');
+    view.playAnimation('recoil', 'after-current-motion');
+    view.playAnimation('interrupt');
+    assert.equal(view.getDiagnostics().motion, 'cast', 'interruption cannot retract an already released action');
+    assert.equal(view.getDiagnostics().queuedMotionCount, 1);
+    view.playAnimation('faint');
+    view.playAnimation('interrupt');
+    assert.equal(view.getDiagnostics().motion, 'faint', 'interruption never revives a fainted actor');
     view.destroy({ children: true });
   }
   const fallbackPose = { offsetX: 5 };

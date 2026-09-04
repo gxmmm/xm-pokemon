@@ -4,6 +4,7 @@ import type { BattleArtAnchorId } from '@pokemon-online/config';
 export type BattlePresentationEventType =
   | 'move'
   | 'cast-start'
+  | 'cast-interrupt'
   | 'skill'
   | 'damage'
   | 'heal'
@@ -49,7 +50,7 @@ export interface CameraPlan {
 }
 
 /** Stable semantic motion vocabulary consumed by CombatantView. */
-export type CombatantAnimation = 'idle' | 'windup' | 'melee' | 'dive' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';
+export type CombatantAnimation = 'idle' | 'windup' | 'interrupt' | 'melee' | 'dive' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';
 
 export interface VfxRecipeRef {
   id: string;
@@ -106,8 +107,8 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
   const type = presentationTypeFor(event, vfx);
   // A spread release lists all victims, but each damage record describes one
   // actual victim. Do not flash the first target repeatedly for every hit.
-  const outcomeTarget = event.type === 'damage' || event.type === 'heal' || event.type === 'faint'
-    ? event.health?.uid ?? event.target ?? (event.type !== 'damage' ? event.actor : undefined) : undefined;
+  const outcomeTarget = event.type === 'damage' || event.type === 'heal' || event.type === 'faint' || event.type === 'status'
+    ? event.health?.uid ?? event.control?.uid ?? event.target ?? (event.type !== 'damage' ? event.actor : undefined) : undefined;
   const targetIds = outcomeTarget ? [outcomeTarget] : vfx?.targetUids?.length
     ? [...vfx.targetUids]
     : event.target ? [event.target] : undefined;
@@ -137,6 +138,7 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
 }
 
 function presentationTypeFor(event: BattleEvent, vfx?: BattleVfx): BattlePresentationEventType {
+  if (vfx?.kind === 'interrupt') return 'cast-interrupt';
   if (event.type === 'attack' || event.type === 'move') return 'move';
   if (event.type === 'skill' && vfx?.kind === 'cast') return 'cast-start';
   if (event.type === 'skill') return 'skill';

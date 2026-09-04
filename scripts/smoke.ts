@@ -38,6 +38,7 @@ import { testSkillVfx } from './skill-vfx-smoke.ts';
 import { testBattleAnchors } from './battle-anchor-smoke.ts';
 import { testBattleCueTiming } from './battle-cue-timing-smoke.ts';
 import { testBattleOutcomes } from './battle-outcome-smoke.ts';
+import { testBattleControl } from './battle-control-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -50,6 +51,7 @@ testSkillVfx();
 testBattleAnchors();
 testBattleCueTiming();
 testBattleOutcomes();
+testBattleControl();
 
 // Pixi is the sole supported battle renderer. Three/GLB experiments must not
 // leave a route, package, asset cache, or runtime dependency in this project.
@@ -822,8 +824,8 @@ testBattleOutcomes();
   assert(first.length > 0 && JSON.stringify(first) === JSON.stringify(second), 'BattleDirector cue output is deterministic');
   assert(first.some((entry) => entry.cue.type === 'animation') && first.some((entry) => entry.cue.type === 'vfx'), 'BattleDirector emits action and VFX cues');
   const castStart = new BattleDirector().direct([{ id: 'cast-start', sequence: 3, type: 'cast-start', actorId: 'caster', targetIds: ['target'], skillId: 'blazing-dive', element: 'fire', at: 14 }]);
-  const castAura = castStart.find((entry) => entry.cue.type === 'vfx')?.cue;
-  assert(castAura?.type === 'vfx' && castAura.recipe.variant === 'dive' && castAura.recipe.delivery === 'aura' && castAura.anchors.actorId === 'caster' && !castAura.anchors.targetIds?.length, 'cast-start aura stays on the caster while preserving the configuration-owned skill variant');
+  assert(castStart.some(({ cue }) => cue.type === 'animation' && cue.animation === 'windup'));
+  assert(!castStart.some(({ cue }) => cue.type === 'vfx'), 'cast-start uses the persistent model aura, not a duplicate timed effect');
   const diveAction = new BattleDirector().direct([{ id: 'dive-action', sequence: 4, type: 'skill', actorId: 'caster', targetIds: ['target'], skillId: 'blazing-dive', element: 'fire', at: 14.5 }]);
   const diveActor = diveAction.find((entry) => entry.cue.type === 'animation' && entry.cue.animation === 'dive')?.cue;
   assert(diveActor?.type === 'animation' && diveActor.actorChoreography?.kind === 'target-dive' && diveActor.actorChoreography.durationMs === 460 && diveActor.actorChoreography.revealAt < diveActor.actorChoreography.impactAt && diveActor.targetIds?.[0] === 'target', 'configured dive choreography travels the actor toward its target without a skill/model renderer branch');
@@ -1821,7 +1823,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
 // 3b. AI behavior: reactive interrupts (A) + team CC coordination (D). Run
 //     several high-level 3v3 matchups (so big windup nukes + hard-CC moves are
 //     in active sets) and aggregate:
-//       - interrupts: '被打断' info events (a windup cancelled by hard CC) -- A
+//       - interrupts: structured interruption events (a windup cancelled by hard CC) -- A
 //       - doubleCc: two allies hard-CCing the SAME target within 0.6s -- D avoids
 //     Lower doubleCc / non-zero interrupts => the new AI logic is firing.
 {
@@ -1838,7 +1840,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
     const tb = b.map((id) => createWildInstance(id, 45));
     const s = new BattleSim({ mode: 'pvp', player: ta, enemy: tb, isWild: false });
     s.resolve(180);
-    interrupts += s.state.events.filter((e) => e.type === 'info' && (e.message ?? '').includes('被打断')).length;
+    interrupts += s.state.events.filter((e) => e.vfx?.kind === 'interrupt').length;
     const ccCasts: { t: number; target?: string; actor?: string }[] = [];
     for (const e of s.state.events) {
       if (e.type === 'skill' && e.skillId && DEFENSIVE.has(e.skillId)) defensiveCasts++;

@@ -184,15 +184,15 @@ function updatePresentation(s: BattleSim, dtScaled: number, visualSeconds: numbe
   presentation.value = frame.presentation;
   presentationCues.value = [...frame.cues];
   presentationCaughtUp = frame.isCaughtUp;
-  // Health changes are event-driven; other HUD details keep their 12fps budget.
-  if (frame.newEvents.some((event) => event.type === 'damage' || event.type === 'heal' || event.type === 'faint')) syncHud(s);
+  // Health/control changes are event-driven; other HUD details keep their 12fps budget.
+  if (frame.newEvents.some((event) => event.health || event.control || event.type === 'faint')) syncHud(s);
   processPresentationEvents(frame.newEvents);
 }
 
 function processPresentationEvents(events: readonly import('@pokemon-online/shared').BattleEvent[]): void {
   for (const event of events) {
     if (event.type === 'skill' && event.actor) skillFlash.value[event.actor] = 1;
-    if (event.type === 'info' && event.actor && /被打断/.test(event.message ?? '')) interruptFlash.value[event.actor] = 1;
+    if (event.vfx?.kind === 'interrupt' && event.actor) interruptFlash.value[event.actor] = 1;
   }
 }
 

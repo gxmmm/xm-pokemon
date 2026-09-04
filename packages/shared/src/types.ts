@@ -547,7 +547,7 @@ export interface BattleVfx {
   kind:
     | 'projectile' | 'melee' | 'burst' | 'beam'
     | 'heal' | 'shield' | 'buff' | 'debuff'
-    | 'status' | 'faint' | 'impact' | 'cast' | 'miss';
+    | 'status' | 'faint' | 'impact' | 'cast' | 'interrupt' | 'miss';
   type?: TypeName; // skill/element type, for color theming
   /** Configuration-resolved motif for the always-available normal attack. */
   normalAttackStyle?: NormalAttackVisualStyle;
@@ -586,6 +586,8 @@ export interface BattleEvent {
   vfx?: BattleVfx;
   /** Immutable post-event health facts, used only to time their presentation. */
   health?: { uid: string; currentHp: number; alive: boolean; /** Unrounded snapshot time. */ at?: number };
+  /** Post-event control facts; interruption records also clear the cast. */
+  control?: { uid: string; at: number; status: StatusKind | null; statusTimer: number; flinchUntil: number; castProgress?: BattleCombatant['castProgress'] };
 }
 
 /** A brief, battle-local intent shared by one side's AI. It is recalculated by

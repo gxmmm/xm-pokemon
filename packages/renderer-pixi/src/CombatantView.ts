@@ -165,6 +165,14 @@ export class CombatantView extends Container {
     target?: { x: number; y: number },
     element?: TypeName,
   ): void {
+    if (animation === 'interrupt') {
+      this.casting = false;
+      this.chargeProgress = 0;
+      this.chargeAura.clear();
+      this.queuedMotions = this.queuedMotions.filter((entry) => entry.motion !== 'charge');
+      if (this.motion === 'charge') this.setMotion(this.moving && this.alive ? 'locomotion' : 'idle');
+      return;
+    }
     const motion = battleArtMotionForAnimation(animation);
     const entry = { motion, durationMs, choreography, target, element };
     if (schedule === 'after-current-motion') {

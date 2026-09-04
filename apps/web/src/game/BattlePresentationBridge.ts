@@ -103,7 +103,7 @@ export class BattlePresentationBridge {
 
     const directed = this.director.direct(events.map(toBattlePresentationEvent));
     const dispatched = this.outcomes.enqueue(newEvents, directed, this.current?.combatants ?? [], (event) =>
-      this.snapshots.find((snapshot) => snapshot.time >= (event.health?.at ?? event.t)) ?? this.snapshots[this.snapshots.length - 1]!);
+      this.snapshots.find((snapshot) => snapshot.time >= (event.health?.at ?? event.control?.at ?? event.t)) ?? this.snapshots[this.snapshots.length - 1]!);
     const cues = [...completed.cues, ...dispatched.cues];
     const presentation: BattlePresentation = {
       time: this.presentationTime,

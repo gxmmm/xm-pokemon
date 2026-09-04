@@ -208,6 +208,31 @@ async function main(): Promise<void> {
       await page.evaluate(() => window.__OUTCOME_FIXTURE__.destroy());
       console.log(`✓ actual browser: ${ko ? 'KO' : 'hit'} health and contact synchronized`);
     }
+    await page.evaluate(async (url) => {
+      const fixture = await import(/* @vite-ignore */ url);
+      window.__OUTCOME_FIXTURE__ = await fixture.createBattleOutcomeFixture('control');
+    }, `/@fs/${resolve('scripts/battle-outcome-browser-fixture.ts').replaceAll('\\', '/')}`);
+    await page.clock.runFor(200);
+    await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, 'outcome-control-charge.png') });
+    const contactMs = await page.evaluate(() => window.__OUTCOME_FIXTURE__.release());
+    await page.clock.runFor(Math.floor(contactMs / 2));
+    const pendingControl = await page.evaluate(() => window.__OUTCOME_FIXTURE__.read());
+    assert(pendingControl.casting && !pendingControl.status && !pendingControl.interrupted, 'control and interruption must wait for skill contact');
+    await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, 'outcome-control-flight.png') });
+    await page.clock.runFor(Math.ceil(contactMs / 2) + 50);
+    const disabled = await page.evaluate(() => window.__OUTCOME_FIXTURE__.read());
+    assert(!disabled.casting && disabled.status === 'sleep' && !disabled.interrupted && disabled.effects > 0 && disabled.hp === 100, 'control suppresses stale charge without fabricating next-tick interruption');
+    await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, 'outcome-control-contact.png') });
+    await page.evaluate(() => window.__OUTCOME_FIXTURE__.interrupt());
+    await page.clock.runFor(2000);
+    assert((await page.evaluate(() => window.__OUTCOME_FIXTURE__.read())).interrupted, 'real next-tick cancellation is eventually presented');
+    await page.evaluate(() => window.__OUTCOME_FIXTURE__.recover());
+    await page.clock.runFor(300);
+    const recovered = await page.evaluate(() => window.__OUTCOME_FIXTURE__.read());
+    assert(!recovered.status && !recovered.casting && recovered.settled && recovered.effects === 0, 'recovery leaves no charge or control effects');
+    await page.locator('#outcome-fixture').screenshot({ path: resolve(OUTPUT, 'outcome-control-recovered.png') });
+    await page.evaluate(() => window.__OUTCOME_FIXTURE__.destroy());
+    console.log('✓ actual browser: charge, contact, interruption and control recovery synchronized');
     assert.equal(errors.length, 0, `outcome fixture errors: ${errors.join('\n')}`);
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);

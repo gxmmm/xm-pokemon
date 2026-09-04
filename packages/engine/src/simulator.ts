@@ -199,7 +199,10 @@ export class BattleSim {
   private emit(type: BattleEvent['type'], actor?: string, target?: string, skillId?: string, amount?: number, message?: string, vfx?: BattleVfx): void {
     const subject = type === 'damage' ? this.find(target) : type === 'heal' || type === 'faint' ? this.find(target ?? actor) : undefined;
     const health = subject ? { uid: subject.uid, currentHp: subject.currentHp, alive: subject.alive, at: this.state.time } : undefined;
-    this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx, health });
+    const controlled = type === 'status' ? this.find(target) : vfx?.kind === 'interrupt' ? this.find(actor) : undefined;
+    const control = controlled ? { uid: controlled.uid, at: this.state.time, status: controlled.status, statusTimer: controlled.statusTimer,
+      flinchUntil: controlled.flinchUntil ?? 0, ...(vfx?.kind === 'interrupt' ? { castProgress: null } : {}) } : undefined;
+    this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx, health, control });
     if (this.state.events.length > 400) this.state.events.splice(0, this.state.events.length - 400);
   }
 
@@ -484,14 +487,15 @@ export class BattleSim {
    *  re-decide. Emits a "被打断" info so the UI can flash the avatar. */
   private interruptCast(c: BattleCombatant): void {
     if (!c.castProgress) return;
-    const skill = SKILL_MAP[c.castProgress.skillId];
+    const skillId = c.castProgress.skillId;
+    const skill = SKILL_MAP[skillId];
     c.castProgress = null;
     c.plan = null;
     c.nextDecisionAt = this.state.time + 0.3;
-    this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`);
+    this.emit('info', c.uid, undefined, skillId, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`, { kind: 'interrupt' });
   }
 
-  private inflictStatus(target: BattleCombatant, status: StatusKind, duration: number, source?: BattleCombatant): boolean {
+  private inflictStatus(target: BattleCombatant, status: StatusKind, duration: number, source?: BattleCombatant, skillId?: string): boolean {
     // immunities via ability
     if (status === 'paralyze' && target.ability === 'limber') return false;
     if (status === 'poison' && target.ability === 'immunity') return false;
@@ -504,7 +508,7 @@ export class BattleSim {
     target.statusTimer = appliedDuration;
     if (source && source.uid !== target.uid && ['paralyze', 'freeze', 'sleep', 'confuse'].includes(status)) source.controlSeconds += appliedDuration;
     const label: Record<StatusKind, string> = { burn: '灼伤', poison: '中毒', paralyze: '麻痹', freeze: '冰冻', sleep: '睡眠', confuse: '混乱' };
-    this.emit('status', source?.uid, target.uid, undefined, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
+    this.emit('status', source?.uid, target.uid, skillId, undefined, `${target.name} 陷入了${label[status]}！`, { kind: 'status', status });
     if (source && source.uid !== target.uid && ABILITY_MAP[target.ability]?.effect.kind === 'statusReflect') {
       const reflectKey = `synchronize_${source.uid}`;
       const cds = target.abilityCooldowns ??= {};
@@ -537,7 +541,7 @@ export class BattleSim {
           self.currentHp += amt;
           caster.healingDone += amt;
           this.emit('heal', caster.uid, self.uid, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
-          if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2, caster);
+          if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2, caster, skillId);
         }
         break;
       case 'shield':
@@ -557,14 +561,14 @@ export class BattleSim {
       case 'status':
         if (self && e.status) {
           const wasCasting = !!self.castProgress;
-          const applied = this.inflictStatus(self, e.status, e.duration ?? 0, caster);
+          const applied = this.inflictStatus(self, e.status, e.duration ?? 0, caster, skillId);
           if (applied && wasCasting && ['sleep', 'freeze'].includes(e.status)) caster.interrupts += 1;
         }
         break;
       case 'dot':
         if (self && e.magnitude) {
           self.buffs.push({ id: 'dot_' + Date.now(), kind: 'dot', remaining: e.duration ?? 6, magnitude: e.magnitude, from: caster.uid });
-          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 被施加了持续伤害`, { kind: 'status', status: e.status });
+          this.emit('status', caster.uid, self.uid, skillId, undefined, `${self.name} 被施加了持续伤害`, { kind: 'status', status: e.status });
         }
         break;
       case 'ramp':
@@ -595,7 +599,7 @@ export class BattleSim {
           self.plan = null;
           self.nextDecisionAt = this.state.time + (e.duration ?? 1);
           if (self.uid !== caster.uid) caster.controlSeconds += e.duration ?? 1;
-          this.emit('status', undefined, self.uid, undefined, undefined, `${self.name} 畏缩了`, { kind: 'status', status: 'paralyze' });
+          this.emit('status', caster.uid, self.uid, skillId, undefined, `${self.name} 畏缩了`, { kind: 'status', status: 'paralyze' });
         }
         break;
       case 'lifesteal':

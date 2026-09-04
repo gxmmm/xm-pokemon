@@ -82,11 +82,11 @@ export class BattleDirector {
       output.push(
         { type: 'animation', subjectId: event.actorId ?? '', animation: 'windup', skillId: event.skillId, targetIds: targets, delivery: recipe.delivery },
         { type: 'camera', plan: { style: 'anticipate', focusIds: compactIds([event.actorId, ...targets]), durationMs: 180, zoom: 1.03 } },
-        // Windup energy belongs to the caster; release/status feedback may target
-        // opponents separately. Leaving targetIds empty makes the generic aura plan
-        // resolve to actorId without a skill- or model-specific renderer branch.
-        { type: 'vfx', recipe: vfxRecipeFor(recipe, 'aura'), anchors: { actorId: event.actorId }, intensity: 0.36, eventType: event.type, skillId: event.skillId, vfxKind: event.vfxKind, outcome: event.outcome, status: event.status },
+        // The model's persistent charge aura already follows castProgress.
+        // A second timed aura would survive a cancelled cast.
       );
+    } else if (event.type === 'cast-interrupt') {
+      output.push({ type: 'animation', subjectId: event.actorId ?? '', animation: 'interrupt', skillId: event.skillId });
     } else if (event.type === 'move' || event.type === 'skill') {
       const animation = animationFor(recipe);
       const cast = castPresentationFor(event.skillId);
