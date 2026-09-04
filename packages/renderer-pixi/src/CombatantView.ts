@@ -1,8 +1,8 @@
-import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtPresentation, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
+import { BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtAnchor, resolveBattleArtPresentation, type BattleArtAnchorId, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
 import { Container, Graphics } from 'pixi.js';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
-import { CombatantSprite } from './CombatantSprite.ts';
+import { BATTLE_SPRITE_DISPLAY_HEIGHT, CombatantSprite } from './CombatantSprite.ts';
 import { CombatantStatusLayer, type CombatantStatusVisual } from './CombatantStatusLayer.ts';
 import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
@@ -201,6 +201,17 @@ export class CombatantView extends Container {
     this.projectedLiftPixels = Math.max(0, projectedLiftPixels);
     this.terrainShadowAlphaMultiplier = shadowAlphaMultiplier;
     this.terrainShadowScaleMultiplier = shadowScaleMultiplier;
+  }
+
+  /** Stage-plane coordinates, excluding camera transforms shared by the VFX layer. */
+  getAnchorPosition(id: BattleArtAnchorId): { x: number; y: number } {
+    const anchor = resolveBattleArtAnchor(this.presentation.profile, id);
+    const width = this.sprite.visible ? this.sprite.width : BATTLE_SPRITE_DISPLAY_HEIGHT;
+    const height = this.sprite.visible ? this.sprite.height : BATTLE_SPRITE_DISPLAY_HEIGHT;
+    this.body.updateLocalTransform();
+    this.updateLocalTransform();
+    const bodyPoint = this.body.localTransform.apply({ x: anchor.x * width, y: anchor.y * height });
+    return this.localTransform.apply(bodyPoint);
   }
 
   getDiagnostics(): CombatantViewDiagnostics {

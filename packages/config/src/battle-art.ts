@@ -108,6 +108,8 @@ export interface BattleArtImportContract {
 
 export interface BattleArtAnchor {
   id: BattleArtAnchorId;
+  /** Offsets in displayed sprite widths/heights from its pivot, facing right.
+   * Body mirroring, pose, hover and projection are applied by the renderer. */
   x: number;
   y: number;
 }
@@ -890,7 +892,7 @@ function themeFor(profile: BattleArtProfile, recipe?: SkillVisualRecipe): Battle
   };
 }
 
-function anchorFor(profile: BattleArtProfile, id: BattleArtAnchorId): BattleArtAnchor {
+export function resolveBattleArtAnchor(profile: BattleArtProfile, id: BattleArtAnchorId): BattleArtAnchor {
   return profile.anchors.find((anchor) => anchor.id === id)
     ?? GENERIC_BATTLE_ART_PROFILE.anchors.find((anchor) => anchor.id === id)
     ?? DEFAULT_ANCHORS[0]!;
@@ -916,7 +918,7 @@ export function resolveBattleArtPresentation(input: BattleArtResolutionInput): R
     motion: profile.motions[motionId] ?? GENERIC_BATTLE_ART_PROFILE.motions.idle,
     cast,
     skillRecipe,
-    projectileAnchor: anchorFor(profile, cast.projectileAnchor),
+    projectileAnchor: resolveBattleArtAnchor(profile, cast.projectileAnchor),
   };
 }
 

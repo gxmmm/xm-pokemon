@@ -87,7 +87,7 @@ export class BattleDirector {
         // Target impact belongs to the authoritative damage event below. A dive
         // action itself only drives its actor-side contour/traversal, preventing
         // a duplicate explosion before the model has reached the opponent.
-        ...(actorChoreography ? [] : [{ type: 'vfx' as const, recipe: vfxRecipeFor(recipe), anchors: { actorId: event.actorId, targetIds: targets }, intensity: score.intensity, eventType: event.type, skillId: event.skillId, vfxKind: event.vfxKind, outcome: event.outcome, status: event.status, delayMs: releaseDelayMs || undefined }]),
+        ...(actorChoreography ? [] : [{ type: 'vfx' as const, recipe: vfxRecipeFor(recipe), anchors: { actorId: event.actorId, actorAnchor: cast.projectileAnchor, targetIds: targets }, intensity: score.intensity, eventType: event.type, skillId: event.skillId, vfxKind: event.vfxKind, outcome: event.outcome, status: event.status, delayMs: releaseDelayMs || undefined }]),
         { type: 'animation', subjectId: event.actorId ?? '', animation: 'recoil', skillId: event.skillId, targetIds: targets, delivery: recipe.delivery, schedule: 'after-current-motion', durationMs: cast.recoveryMs },
         { type: 'action-window', milliseconds: actionDurationMs },
       );

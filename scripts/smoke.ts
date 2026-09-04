@@ -35,6 +35,7 @@ import { testCombatantSprite } from './combatant-sprite-smoke.ts';
 import { testBattleStageLifecycle } from './battle-stage-lifecycle-smoke.ts';
 import { testCombatantMotion } from './combatant-motion-smoke.ts';
 import { testSkillVfx } from './skill-vfx-smoke.ts';
+import { testBattleAnchors } from './battle-anchor-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -44,6 +45,7 @@ await testCombatantSprite();
 await testBattleStageLifecycle();
 testCombatantMotion();
 testSkillVfx();
+testBattleAnchors();
 
 // Pixi is the sole supported battle renderer. Three/GLB experiments must not
 // leave a route, package, asset cache, or runtime dependency in this project.

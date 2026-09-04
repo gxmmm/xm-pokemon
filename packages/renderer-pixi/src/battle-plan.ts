@@ -1,6 +1,6 @@
 import type { BattleCue } from '@pokemon-online/renderer';
 import type { TypeName } from '@pokemon-online/shared';
-import type { SkillRecipeVariant } from '@pokemon-online/config';
+import type { BattleArtAnchorId, SkillRecipeVariant } from '@pokemon-online/config';
 
 export type BattleStagePrimitive = 'projectile' | 'dive' | 'impact' | 'beam' | 'burst' | 'ring' | 'sky-strike' | 'chain' | 'environment';
 
@@ -9,6 +9,7 @@ export interface BattleStageVfxPlan {
   element?: TypeName;
   intensity: number;
   actorId?: string;
+  actorAnchor?: BattleArtAnchorId;
   targetIds: readonly string[];
   reaction?: string;
   variant?: SkillRecipeVariant;
@@ -29,6 +30,7 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     element: cue.recipe.element,
     intensity: Math.max(0.15, Math.min(1, cue.intensity)),
     actorId: cue.anchors.actorId,
+    actorAnchor: cue.anchors.actorAnchor as BattleArtAnchorId | undefined,
     targetIds,
     variant: cue.recipe.variant as SkillRecipeVariant | undefined,
     particleBudget: cue.recipe.particleBudget,

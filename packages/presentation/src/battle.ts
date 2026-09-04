@@ -1,4 +1,5 @@
 import type { BattleActorChoreography, BattleCombatant, BattleEvent, BattleVfx, NormalAttackVisualStyle, StatusKind, TypeName } from '@pokemon-online/shared';
+import type { BattleArtAnchorId } from '@pokemon-online/config';
 
 export type BattlePresentationEventType =
   | 'move'
@@ -64,6 +65,7 @@ export interface VfxRecipeRef {
 
 export interface VfxAnchors {
   actorId?: string;
+  actorAnchor?: BattleArtAnchorId;
   targetIds?: readonly string[];
 }
 

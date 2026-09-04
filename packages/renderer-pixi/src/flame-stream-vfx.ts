@@ -63,7 +63,8 @@ void main() {
 }`;
 
 /** One quad/one pass; BattleStage explicitly uses WebGL. No textures or timers. */
-export function spawnFlameStream(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number): void {
+export function spawnFlameStream(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number, resolveSource?: () => BattleStagePoint | undefined): void {
+  from = { ...from };
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const length = Math.hypot(dx, dy);
@@ -89,6 +90,18 @@ export function spawnFlameStream(runtime: BattleEffectPool, from: BattleStagePoi
   mesh.on('destroyed', () => { shader.destroy(); geometry.destroy(true); });
   const duration = 0.38 + intensity * 0.18;
   runtime.add(mesh, duration, (progress) => {
+    const source = resolveSource ? resolveSource() : from;
+    const distance = source ? Math.hypot(to.x - source.x, to.y - source.y) : 0;
+    mesh.visible = !!source && distance >= 0.001;
+    if (!source || !mesh.visible) return;
+    if (source.x !== from.x || source.y !== from.y) {
+      const offsetX = -(to.y - source.y) / distance * halfHeight;
+      const offsetY = (to.x - source.x) / distance * halfHeight;
+      geometry.positions.set([source.x - offsetX, source.y - offsetY, to.x - offsetX, to.y - offsetY,
+        to.x + offsetX, to.y + offsetY, source.x + offsetX, source.y + offsetY]);
+      geometry.getBuffer('aPosition').update();
+      from = { ...source };
+    }
     uniforms.uniforms.uTime = progress * duration;
     uniforms.uniforms.uOpacity = Math.sin(Math.PI * progress) * 0.94;
   });

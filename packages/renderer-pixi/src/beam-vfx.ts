@@ -5,15 +5,19 @@ import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { spawnFlameStream } from './flame-stream-vfx.ts';
 
-export function spawnBeam(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number, variant = 'default', element?: TypeName): void {
+export function spawnBeam(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number, variant = 'default', element?: TypeName, resolveSource?: () => BattleStagePoint | undefined): void {
   const shape = elementalVfxShapeFor(element);
   if (shape === 'flame' && variant === 'flame-stream') {
-    spawnFlameStream(runtime, from, to, color, intensity);
+    spawnFlameStream(runtime, from, to, color, intensity, resolveSource);
     return;
   }
   const graphic = new Graphics({ blendMode: 'add' });
   const duration = 0.38 + intensity * 0.18;
   runtime.add(graphic, duration, (progress) => {
+    const source = resolveSource ? resolveSource() : from;
+    graphic.visible = !!source;
+    if (!source) return;
+    from = source;
     const alpha = Math.sin(Math.PI * progress) * 0.92;
     const dx = to.x - from.x;
     const dy = to.y - from.y;

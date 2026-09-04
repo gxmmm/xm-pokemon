@@ -3,6 +3,7 @@ import { Sprite, Texture } from 'pixi.js';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
 
 type SpriteAssets = Pick<BattleArtAssetLoader, 'load' | 'loadClip' | 'loadMetadata'>;
+export const BATTLE_SPRITE_DISPLAY_HEIGHT = 106;
 
 /** Owns bitmap loading and clip playback; poses and action scheduling stay in CombatantView. */
 export class CombatantSprite extends Sprite {
@@ -93,8 +94,8 @@ export class CombatantSprite extends Sprite {
   private showTexture(texture: Texture): void {
     this.texture = texture;
     const ratio = texture.height > 0 ? texture.width / texture.height : 1;
-    this.height = 106;
-    this.width = Math.max(54, Math.min(142, 106 * ratio));
+    this.height = BATTLE_SPRITE_DISPLAY_HEIGHT;
+    this.width = Math.max(54, Math.min(142, BATTLE_SPRITE_DISPLAY_HEIGHT * ratio));
     this.visible = true;
     this.fallback.visible = false;
   }

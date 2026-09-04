@@ -1,4 +1,4 @@
-import { battleEnvironmentFor, resolveBattleArtPresentation } from '@pokemon-online/config';
+import { battleEnvironmentFor, resolveBattleArtPresentation, type BattleArtAnchorId } from '@pokemon-online/config';
 import type { BattleCue, BattleRenderSnapshot } from '@pokemon-online/renderer';
 import { Container } from 'pixi.js';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -83,6 +83,10 @@ export class BattleCombatantLayer {
     if (animationDeltaSeconds > 0) {
       for (const view of this.views.values()) view.update(animationDeltaSeconds);
     }
+  }
+
+  getAnchorPosition(uid: string, anchor: BattleArtAnchorId): Point | undefined {
+    return this.views.get(uid)?.getAnchorPosition(anchor);
   }
 
   getPosition(uid: string): Point | undefined {

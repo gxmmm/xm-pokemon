@@ -1,4 +1,4 @@
-import type { BattleEnvironmentSpec } from '@pokemon-online/config';
+import type { BattleArtAnchorId, BattleEnvironmentSpec } from '@pokemon-online/config';
 import { elementColor, type BattleStageVfxPlan } from './battle-plan.ts';
 import { battleContactPoint } from './battle-ground.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
@@ -17,6 +17,7 @@ export class BattleVfxExecutor {
   constructor(
     private readonly effects: BattleEffectPool,
     private readonly resolvePosition: PositionResolver,
+    private readonly resolveAnchor?: (uid: string, anchor: BattleArtAnchorId) => Point | undefined,
   ) {}
 
   spawnPlans(plans: readonly BattleStageVfxPlan[], environment: BattleEnvironmentSpec): number {
@@ -33,12 +34,16 @@ export class BattleVfxExecutor {
     const targetRoot = targets[0] ?? actor ?? { x: BATTLE_DESIGN_WIDTH / 2, y: BATTLE_DESIGN_HEIGHT * 0.58 };
     const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
     const color = elementColor(plan.element);
+    const resolveSource = () => plan.actorId && plan.actorAnchor && this.resolveAnchor
+      ? this.resolveAnchor(plan.actorId, plan.actorAnchor) : plan.actorId ? this.resolvePosition(plan.actorId) : undefined;
 
     switch (plan.primitive) {
-      case 'projectile':
-        if (!actor) return false;
-        spawnProjectile(this.effects, actor, target, color, plan.intensity, plan.variant, plan.element);
+      case 'projectile': {
+        const source = resolveSource();
+        if (!actor || !source) return false;
+        spawnProjectile(this.effects, { ...source }, target, color, plan.intensity, plan.variant, plan.element);
         return true;
+      }
       case 'sky-strike':
         spawnSkyStrike(this.effects, target, plan.intensity);
         return true;
@@ -49,10 +54,12 @@ export class BattleVfxExecutor {
         if (!actor) return false;
         spawnDive(this.effects, actor, target, color, plan.intensity);
         return true;
-      case 'beam':
-        if (!actor) return false;
-        spawnBeam(this.effects, actor, target, color, plan.intensity, plan.variant, plan.element);
+      case 'beam': {
+        const source = resolveSource();
+        if (!actor || !source) return false;
+        spawnBeam(this.effects, source, target, color, plan.intensity, plan.variant, plan.element, resolveSource);
         return true;
+      }
       case 'burst':
         spawnBurst(this.effects, target, color, plan.intensity, plan.variant, plan.particleBudget, plan.element);
         return true;

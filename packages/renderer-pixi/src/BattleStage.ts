@@ -38,7 +38,9 @@ export class BattleStage implements BattleRenderer {
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
   private readonly battleArtAssets = new BattleArtAssetLoader();
   private readonly combatants = new BattleCombatantLayer(this.battleArtAssets, this.terrainContacts);
-  private readonly vfx = new BattleVfxExecutor(this.effectPool, (uid) => this.combatants.getPosition(uid));
+  private readonly vfx = new BattleVfxExecutor(this.effectPool,
+    (uid) => this.combatants.getPosition(uid),
+    (uid, anchor) => this.combatants.getAnchorPosition(uid, anchor));
   private overlay = new Container();
   private environmentBackgroundTexture: Texture | null = null;
   private resizeObserver: ResizeObserver | null = null;
