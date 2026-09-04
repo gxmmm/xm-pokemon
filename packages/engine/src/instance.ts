@@ -241,12 +241,11 @@ export function evolve(instance: PokemonInstance, toSpeciesId: number): void {
   if (!newSpecies.abilities.includes(instance.ability)) {
     instance.ability = newSpecies.abilities[0] ?? instance.ability;
   }
-  // ensure active skills still valid; add new learnable up to cap
-  const learnable = activeSkillsForLevel(toSpeciesId, instance.level);
-  for (const s of learnable) {
-    if (instance.activeSkills.length >= ACTIVE_SKILL_MAX) break;
-    if (!instance.activeSkills.includes(s)) instance.activeSkills.push(s);
-  }
+  // Evolution replaces the entire active kit with the new species' current kit.
+  instance.activeSkills = activeSkillsForLevel(toSpeciesId, instance.level);
+  // Evolution never discards earned passives. Its union may exceed the breeding
+  // output cap when a full kit gains the new species' intrinsic passives.
+  instance.passiveSkills = [...new Set([...instance.passiveSkills, ...newSpecies.intrinsicPassives])];
   const newMax = maxHp(instance);
   instance.currentHp = Math.max(1, Math.round(newMax * hpRatio));
   instance.friendship = Math.min(255, instance.friendship + 5);

@@ -6,6 +6,7 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: () => import('./views/LoginView.vue') },
+    { path: '/load-error', name: 'load-error', component: () => import('./views/LoadErrorView.vue') },
     { path: '/new', name: 'new', component: () => import('./views/NewGameView.vue'), meta: { requiresAuth: true } },
     { path: '/', redirect: '/world' },
     { path: '/world', name: 'world', component: () => import('./views/WorldView.vue'), meta: { requiresAuth: true, requiresSave: true } },
@@ -31,17 +32,16 @@ router.beforeEach(async (to) => {
   const visualRegressionMode = to.query['visual-regression'] === '1'
     && (to.name === 'world-stage-sandbox' || to.name === 'battle-stage-sandbox');
   if (visualRegressionMode) return true;
+  if (to.name === 'load-error') return true;
   const auth = useAuthStore();
-  if (!auth.ready) await auth.restore();
+  if (!auth.ready && !await auth.restore()) return { name: 'load-error' };
   if (to.meta.requiresAuth && !auth.isAuthenticated) return { name: 'login' };
-  if (to.name === 'login' && auth.isAuthenticated) {
+  if (auth.isAuthenticated) {
     const game = useGameStore();
-    if (!game.hasSave) return { name: 'new' };
-    return { name: 'world' };
-  }
-  if (to.meta.requiresSave && auth.isAuthenticated) {
-    const game = useGameStore();
-    if (!game.hasSave && !game.loading) return { name: 'new' };
+    if (!game.loaded && !await game.load()) return { name: 'load-error' };
+    if (to.name === 'login') return { name: game.hasSave ? 'world' : 'new' };
+    if (to.name === 'new' && game.hasSave) return { name: 'world' };
+    if (to.meta.requiresSave && !game.hasSave) return { name: 'new' };
   }
   return true;
 });

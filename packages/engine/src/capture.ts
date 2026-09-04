@@ -31,13 +31,18 @@ export function markSeen(save: PlayerSave, speciesId: number): void {
   e.seen = true;
 }
 
-export function markCaught(save: PlayerSave, speciesId: number): void {
+/** Register ownership, including evolution, independently of capture statistics. */
+export function markOwned(save: PlayerSave, speciesId: number): void {
   const e = ensureDexEntry(save, speciesId);
   e.seen = true;
   e.caught = true;
   e.released = false;
   if (!e.firstCaughtAt) e.firstCaughtAt = Date.now();
   e.count += 1;
+}
+
+export function markCaught(save: PlayerSave, speciesId: number): void {
+  markOwned(save, speciesId);
   save.stats.caught += 1;
 }
 
@@ -72,4 +77,3 @@ export function releaseInstance(save: PlayerSave, uid: string): { speciesId: num
   delete save.instances[uid];
   return { speciesId, nickname };
 }
-

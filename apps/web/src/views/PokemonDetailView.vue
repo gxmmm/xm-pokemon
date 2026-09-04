@@ -130,7 +130,10 @@ function statTip(key: StatKey): string {
 
 async function doEvolve(toId: number): Promise<void> {
   if (!inst.value) return;
-  if (!await msg.confirm(`确定让 ${inst.value.nickname || species.value?.name} 进化吗？`, { title: '进化' })) return;
+  if (!await msg.confirm(
+    `确定让 ${inst.value.nickname || species.value?.name} 进化为 ${getSpecies(toId).name} 吗？\n主动技能将全部替换为新种族当前等级的技能；已有被动全部保留，并补齐新种族必带被动（相同技能不重复）。资质和成长保持不变。`,
+    { title: '进化' },
+  )) return;
   game.doEvolve(uid.value, toId);
   evolveChoice.value = false;
 }

@@ -11,7 +11,7 @@ const game = useGameStore();
 const router = useRouter();
 const route = useRoute();
 
-const showNav = computed(() => auth.isAuthenticated && game.hasSave);
+const showNav = computed(() => auth.isAuthenticated && game.hasSave && route.name !== 'new' && route.name !== 'load-error');
 // battle manages its own controls + result modal; hide the global menu/back there
 const showChrome = computed(() => showNav.value && route.path !== '/battle');
 // Use the immutable initial URL rather than reactive router timing. Standalone
@@ -31,21 +31,22 @@ function updateScale(): void {
   document.documentElement.style.setProperty('--scale', String(Math.max(0.3, Math.min(2.5, s))));
 }
 
-onMounted(async () => {
+function protectUnsaved(event: BeforeUnloadEvent): void {
+  if (!game.unsaved) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+onMounted(() => {
   updateScale();
   window.addEventListener('resize', updateScale);
-  // Browser visual regression opens only standalone sandbox routes. It never
-  // bypasses authentication for the playable world or application pages.
-  if (standaloneSandboxMode.value) return;
-  await auth.restore();
-  if (auth.isAuthenticated) {
-    await game.load();
-    if (!game.hasSave) router.replace({ name: 'new' });
-  } else {
-    router.replace({ name: 'login' });
-  }
+  // Authentication and save loading have a single owner: the route guard.
+  window.addEventListener('beforeunload', protectUnsaved);
 });
-onUnmounted(() => window.removeEventListener('resize', updateScale));
+onUnmounted(() => {
+  window.removeEventListener('resize', updateScale);
+  window.removeEventListener('beforeunload', protectUnsaved);
+});
 
 // if save disappears (logout), go to login
 watch(() => auth.isAuthenticated, (v) => {
@@ -63,11 +64,16 @@ watch(() => auth.isAuthenticated, (v) => {
       </router-view>
     </main>
     <GameMenu v-if="showChrome" />
+    <div v-if="showNav && game.saveError" class="save-error" role="alert">
+      <span>进度尚未保存到云端：{{ game.saveError }}</span>
+      <button class="sm" :disabled="game.saving" @click="game.persist(true)">{{ game.saving ? '保存中…' : '重试保存' }}</button>
+    </div>
     <MessageHost />
   </div>
 </template>
 
 <style scoped>
+.save-error { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:60; display:flex; align-items:center; gap:12px; max-width:90%; padding:10px 14px; border:1px solid var(--bad); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; }
 /* This sandbox already reflows its HUD on narrow screens. Do not scale that
  * responsive layout down again; playable world/battle keep the fixed stage. */
 @media (max-width: 820px) {

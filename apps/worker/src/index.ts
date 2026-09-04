@@ -104,7 +104,7 @@ export default {
               const save = JSON.parse(row.data) as PlayerSave;
               return json(ok({ save }));
             } catch {
-              return json(ok<{ save: PlayerSave | null }>({ save: null }));
+              return fail('存档暂时无法读取，请重试', 500);
             }
           }
           if (request.method === 'PUT') {

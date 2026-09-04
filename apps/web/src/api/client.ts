@@ -2,6 +2,10 @@ import type { ApiResponse, AuthResponse, PlayerSave, OpponentTeamResponse } from
 
 const TOKEN_KEY = 'po_token';
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -18,7 +22,7 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   let body: ApiResponse<T> | null = null;
   try { body = await res.json() as ApiResponse<T>; } catch { /* non-json */ }
   if (!res.ok || !body || body.ok === false) {
-    throw new Error(body?.error ?? `请求失败 (${res.status})`);
+    throw new ApiError(body?.error ?? `请求失败 (${res.status})`, res.status);
   }
   return body.data as T;
 }

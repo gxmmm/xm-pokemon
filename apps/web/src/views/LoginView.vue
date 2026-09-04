@@ -15,15 +15,15 @@ const error = ref<string | null>(null);
 const busy = ref(false);
 
 async function submit(): Promise<void> {
+  if (busy.value) return;
   error.value = null;
   if (!username.value || !password.value) { error.value = '请输入用户名和密码'; return; }
   busy.value = true;
   try {
     if (mode.value === 'login') await auth.login(username.value, password.value);
     else await auth.register(username.value, password.value);
-    await game.load();
-    if (game.hasSave) router.replace({ name: 'world' });
-    else router.replace({ name: 'new' });
+    game.reset();
+    await router.replace({ name: 'world' });
   } catch (e) {
     error.value = e instanceof Error ? e.message : '操作失败';
   } finally {

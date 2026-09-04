@@ -240,9 +240,7 @@ function handlePveEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
     let total = 0;
     for (const w of group) { total += defeatExpYield(w, 'pve'); game.see(w.speciesId); }
     totalExp.value = total;
-    const results: ExpGainResult[] = [];
-    for (const p of game.pveTeamInstances) results.push(game.grantExp(p.uid, total));
-    expResults.value = results;
+    expResults.value = battle.grantVictoryExp(total);
     resultMsg.value = '胜利！';
   } else {
     resultMsg.value = '你的宝可梦倒下了…';
@@ -254,10 +252,7 @@ function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
     const oppLevel = sim.value?.state.combatants.filter((c) => c.side === 'enemy').reduce((s, c) => s + c.level, 0) ?? 0;
     const total = Math.max(20, Math.floor(oppLevel * 5));
     totalExp.value = total;
-    const team = game.pvpTeamInstances;
-    const results: ExpGainResult[] = [];
-    for (const p of team) results.push(game.grantExp(p.uid, Math.floor(total / Math.max(1, team.length))));
-    expResults.value = results;
+    expResults.value = battle.grantVictoryExp(total);
     resultMsg.value = `切磋胜利！击败了 ${battle.opponentName} 的队伍`;
   } else if (winner === 'enemy') {
     resultMsg.value = `切磋失利…${battle.opponentName} 的队伍更强一筹`;
@@ -267,6 +262,7 @@ function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
 }
 
 function capture(uid: string): void {
+  if (returningToWorld.value) return;
   if (game.rosterFull) return; // button is disabled; guard anyway
   const wild = battle.wild.find((w) => w.uid === uid);
   if (wild) {
@@ -281,6 +277,7 @@ function capture(uid: string): void {
 }
 
 function releaseAll(): void {
+  if (returningToWorld.value) return;
   for (const w of battle.wild) {
     const e = game.save!.pokedex[w.speciesId];
     if (e) e.released = true;
@@ -312,6 +309,7 @@ async function finalize(caught: PokemonInstance | undefined): Promise<void> {
 }
 
 async function leave(): Promise<void> {
+  if (returningToWorld.value) return;
   game.recordBattle({
     win: sim.value?.state.winner === 'player',
     expGained: totalExp.value,

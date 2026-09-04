@@ -41,11 +41,13 @@ import { testBattleOutcomes } from './battle-outcome-smoke.ts';
 import { testBattleControl } from './battle-control-smoke.ts';
 import { testBattleReadability } from './battle-readability-smoke.ts';
 import { testBattleMovement } from './battle-movement-smoke.ts';
+import { testProgress } from './progress-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
 }
 
+await testProgress();
 await testCombatantSprite();
 await testBattleStageLifecycle();
 testCombatantMotion();

@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { PlayerSave, PokemonInstance, PlayerSettings, BattleResult } from '@pokemon-online/shared';
-import { SAVE_VERSION, ROSTER_MAX, PVE_TEAM_SIZE, PVP_TEAM_SIZE } from '@pokemon-online/shared';
+import { SAVE_VERSION, ROSTER_MAX, PVE_TEAM_SIZE, PVP_TEAM_SIZE, MAX_LEVEL } from '@pokemon-online/shared';
 import { getSpecies, getMap, ITEM_MAP, MAP_MAP, expForLevel } from '@pokemon-online/config';
 import {
   createStarter, applyExp, evolve, heal, revive, cureStatus, maxHp,
-  markSeen, markCaught, addInstanceToSave, releaseInstance, breed as doBreed,
-  defaultFormation,
+  markSeen, markCaught, markOwned, addInstanceToSave, releaseInstance, breed as doBreed,
+  defaultFormation, getAvailableEvolutions,
 } from '@pokemon-online/engine';
 import { api } from '../api/client.ts';
 import { useAuthStore } from './auth.ts';
@@ -25,9 +25,7 @@ function freshSave(playerId: string, username: string, starterId: number): Playe
     position: { x: 8, y: 6, facing: 'down' },
     roster: [starter.uid],
     instances: { [starter.uid]: starter },
-    pokedex: {
-      [starterId]: { speciesId: starterId, seen: true, caught: true, firstSeenAt: now, firstCaughtAt: now, count: 1 },
-    },
+    pokedex: {},
     items: { 'poke-ball': 10, 'full-heal': 1 },
     money: 1500,
     pveTeam: [starter.uid],
@@ -50,15 +48,23 @@ export interface ExpGainResult {
   evolutions: number[];
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
 export const useGameStore = defineStore('game', () => {
   const auth = useAuthStore();
   const save = ref<PlayerSave | null>(null);
   const loading = ref(false);
+  const loaded = ref(false);
   const error = ref<string | null>(null);
+  const saveError = ref<string | null>(null);
   const saving = ref(false);
+  const unsaved = ref(false);
   const lastSavedAt = ref<number | null>(null);
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let waiters: Array<(ok: boolean) => void> = [];
+  let writeQueue: Promise<unknown> = Promise.resolve();
+  let loadRequest: Promise<boolean> | null = null;
+  let generation = 0;
+  let revision = 0;
+  let pendingWrites = 0;
 
   const hasSave = computed(() => !!save.value);
   const rosterInstances = computed<PokemonInstance[]>(() =>
@@ -84,47 +90,83 @@ export const useGameStore = defineStore('game', () => {
     return save.value?.instances[uid];
   }
 
-  async function load(): Promise<void> {
+  function load(): Promise<boolean> {
+    if (loadRequest) return loadRequest;
+    const request = loadSave();
+    loadRequest = request;
+    void request.finally(() => { if (loadRequest === request) loadRequest = null; });
+    return request;
+  }
+
+  async function loadSave(): Promise<boolean> {
+    const currentGeneration = generation;
     loading.value = true; error.value = null;
     try {
       const s = await api.getSave();
+      if (currentGeneration !== generation) return false;
       save.value = s?.version === SAVE_VERSION ? s : null;
+      loaded.value = true;
+      return true;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '加载存档失败';
+      if (currentGeneration === generation) error.value = e instanceof Error ? e.message : '加载存档失败';
+      return false;
     } finally {
-      loading.value = false;
+      if (currentGeneration === generation) loading.value = false;
     }
   }
 
-  async function startWithStarter(starterId: number): Promise<void> {
+  async function startWithStarter(starterId: number): Promise<boolean> {
     if (!auth.playerId || !auth.username) throw new Error('未登录');
-    save.value = freshSave(auth.playerId, auth.username, starterId);
-    markSeen(save.value, starterId);
-    markCaught(save.value, starterId);
-    await persist(true);
+    if (!loaded.value) return false;
+    // A failed first save keeps the same starter for retry.
+    if (!save.value) {
+      save.value = freshSave(auth.playerId, auth.username, starterId);
+      markCaught(save.value, starterId);
+    }
+    return persist(true);
   }
 
-  function persist(immediate = false): Promise<void> {
-    if (!save.value) return Promise.resolve();
+  function persist(immediate = false): Promise<boolean> {
+    if (!save.value) return Promise.resolve(false);
     save.value.updatedAt = Date.now();
-    if (immediate) return doPersist();
+    unsaved.value = true;
+    revision += 1;
     if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
     return new Promise((resolve) => {
-      saveTimer = setTimeout(async () => { await doPersist(); resolve(); }, 1200);
+      waiters.push(resolve);
+      if (immediate) flushSave();
+      else saveTimer = setTimeout(flushSave, 1200);
     });
   }
 
-  async function doPersist(): Promise<void> {
+  function flushSave(): void {
+    saveTimer = null;
     if (!save.value) return;
+    const snapshot = JSON.parse(JSON.stringify(save.value)) as PlayerSave;
+    const currentGeneration = generation;
+    const currentRevision = revision;
+    const callbacks = waiters.splice(0);
+    pendingWrites += 1;
     saving.value = true;
-    try {
-      const r = await api.putSave(save.value);
-      lastSavedAt.value = r.savedAt;
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : '保存失败';
-    } finally {
-      saving.value = false;
-    }
+    // Serialize snapshots: a slow earlier write must never overwrite a newer one.
+    writeQueue = writeQueue.then(async () => {
+      let ok = false;
+      try {
+        if (currentGeneration !== generation) return;
+        const r = await api.putSave(snapshot);
+        if (currentGeneration !== generation) return;
+        lastSavedAt.value = r.savedAt;
+        saveError.value = null;
+        if (currentRevision === revision) unsaved.value = false;
+        ok = true;
+      } catch (e) {
+        if (currentGeneration === generation) saveError.value = e instanceof Error ? e.message : '保存失败';
+      } finally {
+        if (currentGeneration === generation) saving.value = --pendingWrites > 0;
+        callbacks.forEach((resolve) => resolve(ok));
+      }
+    });
   }
 
   // ── pokedex ──
@@ -199,10 +241,10 @@ export const useGameStore = defineStore('game', () => {
     } else if (e.kind === 'cure') {
       cureStatus(target, e.statusCured);
     } else if (e.kind === 'exp') {
+      if (target.level >= MAX_LEVEL) return { ok: false, msg: '已达到等级上限，无需使用糖果' };
       if (e.magnitude === -1) {
-        // rare candy: level up by 1
-        target.level += 1;
-        target.exp = expForLevel(getSpecies(target.speciesId).growthRate, target.level);
+        const nextExp = expForLevel(getSpecies(target.speciesId).growthRate, target.level + 1);
+        applyExp(target, Math.max(0, nextExp - target.exp));
         target.currentHp = maxHp(target);
         target.status = null;
       } else {
@@ -241,8 +283,9 @@ export const useGameStore = defineStore('game', () => {
 
   function doEvolve(uid: string, toSpeciesId: number): void {
     const inst = save.value?.instances[uid];
-    if (!inst) return;
+    if (!inst || !getAvailableEvolutions(inst).includes(toSpeciesId)) return;
     evolve(inst, toSpeciesId);
+    markOwned(save.value!, toSpeciesId);
     void persist();
   }
 
@@ -299,11 +342,20 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function reset(): void {
+    generation += 1;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    waiters.splice(0).forEach((resolve) => resolve(false));
+    loadRequest = null;
+    loaded.value = false; loading.value = false;
+    error.value = null; saveError.value = null;
+    lastSavedAt.value = null; unsaved.value = false;
+    pendingWrites = 0; saving.value = false;
     save.value = null;
   }
 
   return {
-    save, loading, error, saving, lastSavedAt,
+    save, loading, loaded, error, saveError, saving, unsaved, lastSavedAt,
     hasSave, rosterInstances, pveTeamInstances, pvpTeamInstances, dexCount, dexSeen, rosterFull,
     ROSTER_MAX, PVE_TEAM_SIZE, PVP_TEAM_SIZE,
     getInstance, load, startWithStarter, persist,

@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 import type { PokemonInstance } from '@pokemon-online/shared';
 import { BattleSim, createPvpBattle } from '@pokemon-online/engine';
-import { useGameStore } from './game.ts';
+import { useGameStore, type ExpGainResult } from './game.ts';
 
 export type BattlePhase = 'fighting' | 'result';
 
@@ -14,6 +14,7 @@ export const useBattleStore = defineStore('battle', () => {
   const mapId = ref<string | undefined>(undefined);
   const opponentName = ref<string | undefined>(undefined);
   const phase = ref<BattlePhase>('fighting');
+  let rewardsGranted = false;
 
   /**
    * PVE: pveTeam (up to 3) deploys all at once (simultaneous) vs a wild group of
@@ -30,6 +31,7 @@ export const useBattleStore = defineStore('battle', () => {
     mode.value = 'pve';
     opponentName.value = undefined;
     phase.value = 'fighting';
+    rewardsGranted = false;
     sim.value = BattleSim.fromInstances({
       mode: 'pve',
       player: playerTeam,
@@ -52,15 +54,27 @@ export const useBattleStore = defineStore('battle', () => {
     mode.value = 'pvp';
     opponentName.value = name;
     phase.value = 'fighting';
+    rewardsGranted = false;
     sim.value = createPvpBattle(team, opponentTeam, game.save?.settings.battleSpeed ?? 1, game.save?.formation);
     return true;
+  }
+
+  function grantVictoryExp(total: number): ExpGainResult[] {
+    if (!sim.value?.isOver || sim.value.state.winner !== 'player' || rewardsGranted) return [];
+    rewardsGranted = true;
+    const game = useGameStore();
+    // The simulation retains all participants, including allies who fainted.
+    const uids = [...new Set(sim.value.state.combatants.filter((c) => c.side === 'player').map((c) => c.uid))];
+    const amount = mode.value === 'pve' ? total : Math.floor(total / Math.max(1, uids.length));
+    return uids.filter((uid) => game.getInstance(uid)).map((uid) => game.grantExp(uid, amount));
   }
 
   function clear(): void {
     sim.value = null;
     wild.value = [];
     phase.value = 'fighting';
+    rewardsGranted = false;
   }
 
-  return { sim, mode, wild, mapId, opponentName, phase, startWild, startPvp, clear };
+  return { sim, mode, wild, mapId, opponentName, phase, startWild, startPvp, grantVictoryExp, clear };
 });

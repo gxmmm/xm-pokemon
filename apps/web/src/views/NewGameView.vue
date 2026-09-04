@@ -14,11 +14,10 @@ const busy = ref(false);
 const chosen = computed(() => (selected.value !== null ? getSpecies(selected.value) : null));
 
 async function confirm(): Promise<void> {
-  if (selected.value === null) return;
+  if (selected.value === null || busy.value) return;
   busy.value = true;
   try {
-    await game.startWithStarter(selected.value);
-    router.replace({ name: 'world' });
+    if (await game.startWithStarter(selected.value)) await router.replace({ name: 'world' });
   } finally {
     busy.value = false;
   }
@@ -31,7 +30,7 @@ async function confirm(): Promise<void> {
       <h2 class="h-title">选择你的初始伙伴</h2>
       <p class="muted tiny">选择一位伙伴，从雾湾镇开始训练之旅。</p>
       <div class="grid grid-3 starter-grid">
-        <div v-for="id in starters" :key="id" class="starter" :class="{ active: selected === id }" @click="selected = id">
+        <div v-for="id in starters" :key="id" class="starter" :class="{ active: selected === id }" @click="!busy && !game.hasSave && (selected = id)">
           <PokemonSprite :species-id="id" :size="88" />
           <div class="bold">{{ getSpecies(id).name }}</div>
           <div class="row center" style="gap:4px">
@@ -49,8 +48,9 @@ async function confirm(): Promise<void> {
           </div>
         </div>
         <button class="gold" :disabled="busy" @click="confirm" style="margin-top:12px;width:100%">
-          {{ busy ? '创建中…' : `就决定是你了，${chosen.name}！` }}
+          {{ busy ? '保存中…' : game.hasSave ? '重试保存，开始冒险' : `就决定是你了，${chosen.name}！` }}
         </button>
+        <p v-if="game.saveError" role="alert">保存失败：{{ game.saveError }}。伙伴已保留，请重试。</p>
       </div>
     </div>
   </div>

@@ -15,6 +15,7 @@
     "build:web": "vite build --config apps/web/vite.config.ts",
     "typecheck": "vue-tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit",
     "smoke": "node scripts/run.mjs smoke",
+    "progress:browser": "node scripts/run.mjs progress-browser-report",
     "db:apply": "wrangler d1 execute pokemon-online --local --file=database/schema.sql",
     "db:apply:remote": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
     "deploy": "npm run build && wrangler deploy",

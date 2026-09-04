@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 // One runner keeps argument forwarding and temporary-bundle cleanup consistent.
 const [name, ...args] = process.argv.slice(2);
-const browserReports = new Set(['battle-browser-report', 'visual-browser-report']);
+const browserReports = new Set(['battle-browser-report', 'visual-browser-report', 'progress-browser-report']);
 const entries = new Set(['smoke', 'balance-report', 'tactics-report', 'visual-report', ...browserReports]);
 if (!entries.has(name)) throw new Error('Unknown script: ' + name);
 const output = resolve(`.script-${name}-${process.pid}.mjs`);
