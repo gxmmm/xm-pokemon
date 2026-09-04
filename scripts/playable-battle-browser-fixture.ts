@@ -1,7 +1,8 @@
 import { useGameStore } from '../apps/web/src/stores/game.ts';
 import { useBattleStore } from '../apps/web/src/stores/battle.ts';
 import { router } from '../apps/web/src/router.ts';
-import { BattleSim, createWildInstance, maxHp } from '@pokemon-online/engine';
+import { BattleSim, createWildInstance, maxHp, markOwned } from '@pokemon-online/engine';
+import { PASSIVE_SKILLS } from '@pokemon-online/config';
 
 let frameTime = 0;
 const originalFrame = window.requestAnimationFrame.bind(window);
@@ -55,4 +56,17 @@ export function read() {
     healed: game.rosterInstances.every((p) => p.currentHp === maxHp(p) && p.status === null),
     experience: game.rosterInstances.map((p) => ({ uid: p.uid, exp: p.exp })),
   };
+}
+
+export async function visit(path: string): Promise<void> { await router.push(path); }
+
+export async function prepareCollection(): Promise<string> {
+  const game = useGameStore();
+  const pet = createWildInstance(1, 70);
+  pet.origin = 'bred';
+  pet.passiveSkills = PASSIVE_SKILLS.slice(0, 24).map((p) => p.id);
+  game.save!.instances[pet.uid] = pet;
+  game.save!.roster.push(pet.uid);
+  markOwned(game.save!, pet.speciesId);
+  return pet.uid;
 }

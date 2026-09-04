@@ -86,7 +86,7 @@ function backToWorld(): void { open.value = false; router.push({ name: 'world' }
 }
 .drawer {
   position: absolute; right: 0; top: 0; bottom: 0; z-index: 46;
-  width: 280px; padding: 14px; gap: 10px;
+  width: 280px; max-width:100%; padding: 14px 14px 88px; gap: 10px; overflow-y:auto;
   display: flex; flex-direction: column;
   background: linear-gradient(180deg, #1c2740, #141c30);
   border-left: 2px solid rgba(255,203,5,.3);

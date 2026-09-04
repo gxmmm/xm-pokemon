@@ -147,6 +147,10 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
 .team-layout { display:flex; gap:12px; align-items:flex-start; }
 .team-left { flex:1; min-width:0; }
 .team-right { width: 460px; flex-shrink:0; }
+@media (max-width: 820px) {
+  .team-layout { flex-direction:column; }
+  .team-left, .team-right { width:100%; }
+}
 .tabs { display:flex; gap:6px; }
 .tabs button { flex:1; background:var(--panel-2); color:var(--ink); }
 .tabs button.active { background:var(--accent-2); color:#fff; }
@@ -170,4 +174,7 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
 .form-cell.occ { background:var(--accent); opacity:1; }
 .form-cell.sel { outline:2px solid #fff; }
 .form-cell .ord { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:700; }
+@media (max-width:820px) {
+  .slot .ord, .form-slot-btn .ord, .form-cell .ord { font-size:12px; }
+}
 </style>

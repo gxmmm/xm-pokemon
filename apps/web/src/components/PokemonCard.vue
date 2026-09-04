@@ -56,4 +56,9 @@ const hpColor = computed(() => hpRatio.value > 0.5 ? '#4caf50' : hpRatio.value >
 .pcard-top { display: flex; gap: 8px; align-items: center; }
 .pcard.compact .pcard-top { gap: 6px; }
 .pcard-info { flex: 1; min-width: 0; }
+@media (max-width:820px) {
+  .pcard.compact .pcard-top { flex-direction:column; }
+  .pcard-info { width:100%; }
+  .pcard-info .between { flex-wrap:wrap; }
+}
 </style>

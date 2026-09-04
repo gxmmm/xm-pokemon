@@ -127,8 +127,8 @@ async function main(): Promise<void> {
         await page.getByRole('button', { name: '暂停', exact: true }).click();
         await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-desktop.png') });
         await page.setViewportSize({ width: 390, height: 844 });
-        const narrow = await page.locator('.app-stage').evaluate((element) => ({ width: element.getBoundingClientRect().width, transform: getComputedStyle(element).transform }));
-        assert.equal(narrow.transform, 'none', 'responsive sandbox was scaled twice');
+        const narrow = await page.locator('.app-stage').evaluate((element) => ({ width: element.getBoundingClientRect().width, layoutWidth: (element as HTMLElement).offsetWidth }));
+        assert.equal(narrow.layoutWidth, narrow.width, 'responsive sandbox was scaled twice');
         assert.equal(narrow.width, 390, 'responsive sandbox did not fill the viewport');
         assert(await page.locator('.arena').evaluate((element) => element.getBoundingClientRect().height >= 400), 'narrow battlefield became a miniature');
         await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-narrow.png') });

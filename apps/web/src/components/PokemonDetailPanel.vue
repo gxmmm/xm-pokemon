@@ -232,4 +232,5 @@ function skillTip(s: Skill | undefined): string {
 .stat-mini { display:grid; grid-template-columns:repeat(2,1fr); gap:2px 6px; font-size:12px; }
 .stat-mini b { font-weight:800; color:var(--ink); }
 .stat-mini .muted { font-weight:400; }
+@media (max-width:820px) { .apt-label, .apt-val, .bt-tag { font-size:12px; } }
 </style>

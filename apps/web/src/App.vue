@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, watch } from 'vue';
+import { onMounted, onUnmounted, computed, watch, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from './stores/auth.ts';
 import { useGameStore } from './stores/game.ts';
@@ -10,6 +10,8 @@ const auth = useAuthStore();
 const game = useGameStore();
 const router = useRouter();
 const route = useRoute();
+const view = ref<HTMLElement | null>(null);
+watch(() => route.path, () => view.value?.scrollTo({ top: 0, left: 0 }));
 
 const showNav = computed(() => auth.isAuthenticated && game.hasSave && route.name !== 'new' && route.name !== 'load-error');
 // battle manages its own controls + result modal; hide the global menu/back there
@@ -56,7 +58,7 @@ watch(() => auth.isAuthenticated, (v) => {
 
 <template>
   <div class="app-stage" :class="{ 'battle-sandbox-stage': route.name === 'battle-sandbox' }">
-    <main class="view">
+    <main ref="view" class="view" :class="{ 'with-menu': showChrome && route.name !== 'world' }">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -74,9 +76,4 @@ watch(() => auth.isAuthenticated, (v) => {
 
 <style scoped>
 .save-error { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:60; display:flex; align-items:center; gap:12px; max-width:90%; padding:10px 14px; border:1px solid var(--bad); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; }
-/* This sandbox already reflows its HUD on narrow screens. Do not scale that
- * responsive layout down again; playable world/battle keep the fixed stage. */
-@media (max-width: 820px) {
-  .app-stage.battle-sandbox-stage { width: 100%; height: 100%; transform: none; }
-}
 </style>

@@ -168,7 +168,7 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
             <span class="gold-txt">资质超限：{{ overCeilingStats(result.offspring).map(k=>IV_LABEL[k]).join('、') }}</span>
           </div>
         </div>
-        <div class="tiny muted">详情见右侧面板。</div>
+        <div class="tiny muted">在宝可梦详情面板查看资质与技能。</div>
       </div>
     </div>
 
@@ -203,4 +203,11 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
 .card-actions button { flex:1; font-size:11px; padding:4px 4px; }
 
 .gold-txt { color:var(--gold); font-weight:800; }
+@media (max-width: 820px) {
+  .breed-layout { flex-direction:column; }
+  .breed-left, .breed-right { width:100%; }
+  .card-actions { flex-wrap:wrap; }
+  .card-actions button, .slot-label { font-size:12px; }
+  .roster-cell .badge, .roster-cell .team-tag { font-size:12px; }
+}
 </style>

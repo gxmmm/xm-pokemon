@@ -198,7 +198,7 @@ async function playableWorldObservation(browser: Browser): Promise<void> {
     console.log('world flow: battle entered');
     await page.getByRole('button', { name: '1x', exact: true }).click();
     await page.getByRole('button', { name: '2x', exact: true }).click();
-    await page.getByRole('button', { name: '⏭', exact: true }).click();
+    await page.getByRole('button', { name: '跳过', exact: true }).click();
     await page.getByRole('button', { name: /^(返回|全部放生)$/ }).click({ timeout: 150_000 });
     await at('illusion-tower-1', 8, 12);
     assert(await page.locator('canvas').count() === 1, 'world-battle-world leaves one canvas');

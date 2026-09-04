@@ -350,6 +350,14 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
 <template>
   <div class="battle" v-if="sim">
+    <div class="battle-toolbar">
+      <span class="bold tiny">{{ running ? '自动战斗中' : ended ? '战斗结束' : '战斗已暂停' }}</span>
+      <div class="arena-controls">
+        <button class="sm ghost" :disabled="ended" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
+        <button class="sm ghost" :disabled="ended" @click="running = !running">{{ running ? '暂停' : '继续' }}</button>
+        <button class="sm ghost" :disabled="ended" @click="skip">跳过</button>
+      </div>
+    </div>
     <div class="battle-row">
       <!-- LEFT: player team (outside arena) -->
       <div class="side-panel player-side">
@@ -379,11 +387,6 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
-        <div class="arena-controls">
-          <button class="sm ghost" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
-          <button class="sm ghost" @click="running = !running">{{ running ? '⏸' : '▶' }}</button>
-          <button class="sm ghost" @click="skip">⏭</button>
-        </div>
       </div>
 
       <!-- RIGHT: enemy team (outside arena) -->
@@ -410,7 +413,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
     </div>
 
     <div class="modal-backdrop" v-if="ended">
-      <div class="modal">
+      <div class="modal battle-result" role="dialog" aria-modal="true" aria-label="战斗结算">
         <h2 class="h-title center">{{ resultMsg }}</h2>
         <details v-if="damageSummary.length" class="damage-report" open>
           <summary>伤害统计 · 战斗 {{ battleDuration.toFixed(1) }} 秒</summary>
@@ -541,9 +544,9 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .tactic-ribbon span { display:block; font-size:10px; font-weight:900; letter-spacing:.4px; }.tactic-ribbon small { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; opacity:.92; }
 .tactic-ribbon.finish { background:rgba(196,78,64,.91); }.tactic-ribbon.protect { background:rgba(57,119,191,.91); }.tactic-ribbon.pressure { background:rgba(143,80,176,.91); }.tactic-ribbon.split { background:rgba(62,122,111,.91); }
 
-.arena-controls {
-  position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 5;
-}
+.battle-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; }
+.arena-controls { display:flex; gap:6px; }
+.arena-controls button { min-height:40px; min-width:44px; }
 .arena-controls button { background: rgba(28,39,64,.8); }
 .damage-report { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
 .damage-report summary { cursor: pointer; padding: 7px 9px; font-size: 12px; font-weight: 800; color: var(--ink); }
@@ -576,4 +579,20 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .result-log-list { max-height: 180px; overflow-y: auto; border-top: 1px solid var(--line); padding: 7px 9px; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .result-log-list > div + div { margin-top: 2px; }
 .exp-list { background: var(--panel-2); border-radius: 8px; padding: 8px; }
+.battle-result { max-width:640px; }
+.damage-side-head, .damage-side-head strong, .damage-member-top, .damage-member b,
+.damage-member small, .contribution-line, .recap-metrics, .recap-skills, .result-log-list { font-size:12px; }
+@media (max-width: 820px) {
+  .battle { height:auto; min-height:100%; }
+  .battle-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
+  .arena { grid-column:1 / -1; grid-row:1; width:100%; }
+  .side-panel { width:auto; min-width:0; overflow:visible; }
+  .mc-head { flex-wrap:wrap; }
+  .mc-hp { flex-basis:100%; }
+  .side-label, .cd-chip, .status-tag, .cast-tag, .tactic-ribbon span { font-size:12px; }
+  .tactic-ribbon small { display:none; }
+  .damage-sides { grid-template-columns:1fr; }
+  .contribution-line { flex-wrap:wrap; }
+  .contribution-line > span:last-child { white-space:normal; }
+}
 </style>

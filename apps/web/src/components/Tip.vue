@@ -38,13 +38,13 @@ function applyPosition(): void {
   let localLeft: number, localTop: number, localW: number, localBottom: number, boundsW: number, boundsH: number;
   if (stage) {
     const sr = stage.getBoundingClientRect();
-    const scale = sr.width / 1280 || 1;
+    const scale = sr.width / stage.offsetWidth || 1;
     localLeft = (r.left - sr.left) / scale;
     localTop = (r.top - sr.top) / scale;
     localW = r.width / scale;
     localBottom = localTop + r.height / scale;
-    boundsW = 1280;
-    boundsH = 800;
+    boundsW = stage.offsetWidth;
+    boundsH = stage.offsetHeight;
   } else {
     localLeft = r.left; localTop = r.top; localW = r.width; localBottom = r.bottom;
     boundsW = window.innerWidth; boundsH = window.innerHeight;

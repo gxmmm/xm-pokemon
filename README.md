@@ -234,7 +234,7 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 | `npm run typecheck` | vue-tsc + tsc 类型检查 |
 | `npm run smoke` | 引擎、城镇／塔连通性、全图鉴遇敌与战斗配置冒烟测试 |
 | `npm run progress:browser` | 使用隔离的内存 API 验收存档读取、失败重试、新游戏与安全退出，不访问真实账号 |
-| `npm run playable:browser` | 使用正式战斗页面与隔离数据验收倍速、暂停跳过、捕捉／放生／失败返回及结算次数 |
+| `npm run playable:browser` | 正式页面隔离验收：倍速、暂停跳过、结算次数、展开战报操作；390px页面布局与字号、技能说明定位、菜单和进化确认 |
 | `npm run visuals:browser` | 城镇＋五层塔截图、场景生命周期和隔离的真实游戏往返验收 |
 | `npm run visuals:report` | 世界预算、配置基线与技能视觉配方检查 |
 | `npm run visuals:battle` | 无存档战斗沙盒的真实浏览器生命周期、窄屏与持续运行验收 |

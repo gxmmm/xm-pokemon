@@ -17,4 +17,5 @@ const tip = computed(() => typeTooltipText(props.type));
 
 <style scoped>
 .type-badge.sm { font-size: 10px; padding: 1px 6px; }
+@media (max-width:820px) { .type-badge.sm { font-size:12px; } }
 </style>

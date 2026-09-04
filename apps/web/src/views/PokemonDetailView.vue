@@ -277,5 +277,13 @@ async function release(): Promise<void> {
 .chip.faded { opacity:.5; }
 .role-chip { background:rgba(184,134,11,.16); color:#7a5600; }
 .bt-tag { display:inline-block; margin-left:4px; padding:0 6px; border-radius:6px; background:var(--gold); color:#333; font-weight:800; font-size:11px; }
-@media (max-width:760px) { .pokemon-hero { grid-template-columns:auto minmax(0,1fr); } .hero-progress { grid-column:1 / -1; } .detail-columns { grid-template-columns:1fr; } .stat-dashboard { grid-template-columns:repeat(2,1fr); } .apt-grid { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:820px) {
+  .pokemon-hero { grid-template-columns:auto minmax(0,1fr); }
+  .hero-progress { grid-column:1 / -1; }
+  .detail-columns { grid-template-columns:1fr; }
+  .stat-dashboard { grid-template-columns:repeat(2,1fr); }
+  .apt-grid { grid-template-columns:repeat(3,1fr); }
+  .stat-card, .apt-chip, .bt-tag { font-size:12px; }
+  .large-skill-grid .skill-ic { width:40px; height:40px; }
+}
 </style>

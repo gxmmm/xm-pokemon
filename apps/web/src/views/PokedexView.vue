@@ -243,7 +243,8 @@ function skillTip(s: Skill | undefined): string {
 .silhouette.big { font-size: 56px; opacity:.4; }
 @media (max-width: 900px) {
   .dex-layout { height:auto; min-height:0; flex-direction:column; }
-  .dex-left { min-height:420px; }
+  .dex-left { height:560px; flex:none; }
   .dex-right { width:auto; max-height:none; }
+  .dex-cell .num, .lv-chip { font-size:12px; }
 }
 </style>
