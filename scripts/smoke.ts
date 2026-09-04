@@ -40,6 +40,7 @@ import { testBattleCueTiming } from './battle-cue-timing-smoke.ts';
 import { testBattleOutcomes } from './battle-outcome-smoke.ts';
 import { testBattleControl } from './battle-control-smoke.ts';
 import { testBattleReadability } from './battle-readability-smoke.ts';
+import { testBattleMovement } from './battle-movement-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -48,6 +49,7 @@ function assert(cond: boolean, msg: string): void {
 await testCombatantSprite();
 await testBattleStageLifecycle();
 testCombatantMotion();
+testBattleMovement();
 testSkillVfx();
 testBattleAnchors();
 testBattleCueTiming();

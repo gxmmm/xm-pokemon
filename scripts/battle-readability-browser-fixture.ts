@@ -62,6 +62,22 @@ export async function createBattleReadabilityFixture() {
         await stage.playBattleCues([{ type: 'animation', subjectId: 'unit-2', animation: 'interrupt' }]);
       }
     },
+    async movement() {
+      label.textContent = '移动避让验收 · 固定 3v3 / 0.55 秒 · 无攻击与镜头偏移';
+      const team = (ids: number[], side: string) => ids.map((id, index) => ({ ...createWildInstance(id, 100, { rng: () => 0.5 }), uid: `${side}${index}` }));
+      const battle = new BattleSim({ mode: 'pvp', player: team([6, 25, 94], 'p'), enemy: team([3, 9, 143], 'e'), seed: 904 });
+      let minimum = Infinity;
+      for (let tick = 0; tick < 11; tick++) {
+        battle.tick(0.05);
+        const alive = battle.state.combatants.filter((c) => c.alive);
+        alive.forEach((a, index) => alive.slice(index + 1).forEach((b) => {
+          minimum = Math.min(minimum, Math.hypot(a.pixel.x - b.pixel.x, a.pixel.y - b.pixel.y));
+        }));
+      }
+      stage.setVisualSettings({ cameraIntensity: 'off' });
+      await stage.enterBattle({ biomeId: 'grass', combatants: battle.state.combatants });
+      return { minimum, time: battle.state.time };
+    },
     destroy() { stage.unmount(); section.remove(); },
   };
 }

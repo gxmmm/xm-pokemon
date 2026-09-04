@@ -29,6 +29,23 @@ export function distCells(a: { x: number; y: number }, b: { x: number; y: number
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+type GridPoint = { x: number; y: number };
+
+/** Minimum distance between two remaining travel segments, regardless of each
+ * actor's progress. Covers crossing diagonals, followers and cast-position snaps. */
+export function travelPathDistance(a: GridPoint, b: GridPoint, c: GridPoint, d: GridPoint): number {
+  const cross = (p: GridPoint, q: GridPoint, r: GridPoint) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return 0;
+  return Math.min(pointPathDistance(a, c, d), pointPathDistance(b, c, d), pointPathDistance(c, a, b), pointPathDistance(d, a, b));
+}
+
+function pointPathDistance(point: GridPoint, from: GridPoint, to: GridPoint): number {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared));
+  return Math.hypot(point.x - from.x - t * dx, point.y - from.y - t * dy);
+}
+
 /**
  * Is a cell inside the playable oval arena? The arena is the ellipse inscribed
  * in the grid rectangle (semi-axes cols/2, rows/2), shrunk slightly (0.9) so

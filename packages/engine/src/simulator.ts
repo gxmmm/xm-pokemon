@@ -1,12 +1,12 @@
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
-import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualProfileFor, NORMAL_ATTACK_RANGED_CELLS } from '@pokemon-online/config';
+import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualProfileFor, NORMAL_ATTACK_RANGED_CELLS, BATTLE_MOVEMENT } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
 import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
 import { decide, isHardCc } from './ai.ts';
-import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena } from './grid.ts';
+import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance } from './grid.ts';
 
 export interface BattleSimOptions {
   mode: 'pve' | 'pvp';
@@ -364,14 +364,23 @@ export class BattleSim {
     return movementStepIntervalForSpeed(effectiveStat(c, 'spd'));
   }
 
-  private isCellFree(cell: { x: number; y: number }, exceptUid: string): boolean {
-    return isCellInArena(cell.x, cell.y) && !this.state.combatants.some((other) => other.alive
-      && other.uid !== exceptUid && other.position.x === cell.x && other.position.y === cell.y);
+  private canStepTo(c: BattleCombatant, cell: { x: number; y: number }): boolean {
+    return isCellInArena(cell.x, cell.y) && !this.state.combatants.some((other) => {
+      if (!other.alive || other.uid === c.uid) return false;
+      if (other.position.x === cell.x && other.position.y === cell.y) return true;
+      const gap = travelPathDistance(c.pixel, c.pixel, other.pixel, other.position);
+      const clearance = Math.min(BATTLE_MOVEMENT.pathClearance, gap);
+      if (travelPathDistance(c.pixel, cell, other.pixel, other.position) < clearance - 1e-9) return true;
+      // Legacy/custom formations can already overlap. Allow only escape that
+      // increases clearance without squeezing closer along the way.
+      return gap < BATTLE_MOVEMENT.pathClearance - 1e-9
+        && travelPathDistance(cell, cell, other.pixel, other.position) <= gap + 1e-9;
+    });
   }
 
-  /** Smooth the render position toward the logical cell center (visual only).
-   * A slightly longer easing window avoids units looking as if they blink between
-   * adjacent cells when several fighters reposition at once. */
+  /** Ease engine-owned travel coordinates toward the logical cell center.
+   * Swept-path occupancy uses these coordinates; attack range still uses cells.
+   * Presentation consumes them without inventing a separate avoidance path. */
   private updatePixel(c: BattleCombatant, dt: number): void {
     const k = 1 - Math.exp(-dt * 9);
     c.pixel.x += (c.position.x - c.pixel.x) * k;
@@ -455,7 +464,7 @@ export class BattleSim {
       add(c.position.x - lane, c.position.y);
     }
     for (const cell of candidates) {
-      if (this.isCellFree(cell, c.uid)) {
+      if (this.canStepTo(c, cell)) {
         c.position.x = cell.x;
         c.position.y = cell.y;
         c.moveCd = this.stepDelay(c);

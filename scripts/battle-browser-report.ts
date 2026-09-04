@@ -66,6 +66,8 @@ async function main(): Promise<void> {
     assert(ready, `Vite startup timed out: ${serverLog}`);
     browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle', '--disable-gpu-vsync'] });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+    // Software-rendered acceptance can contend with Vite's first route compile.
+    page.setDefaultNavigationTimeout(60000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -303,6 +305,13 @@ async function main(): Promise<void> {
     await page.screenshot({ path: resolve(OUTPUT, 'readability-real-interrupt.png') });
     await page.clock.runFor(1200);
     assert((await page.evaluate(() => window.__READABILITY_FIXTURE__.read())).settled);
+    const movement = await page.evaluate(() => window.__READABILITY_FIXTURE__.movement());
+    assert(movement.minimum >= 0.5 - 1e-7, 'real engine opening respects movement clearance');
+    await page.clock.runFor(400);
+    const movingScene = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+    assert.equal(movingScene.combatantCount, 6);
+    assert(Object.values(movingScene.motions).every((model) => model.spriteReady && model.motion === 'idle'));
+    await page.screenshot({ path: resolve(OUTPUT, 'occlusion-movement-fixed.png') });
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
     console.log('✓ actual browser: concurrent attacks survive repeated damage; real interruption clears charge');
     console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
