@@ -121,7 +121,7 @@ export class BattleCombatantLayer {
   }
 
   private remove(uid: string): void {
-    this.views.get(uid)?.destroy();
+    this.views.get(uid)?.destroy({ children: true });
     this.views.delete(uid);
     this.positions.remove(uid);
     this.terrainPlans.delete(uid);

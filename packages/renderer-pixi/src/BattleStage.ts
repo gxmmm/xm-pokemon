@@ -47,32 +47,53 @@ export class BattleStage implements BattleRenderer {
   private transitionLayer: Graphics | null = null;
   private drawCallObserver: DrawCallObserver | null = null;
   private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
+  private lifecycleVersion = 0;
+  private battleVersion = 0;
+  private cancelTransition: (() => void) | null = null;
 
   async mount(container: HTMLElement): Promise<void> {
     this.unmount();
+    const version = this.lifecycleVersion;
     this.mountedContainer = container;
     const app = new Application();
-    await app.init({
-      width: DESIGN_WIDTH,
-      height: DESIGN_HEIGHT,
-      background: '#10213a',
-      antialias: true,
-      autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-      preference: 'webgl',
-    });
-    app.canvas.style.cssText = 'display:block;width:100%;height:100%;';
-    container.replaceChildren(app.canvas);
-    this.app = app;
-    this.drawCallObserver = new DrawCallObserver((app.renderer as unknown as { gl?: WebGLRenderingContext }).gl ?? null);
-    this.installStage();
-    this.resizeToContainer();
-    this.resizeObserver = new ResizeObserver(() => this.resizeToContainer());
-    this.resizeObserver.observe(container);
-    app.ticker.add((ticker) => this.update(Math.min(0.05, ticker.deltaTime / 60)));
+    try {
+      await app.init({
+        width: DESIGN_WIDTH,
+        height: DESIGN_HEIGHT,
+        background: '#10213a',
+        antialias: true,
+        autoDensity: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        preference: 'webgl',
+      });
+      if (version !== this.lifecycleVersion) {
+        this.disposeApplication(app);
+        return;
+      }
+      app.canvas.style.cssText = 'display:block;width:100%;height:100%;';
+      container.replaceChildren(app.canvas);
+      this.app = app;
+      this.drawCallObserver = new DrawCallObserver((app.renderer as unknown as { gl?: WebGLRenderingContext }).gl ?? null);
+      this.installStage();
+      this.resizeToContainer();
+      this.resizeObserver = new ResizeObserver(() => this.resizeToContainer());
+      this.resizeObserver.observe(container);
+      app.ticker.add((ticker) => this.update(Math.min(0.05, ticker.deltaTime / 60)));
+    } catch (error) {
+      const current = version === this.lifecycleVersion;
+      if (this.app === app) this.unmount();
+      else this.disposeApplication(app);
+      if (current) {
+        this.mountedContainer = null;
+        throw error;
+      }
+    }
   }
 
   unmount(): void {
+    this.lifecycleVersion++;
+    this.battleVersion++;
+    this.cancelTransition?.();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.effectPool.clear();
@@ -80,16 +101,27 @@ export class BattleStage implements BattleRenderer {
     this.combatants.clear();
     this.camera.reset();
     this.environmentView.clear();
+    this.overlay.removeChildren().forEach((child) => child.destroy());
     this.battleArtAssets.clear();
     this.environmentBackgroundTexture = null;
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
-    this.app?.destroy(true, { children: true, texture: true, textureSource: true });
+    // These empty containers belong to the stage instance, not one Application.
+    // Detach them before recursive application disposal so remount can reuse them.
+    this.root?.removeChildren();
+    if (this.app) this.disposeApplication(this.app);
     this.app = null;
     this.root = null;
     this.transitionLayer = null;
     this.mountedContainer?.replaceChildren();
     this.mountedContainer = null;
+  }
+
+  private disposeApplication(app: Application): void {
+    // init() can fail before a renderer exists. Shared asset textures must not
+    // be destroyed here: Pixi Assets may reuse them in the next mounted stage.
+    if (app.renderer) app.destroy(true, { children: true });
+    else app.stage?.destroy({ children: true });
   }
 
   setVisualSettings(settings?: VisualRuntimeSettings): void {
@@ -131,23 +163,38 @@ export class BattleStage implements BattleRenderer {
   }
 
   private async animateTransitionOverlay(color: string, peakAlpha: number, durationMs: number): Promise<void> {
+    this.cancelTransition?.();
     const overlay = this.transitionLayer;
     if (!overlay) return;
     const startedAt = performance.now();
     await new Promise<void>((resolve) => {
+      let frame = 0;
+      let finished = false;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        cancelAnimationFrame(frame);
+        if (!overlay.destroyed) overlay.clear();
+        if (this.cancelTransition === finish) this.cancelTransition = null;
+        resolve();
+      };
+      this.cancelTransition = finish;
       const draw = (now: number): void => {
+        if (finished) return;
         const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
         const alpha = Math.min(this.visualSettings.reduceFlicker ? 0.32 : peakAlpha, peakAlpha) * Math.sin(progress * Math.PI);
         overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color, alpha });
-        if (progress < 1) requestAnimationFrame(draw);
-        else { overlay.clear(); resolve(); }
+        if (progress < 1) frame = requestAnimationFrame(draw);
+        else finish();
       };
-      requestAnimationFrame(draw);
+      frame = requestAnimationFrame(draw);
     });
   }
 
   async enterBattle(input: BattleRenderInput): Promise<void> {
-    this.biomeId = input.biomeId;
+    if (!this.app) return;
+    const lifecycle = this.lifecycleVersion;
+    const battle = ++this.battleVersion;
     const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).asset);
     const spec = battleEnvironmentFor(input.biomeId);
     const environmentEntry = spec.art ? BATTLE_ASSET_BY_ID[spec.art.backgroundAssetId] : undefined;
@@ -155,16 +202,24 @@ export class BattleStage implements BattleRenderer {
       environmentEntry ? this.battleArtAssets.load(environmentEntry) : Promise.resolve(null),
       this.battleArtAssets.preload(entries),
     ]);
+    if (!this.app || lifecycle !== this.lifecycleVersion || battle !== this.battleVersion) return;
+    this.effectPool.clear();
+    this.cueScheduler.clear();
+    this.combatants.clear();
+    this.camera.reset();
+    this.biomeId = input.biomeId;
     this.environmentBackgroundTexture = environmentTexture;
     this.drawEnvironment();
     this.applyBattleSnapshot({ time: 0, combatants: input.combatants });
   }
 
   applyBattleSnapshot(snapshot: BattleRenderSnapshot): void {
+    if (!this.app) return;
     this.combatants.applySnapshot(snapshot, this.biomeId);
   }
 
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {
+    if (!this.app) return;
     for (const cue of cues) {
       const ready = this.cueScheduler.accept(cue);
       if (ready) this.playReadyCue(ready);

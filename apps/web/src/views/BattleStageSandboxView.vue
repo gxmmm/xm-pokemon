@@ -15,6 +15,8 @@ const bridge = new BattlePresentationBridge();
 let sim: BattleSim | null = null;
 let raf = 0;
 let lastFrame = 0;
+let disposed = false;
+let resetVersion = 0;
 
 function makeSimulation(): BattleSim {
   return new BattleSim({
@@ -27,9 +29,14 @@ function makeSimulation(): BattleSim {
 }
 
 async function resetBattle(): Promise<void> {
-  sim = makeSimulation();
-  const presentation = bridge.reset(sim)!;
+  if (disposed) return;
+  const version = ++resetVersion;
+  const nextSim = makeSimulation();
+  sim = null;
+  const presentation = bridge.reset(nextSim)!;
   await stage.enterBattle({ biomeId: biomeId.value, combatants: presentation.combatants });
+  if (disposed || version !== resetVersion) return;
+  sim = nextSim;
   stage.applyBattleSnapshot(presentation);
   simulationTime.value = 0;
   status.value = `${biomeId.value} 环境样板就绪：3v1 自动战斗，Pixi 仅消费 presentation snapshot 与 directed cues。`;
@@ -38,6 +45,7 @@ async function resetBattle(): Promise<void> {
 function toggle(): void { running.value = !running.value; }
 
 function frame(now: number): void {
+  if (disposed) return;
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (sim && running.value) {
@@ -57,13 +65,17 @@ function frame(now: number): void {
 
 watch(biomeId, () => { void resetBattle(); });
 onMounted(async () => {
-  if (!viewport.value) return;
+  if (disposed || !viewport.value) return;
   await stage.mount(viewport.value);
+  if (disposed) return;
   await resetBattle();
+  if (disposed) return;
   lastFrame = performance.now();
   raf = requestAnimationFrame(frame);
 });
 onUnmounted(() => {
+  disposed = true;
+  resetVersion++;
   cancelAnimationFrame(raf);
   stage.unmount();
 });
