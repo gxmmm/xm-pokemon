@@ -320,12 +320,22 @@ async function main(): Promise<void> {
     assert.equal(standingScene.combatantCount, 6);
     assert(Object.values(standingScene.motions).every((model) => model.spriteReady && model.motion === 'idle'));
     await page.screenshot({ path: resolve(OUTPUT, 'occlusion-standing-fixed.png') });
+    for (const biome of BIOMES) {
+      const points = await page.evaluate((id) => window.__READABILITY_FIXTURE__.projection(id), biome);
+      assert(points.every((point) => point.y >= 294 && point.y <= 670), 'projection boundary anchors stay within the ground plane');
+      await page.clock.runFor(400);
+      const scene = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+      assert.equal(scene.combatantCount, 6);
+      assert(Object.values(scene.motions).every((model) => model.spriteReady && model.motion === 'idle'));
+      await page.screenshot({ path: resolve(OUTPUT, `projection-edge-${biome}.png`) });
+    }
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
     console.log('✓ actual browser: concurrent attacks survive repeated damage; real interruption clears charge');
     console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
     assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     console.log('✓ actual browser: engine-owned allied stops and neutral opening/mid-fight snapshots');
+    console.log('✓ actual browser: five-biome projection edges and central small-model visibility');
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {

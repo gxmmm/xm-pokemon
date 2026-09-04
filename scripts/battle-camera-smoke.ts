@@ -3,8 +3,29 @@ import { Container } from 'pixi.js';
 import { BATTLE_ENVIRONMENTS, BATTLE_CAMERA_MOTION } from '@pokemon-online/config';
 import type { BattleCameraPlan } from '@pokemon-online/shared';
 import { BattleCameraController } from '../packages/renderer-pixi/src/BattleCameraController.ts';
+import { projectBattleGroundPoint } from '../packages/renderer-pixi/src/battle-ground.ts';
+import { isCellInArena } from '../packages/engine/src/grid.ts';
 
 export function testBattleCamera(): void {
+  const previousCameras = { grass: [15, 36, 448], cave: [14, 38, 452], water: [16, 34, 442], dragon: [14.5, 37, 450], arena: [17, 39, 454] } as const;
+  for (const environment of Object.values(BATTLE_ENVIRONMENTS)) {
+    const camera = environment.camera;
+    const [height, pitchDegrees, principalY] = previousCameras[environment.id];
+    const previous = { ...camera, height, pitchDegrees, principal: { x: 640, y: principalY } };
+    const depthGap = (spec: typeof camera) => projectBattleGroundPoint(10, 9, spec).y - projectBattleGroundPoint(10, 7, spec).y;
+    assert(depthGap(camera) > depthGap(previous) * 1.05, `${environment.id}: central depth is visibly expanded`);
+    if (environment.id === 'grass') assert(depthGap(camera) > depthGap(previous) * 1.15);
+    for (let x = 0; x < 20; x++) for (let y = 0; y < 14; y++) {
+      if (!isCellInArena(x, y)) continue;
+      const point = projectBattleGroundPoint(x, y, camera);
+      assert(Object.values(point).every(Number.isFinite));
+      assert(point.x >= 280 && point.x <= 1000 && point.y >= 294 && point.y <= 670,
+        `${environment.id}: playable feet stay on the ground plane with a foreground margin`);
+      assert(point.scale >= 0.76 && point.scale <= 1.16, 'existing model perspective limits remain intact');
+      if (isCellInArena(x, y + 1)) assert(projectBattleGroundPoint(x, y + 1, camera).y > point.y, 'depth order never folds');
+    }
+  }
+  assert(projectBattleGroundPoint(10, 0, BATTLE_ENVIRONMENTS.grass.camera).y >= 325, 'grass far edge stays aligned with the bitmap clearing');
   const spec = BATTLE_ENVIRONMENTS.grass.camera;
   const points = new Map([['left', { x: 100, y: 200 }], ['right', { x: 1000, y: 400 }]]);
   const camera = new BattleCameraController((uid) => points.get(uid), () => spec);

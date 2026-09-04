@@ -1,4 +1,6 @@
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
+import { BATTLE_ENVIRONMENTS, type BattleEnvironmentId } from '@pokemon-online/config';
+import { projectBattleGroundPoint } from '../packages/renderer-pixi/src/battle-ground.ts';
 import type { BattleCue, CameraPlan } from '@pokemon-online/presentation';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
 import type { CombatantView } from '../packages/renderer-pixi/src/CombatantView.ts';
@@ -81,6 +83,14 @@ export async function createBattleReadabilityFixture() {
       // Keep authoritative positions; remove only charge poses to isolate spacing.
       await stage.enterBattle({ biomeId: 'grass', combatants: battle.state.combatants.map((c) => ({ ...c, castProgress: null })) });
       return { minimum, allyDestinationMinimum, time: battle.state.time };
+    },
+    async projection(biomeId: BattleEnvironmentId) {
+      label.textContent = `投影边界验收 · ${biomeId} · 远端 / 近端 / 左右边缘 / 中央小体型`;
+      const cells = [{ x: 1, y: 7 }, { x: 9, y: 0 }, { x: 18, y: 7 }, { x: 10, y: 13 }, { x: 10, y: 6 }, { x: 10, y: 8 }];
+      stage.setVisualSettings({ cameraIntensity: 'off' });
+      await stage.enterBattle({ biomeId, combatants: combatants.map((c, index) => ({ ...c,
+        position: cells[index]!, pixel: cells[index]!, status: null, statusTimer: 0, castProgress: null })) });
+      return cells.map((cell) => projectBattleGroundPoint(cell.x, cell.y, BATTLE_ENVIRONMENTS[biomeId].camera));
     },
     destroy() { stage.unmount(); section.remove(); },
   };
