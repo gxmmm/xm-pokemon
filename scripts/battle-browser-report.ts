@@ -252,7 +252,36 @@ async function main(): Promise<void> {
       const settled = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
       assert(settled.settled && settled.effectChildCount === 0, 'all spread and ground effects settle');
     }
+    await page.evaluate(() => window.__READABILITY_FIXTURE__.focus([
+      { style: 'track', focusIds: ['unit-0', 'unit-1'], durationMs: 600, zoom: 1.06 },
+      { style: 'track', focusIds: ['unit-3', 'unit-5'], durationMs: 600, zoom: 1.06 },
+    ]));
+    await page.clock.runFor(100);
+    const sharedFocus = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+    assert.deepEqual(sharedFocus.camera.focusIds, ['unit-0', 'unit-1', 'unit-3', 'unit-5']);
+    await page.screenshot({ path: resolve(OUTPUT, 'camera-shared-focus.png') });
+    await page.evaluate(() => window.__READABILITY_FIXTURE__.focus([
+      { style: 'finisher', focusIds: ['unit-3', 'unit-5'], durationMs: 360, zoom: 1.08 },
+      { style: 'anticipate', focusIds: ['unit-0'], durationMs: 180, zoom: 1.03 },
+    ]));
+    await page.clock.runFor(100);
+    const finisherFocus = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+    assert.equal(finisherFocus.camera.style, 'finisher');
+    assert.deepEqual(finisherFocus.camera.focusIds, ['unit-3', 'unit-5']);
+    await page.screenshot({ path: resolve(OUTPUT, 'camera-finisher-focus.png') });
+    await page.evaluate(() => window.__READABILITY_FIXTURE__.focus([
+      { style: 'track', focusIds: ['unit-0'], durationMs: 260, zoom: 1.04 },
+    ]));
+    await page.clock.runFor(80);
+    assert.equal((await page.evaluate(() => window.__READABILITY_FIXTURE__.read())).camera.style, 'finisher');
+    await page.clock.runFor(2200);
+    const neutralCamera = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+    assert(neutralCamera.settled);
+    assert.equal(neutralCamera.camera.scale, 1);
+    assert.deepEqual(neutralCamera.camera.offset, { x: 0, y: 0 });
+    await page.screenshot({ path: resolve(OUTPUT, 'camera-return-neutral.png') });
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
+    console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
     assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));

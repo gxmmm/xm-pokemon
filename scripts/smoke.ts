@@ -15,7 +15,7 @@ import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, 
 import { Container, Graphics, Texture } from 'pixi.js';
 
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
-import { BattleCameraController } from '../packages/renderer-pixi/src/BattleCameraController.ts';
+import { testBattleCamera } from './battle-camera-smoke.ts';
 import { BattleCombatantLayer } from '../packages/renderer-pixi/src/BattleCombatantLayer.ts';
 import { BattleCueScheduler } from '../packages/renderer-pixi/src/BattleCueScheduler.ts';
 import { BattleEnvironmentView } from '../packages/renderer-pixi/src/BattleEnvironmentView.ts';
@@ -202,39 +202,7 @@ testBattleReadability();
   console.log('✓ standalone layered battle environment view');
 }
 
-// Spectator camera focus and parallax stay renderer-only and deterministic.
-// Explicit timestamps make shake transforms testable without a browser clock.
-{
-  const camera = new BattleCameraController();
-  const background = new Container();
-  const distant = new Container();
-  const combatants = new Container();
-  const layers = [
-    { layer: background, factor: 0, shake: false },
-    { layer: distant, factor: 0.2, shake: false },
-    { layer: combatants, factor: 1, shake: true },
-  ] as const;
-  camera.focus([{ x: 100, y: 200 }], BATTLE_ENVIRONMENTS.grass.camera, 4, 2);
-  let diagnostics = camera.getDiagnostics();
-  assert(diagnostics.targetScale === BATTLE_ENVIRONMENTS.grass.camera.framing.maxZoom, 'camera clamps requested zoom to the environment framing maximum');
-  assert(diagnostics.targetOffset.x === BATTLE_ENVIRONMENTS.grass.camera.framing.maxPanX && diagnostics.shake === 2.5, 'camera clamps focus offset and shake to spectator-safe bounds');
-  camera.update(0.05, layers, 0);
-  assert(background.scale.x === 1 && background.position.x === 0 && background.position.y === 0, 'zero-factor background remains fixed under camera motion');
-  assert(distant.scale.x > 1 && distant.scale.x < combatants.scale.x, 'parallax scale increases from distant scenery to combatants');
-  assert(combatants.position.x > distant.position.x && combatants.position.y !== distant.position.y, 'camera offset and shake affect near layers more strongly');
-
-  camera.reset();
-  assert(combatants.scale.x === 1 && combatants.position.x === 0 && combatants.position.y === 0, 'camera reset clears transforms from every previously bound layer');
-  camera.setIntensity('reduced');
-  camera.focus([{ x: 100, y: 200 }], BATTLE_ENVIRONMENTS.grass.camera, 1.1, 1);
-  diagnostics = camera.getDiagnostics();
-  assert(Math.abs(diagnostics.targetScale - 1.045) < 1e-9 && Math.abs(diagnostics.targetOffset.x - 24.3) < 1e-9, 'reduced camera intensity applies the standard 45% motion factor');
-  camera.setIntensity('off');
-  camera.focus([{ x: 100, y: 200 }], BATTLE_ENVIRONMENTS.grass.camera, 1.1, 1);
-  diagnostics = camera.getDiagnostics();
-  assert(diagnostics.targetScale === 1 && diagnostics.targetOffset.x === 0 && diagnostics.targetOffset.y === 0 && diagnostics.shake === 0, 'disabled camera intensity suppresses zoom, pan, and shake');
-  console.log('✓ standalone spectator camera and parallax controller');
-}
+testBattleCamera();
 
 // Body and ground projection motion share one record per combatant, preventing
 // parallel position/velocity/scale maps from drifting during redirection.

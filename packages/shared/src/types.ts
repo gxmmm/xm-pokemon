@@ -540,6 +540,15 @@ export type NormalAttackVisualStyle =
   | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'wing-slap' | 'beak-peck' | 'tusk-gore' | 'pincer-snap' | 'whip-lash' | 'kick' | 'shell-bash'
   | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star';
 
+/** Renderer-neutral camera intent; never persisted in player saves. */
+export interface BattleCameraPlan {
+  style: 'neutral' | 'anticipate' | 'track' | 'impact' | 'finisher';
+  focusIds: readonly string[];
+  durationMs: number;
+  zoom?: number;
+  shake?: number;
+}
+
 /** Visual-effect hint attached to a BattleEvent so the frontend renderer can
  *  spawn the right animation (projectile / burst / aura / floating number ...)
  *  without re-parsing the text log. `from`/`to` are grid-cell coordinates. */

@@ -97,16 +97,19 @@ export async function testBattleStageLifecycle(): Promise<void> {
       { type: 'vfx', recipe: { id: 'impact:normal', delivery: 'aura' }, anchors: { targetIds: [actor.uid] }, intensity: 1 },
       { type: 'animation', subjectId: actor.uid, animation: 'faint' },
       { type: 'hit-stop', milliseconds: 70 },
+      { type: 'camera', plan: { style: 'finisher', focusIds: [actor.uid], durationMs: 360, zoom: 1.07 } },
       { type: 'environment', reaction: 'splash', anchors: { targetIds: [actor.uid] } },
     ]);
     tickers.get(currentApp)!({ deltaTime: 1 });
     const impact = reusableLayers[8]!.children[0]!;
     const impactWidth = impact.getLocalBounds().width;
+    const cameraAtImpact = stage.getDiagnostics().camera;
     assert.equal(reusableLayers[4]!.children.length, 1, 'ground response is below the actor layer');
     assert.equal(stage.getDiagnostics().effectChildCount, 2, 'stage diagnostics include ground and front effects');
     assert(impactWidth > 0 && reusableLayers[5]!.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
     tickers.get(currentApp)!({ deltaTime: 1 });
     assert.equal(impact.getLocalBounds().width, impactWidth, 'hit-stop holds the rendered impact instead of an empty graphic');
+    assert.deepEqual(stage.getDiagnostics().camera, cameraAtImpact, 'the shared hit-stop clock holds the camera with the impact');
 
     const transition = stage.transition({ kind: 'fade', durationMs: 100 });
     const cancelledDraw = [...frames.values()][0]!;

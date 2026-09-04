@@ -1,5 +1,5 @@
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
-import type { BattleCue } from '@pokemon-online/presentation';
+import type { BattleCue, CameraPlan } from '@pokemon-online/presentation';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
 
 /** Test-only dense 3v3 composition; no simulation, login or saved data is changed. */
@@ -32,6 +32,11 @@ export async function createBattleReadabilityFixture() {
         { type: 'environment', reaction: 'splash', anchors: { targetIds } },
       ]);
       await stage.playBattleCues(cues);
+    },
+    async focus(plans: readonly CameraPlan[]) {
+      stage.setVisualSettings({ reduceFlicker: false, cameraIntensity: 'full' });
+      label.textContent = '3v3 镜头验收 · 同帧合焦 / 关键目标 / 回归全景';
+      await stage.playBattleCues(plans.map((plan) => ({ type: 'camera', plan })));
     },
     destroy() { stage.unmount(); section.remove(); },
   };

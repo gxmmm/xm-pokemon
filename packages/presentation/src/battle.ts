@@ -1,4 +1,4 @@
-import type { BattleActorChoreography, BattleCombatant, BattleEvent, BattleVfx, NormalAttackVisualStyle, StatusKind, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCameraPlan, BattleCombatant, BattleEvent, BattleVfx, NormalAttackVisualStyle, StatusKind, TypeName } from '@pokemon-online/shared';
 import type { BattleArtAnchorId } from '@pokemon-online/config';
 
 export type BattlePresentationEventType =
@@ -41,13 +41,7 @@ export interface BattlePresentationEvent {
   at: number;
 }
 
-export interface CameraPlan {
-  style: 'neutral' | 'anticipate' | 'track' | 'impact' | 'finisher';
-  focusIds: readonly string[];
-  durationMs: number;
-  zoom?: number;
-  shake?: number;
-}
+export type CameraPlan = BattleCameraPlan;
 
 /** Stable semantic motion vocabulary consumed by CombatantView. */
 export type CombatantAnimation = 'idle' | 'windup' | 'interrupt' | 'melee' | 'dive' | 'projectile' | 'beam' | 'burst' | 'cast' | 'recoil' | 'hit' | 'faint';

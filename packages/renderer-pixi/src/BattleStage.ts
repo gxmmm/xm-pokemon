@@ -3,12 +3,12 @@ import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation 
 import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
-import { BattleCameraController } from './BattleCameraController.ts';
+import { BattleCameraController, type BattleCameraDiagnostics } from './BattleCameraController.ts';
 import { BattleCombatantLayer } from './BattleCombatantLayer.ts';
 import { BattleCueScheduler } from './BattleCueScheduler.ts';
 import { BattleEnvironmentView } from './BattleEnvironmentView.ts';
 import { BattleEffectPool } from './BattleEffectPool.ts';
-import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH, type BattleStagePoint as Point } from './battle-stage-layout.ts';
+import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH } from './battle-stage-layout.ts';
 import { BattleVfxExecutor } from './BattleVfxExecutor.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
 import { TerrainContactEffects } from './TerrainContactEffects.ts';
@@ -24,6 +24,7 @@ export interface BattleStageDiagnostics {
   canvasPixels: number;
   drawCallTotal: number;
   drawCallsSinceLastSample: number;
+  camera: BattleCameraDiagnostics;
 }
 
 /** Minimal Stage-3 Pixi battle runtime. It consumes renderer contracts only;
@@ -31,7 +32,7 @@ export interface BattleStageDiagnostics {
 export class BattleStage implements BattleRenderer {
   private app: Application | null = null;
   private root: Container | null = null;
-  private readonly camera = new BattleCameraController();
+  private readonly camera = new BattleCameraController((uid) => this.combatants.getPosition(uid), () => battleEnvironmentFor(this.biomeId).camera);
   private readonly cueScheduler = new BattleCueScheduler();
   private hitStopAfterFrameMs = 0;
   private readonly environmentView = new BattleEnvironmentView();
@@ -148,6 +149,7 @@ export class BattleStage implements BattleRenderer {
       canvasPixels: canvas ? canvas.width * canvas.height : 0,
       drawCallTotal: drawCalls.total,
       drawCallsSinceLastSample: drawCalls.sinceLastRead,
+      camera: this.camera.getDiagnostics(),
     };
   }
 
@@ -238,7 +240,7 @@ export class BattleStage implements BattleRenderer {
   }
 
   isSettled(): boolean {
-    return this.hitStopAfterFrameMs === 0 && this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && this.combatants.isSettled();
+    return this.hitStopAfterFrameMs === 0 && this.effectPool.activeCount === 0 && this.cueScheduler.isSettled && this.combatants.isSettled() && this.camera.isSettled;
   }
 
   private installStage(): void {
@@ -267,18 +269,13 @@ export class BattleStage implements BattleRenderer {
     this.environmentView.draw(battleEnvironmentFor(this.biomeId), this.environmentBackgroundTexture);
   }
 
-  private focusCamera(ids: readonly string[], zoom: number, shake: number): void {
-    const points = ids.map((id) => this.combatants.getPosition(id)).filter((point): point is Point => !!point);
-    this.camera.focus(points, battleEnvironmentFor(this.biomeId).camera, zoom, shake);
-  }
-
   private playAnimationCue(cue: Extract<BattleCue, { type: 'animation' }>): void {
     this.combatants.playAnimation(cue);
   }
 
   private playReadyCue(cue: BattleCue): void {
     if (cue.type === 'camera') {
-      this.focusCamera(cue.plan.focusIds, cue.plan.zoom ?? 1, cue.plan.shake ?? 0);
+      this.camera.focus(cue.plan);
     } else if (cue.type === 'animation') {
       this.playAnimationCue(cue);
     } else if (cue.type === 'vfx' || cue.type === 'environment') {
@@ -290,8 +287,9 @@ export class BattleStage implements BattleRenderer {
     const { clockSeconds: clock, due } = this.cueScheduler.advance(dt);
     this.terrainContacts.tick(dt);
     this.combatants.update(dt, clock);
+    for (const cue of due) this.playReadyCue(cue);
     const spec = battleEnvironmentFor(this.biomeId);
-    this.camera.update(dt, [
+    this.camera.update(clock, [
       { layer: this.environmentView.background, factor: 0, shake: false },
       { layer: this.environmentView.farBackdrop, factor: spec.parallax.far, shake: false },
       { layer: this.environmentView.horizonLayer, factor: spec.parallax.horizon, shake: false },
@@ -303,7 +301,6 @@ export class BattleStage implements BattleRenderer {
       { layer: this.effectPool.container, factor: 1, shake: true },
     ]);
     if (!clock) return;
-    for (const cue of due) this.playReadyCue(cue);
     this.effectPool.update(clock);
     if (this.hitStopAfterFrameMs > 0) {
       this.cueScheduler.accept({ type: 'hit-stop', milliseconds: this.hitStopAfterFrameMs });

@@ -1,5 +1,15 @@
 export type BattleEnvironmentId = 'grass' | 'cave' | 'water' | 'dragon' | 'arena';
 
+/** Shared spectator policy; never affects simulation time or action priority. */
+export const BATTLE_CAMERA_MOTION = {
+  priority: { neutral: 0, anticipate: 1, track: 2, impact: 3, finisher: 4 },
+  minHoldMs: 180,
+  maxShotMs: 1300,
+  scaleDamping: 8,
+  panDamping: 7,
+  settleEpsilon: 0.001,
+} as const;
+
 export type BattleTerrainContactVisual = 'grass-clumps' | 'dust' | 'ripples' | 'rune-sparks' | 'none';
 export type BattleBackdropGrammar = 'forest-canopy' | 'cave-pillars' | 'tide-cliffs' | 'dragon-rift' | 'colosseum';
 export type BattleGroundPattern = 'grass-lanes' | 'stone-terraces' | 'shallow-ripples' | 'rune-rings' | 'arena-tiles';

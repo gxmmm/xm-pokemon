@@ -1,4 +1,4 @@
-import type { BattleActorChoreography, BattleCombatant, BattleWorldPosition, TypeName } from '@pokemon-online/shared';
+import type { BattleActorChoreography, BattleCameraPlan, BattleCombatant, BattleWorldPosition, TypeName } from '@pokemon-online/shared';
 
 export type CameraIntensity = 'full' | 'reduced' | 'off';
 
@@ -69,7 +69,7 @@ export interface BattleRenderSnapshot {
 /** Kept independent from presentation so a renderer package never has to
  * import a director implementation. Presentation is structurally compatible. */
 export type BattleCue = { delayMs?: number } & (
-  | { type: 'camera'; plan: { style: string; focusIds: readonly string[]; durationMs: number; zoom?: number; shake?: number } }
+  | { type: 'camera'; plan: BattleCameraPlan }
   | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[] }; intensity: number }
   | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number }
   | { type: 'action-window'; milliseconds: number }
