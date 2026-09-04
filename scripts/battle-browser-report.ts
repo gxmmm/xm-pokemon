@@ -166,6 +166,26 @@ async function main(): Promise<void> {
     assert(sustained.samples.every((sample) => sample.diagnostics.canvasCount === 1), 'sustained run duplicated its canvas');
     assert.equal(errors.length, 0, `browser errors: ${errors.join('\n')}`);
     await page.screenshot({ path: resolve(OUTPUT, 'battle-sustained.png') });
+    // The existing skill lab exercises the same renderer without changing any
+    // gameplay values. Capture a short pose sequence instead of one lucky frame.
+    await page.clock.install({ time: new Date('2026-09-04T00:00:00Z') });
+    await page.goto(`${BASE}/vfx-lab?renderer-observation=1`, { waitUntil: 'networkidle' });
+    await waitForBattle(page, 1, 'grass');
+    await page.clock.pauseAt(new Date('2026-09-04T01:00:00Z'));
+    await page.locator('.toolbar select').nth(1).selectOption('1');
+    for (const showcase of [{ id: '006', skill: '喷射火焰' }, { id: '094', skill: '暗影球' }]) {
+      await page.locator('.species-list button').filter({ hasText: `#${showcase.id}` }).click();
+      await page.waitForLoadState('networkidle');
+      await page.clock.runFor(1000);
+      await page.locator('.skill').filter({ hasText: showcase.skill }).click();
+      for (let frame = 0; frame < 12; frame++) {
+        await page.clock.runFor(80);
+        await page.locator('.viewport').screenshot({ path: resolve(OUTPUT, `motion-${showcase.id}-${frame}.png`) });
+      }
+      assert.equal(await page.locator('canvas').count(), 1);
+      console.log(`✓ actual browser: ${showcase.skill} pose sequence captured`);
+    }
+    assert.equal(errors.length, 0, `motion showcase errors: ${errors.join('\n')}`);
     await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {

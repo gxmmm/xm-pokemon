@@ -10,6 +10,8 @@ export class CombatantSprite extends Sprite {
   private frames: readonly Texture[] | null = null;
   private elapsedMs = 0;
   private fps = 12;
+  private loop = true;
+  private durationMs: number | undefined;
   private metadata: BattleArtSpriteSheetMetadata | null = null;
 
   constructor(
@@ -48,13 +50,21 @@ export class CombatantSprite extends Sprite {
     }
   }
 
-  advance(elapsedMs: number, loop: boolean): void {
-    if (!this.frames?.length) return;
+  advance(elapsedMs: number, loop: boolean, durationMs?: number): void {
     this.elapsedMs += elapsedMs;
-    const frame = Math.floor(this.elapsedMs / (1000 / this.fps));
-    const index = loop ? frame % this.frames.length : Math.min(this.frames.length - 1, frame);
+    this.loop = loop;
+    this.durationMs = durationMs;
+    this.updateFrame();
+  }
+
+  private updateFrame(): void {
+    if (!this.frames?.length) return;
+    const frame = !this.loop && this.durationMs
+      ? Math.floor(this.elapsedMs / this.durationMs * this.frames.length)
+      : Math.floor(this.elapsedMs / (1000 / this.fps));
+    const index = this.loop ? frame % this.frames.length : Math.min(this.frames.length - 1, frame);
     const texture = this.frames[index]!;
-    if (this.texture !== texture) this.showTexture(texture);
+    if (this.texture !== texture || !this.visible) this.showTexture(texture);
   }
 
   transitionDuration(from: BattleArtMotionId, to: BattleArtMotionId): number | undefined {
@@ -72,9 +82,8 @@ export class CombatantSprite extends Sprite {
     if (!this.isCurrent(token) || !frames?.length) return;
     this.metadata = metadata;
     this.frames = frames;
-    this.elapsedMs = 0;
     this.fps = metadata?.fps ?? 12;
-    this.showTexture(frames[0]!);
+    this.updateFrame();
   }
 
   private isCurrent(token: number): boolean {

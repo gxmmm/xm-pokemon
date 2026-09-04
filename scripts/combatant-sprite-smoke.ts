@@ -80,12 +80,30 @@ export async function testCombatantSprite(): Promise<void> {
   assert.equal(loadedAssets.length, staticLoadCount, 'the atlas itself is never assigned to the sprite');
   assert.equal(sprite.transitionDuration('idle', 'attack'), 75);
   assert.equal(sprite.transitionDuration('idle', 'faint'), undefined);
+  await sprite.setAsset(sheet, 'idle');
+  assert(sprite.visible && !fallback.visible, 'reselecting the same frame restores sprite visibility');
   sprite.advance(100, true);
   assert.equal(sprite.texture, second);
   sprite.advance(100, true);
   assert.equal(sprite.texture, first, 'looping clips wrap at the declared FPS');
   sprite.advance(500, false);
   assert.equal(sprite.texture, second, 'finite clips hold their last frame');
+
+  clipRequests.set(`${sheet.id}:attack`, Promise.resolve([first, second, third, fourth]));
+  await sprite.setMotion(sheet, 'attack');
+  sprite.advance(160, false, 200);
+  assert.equal(sprite.texture, fourth, 'short action still reaches its authored final frames');
+  await sprite.setMotion(sheet, 'attack');
+  assert.equal(sprite.texture, first, 'repeated action restarts its sequence');
+  const delayedAction = deferred<readonly Texture[] | null>();
+  clipRequests.set(`${sheet.id}:attack`, delayedAction.promise);
+  const delayedMotion = sprite.setMotion(sheet, 'attack');
+  sprite.advance(160, false, 200);
+  delayedAction.resolve([first, second, third, fourth]);
+  await delayedMotion;
+  assert.equal(sprite.texture, fourth, 'late clip catches up to the active action clock');
+  await sprite.setAsset(sheet, 'idle');
+  sprite.advance(100, true);
 
   const oldAttack = deferred<readonly Texture[] | null>();
   const newAttack = deferred<readonly Texture[] | null>();

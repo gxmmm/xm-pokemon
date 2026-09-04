@@ -254,7 +254,7 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 
 战斗专项验收会自动启动本地 Vite（端口 `41775`）和独立无头 Chrome，不启动 Worker、不登录、不读写玩家存档。默认使用 Windows 标准安装位置的 Chrome；其他位置可通过环境变量 `PO_VISUAL_BROWSER` 指定可执行文件。
 
-覆盖资源加载中退出、6 轮 3v3 进入/重开/退出、5 种环境连续切换、60 秒持续采样与 390px 窄屏布局。截图及 JSON 报告输出到 Git 忽略的 `doc/visual-baselines/battle/`。此项使用 SwiftShader 软件渲染，只作为功能与资源生命周期回归，不等于真实显卡性能、长时间压力测试或正式剧情流程验收。
+覆盖资源加载中退出、6 轮 3v3 进入/重开/退出、5 种环境连续切换、60 秒持续采样与 390px 窄屏布局，并在技能靶场采集喷射火焰、暗影球的分段动作截图。截图及 JSON 报告输出到 Git 忽略的 `doc/visual-baselines/battle/`。此项使用 SwiftShader 软件渲染，只作为功能与资源生命周期回归，不等于真实显卡性能、长时间压力测试或正式剧情流程验收。
 
 ---
 
@@ -279,6 +279,7 @@ Pixi 战斗角色、序列帧 clip、挂点、调色主题、技能特效、被�
 - **一个技能只有一份玩法与通用视觉定义。** 修改技能数据后，所有学习该技能的宝可梦自动生效。
 - **同一技能可因角色配置而有不同表现。** 颜色、发射挂点、序列帧动作片段、特效变体和皮肤差异使用 art profile/theme/override 配置表达，不复制技能，也不在 Pixi/Vue 中按物种或技能 ID 写分支。
 - `castTime` 是玩法权威前摇；攻击前摇、后摇、施放、吟唱/蓄力、持续施法、命中与受击等流畅性表现由 presentation + 动作配置驱动，不改变 engine 的结算事实。
+- `BattleArtProfile.motionTracks` 可为动作声明从 `at: 0` 到 `at: 1` 的姿态关键帧，未填字段继承该动作的基础姿态。当前仅喷火龙、耿鬼启用，分别强调前压回收与悬浮施法；通用采样器不识别物种或技能 ID。序列帧沿用既有 manifest，不新增图片资源。
 - 当前世界与战斗正式运行于 Pixi GPU。
 
 **新增世代/地图示例**：在 `pokemon.ts` 的 `RAW` 数组追加新条目，在 `maps.ts` 加新地图与遇敌表；新增序列帧资产或特效时同步添加 art config、资源 manifest、引用校验与回归基线，而不是修改角色绑定代码。

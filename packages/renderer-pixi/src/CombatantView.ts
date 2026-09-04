@@ -6,6 +6,7 @@ import { CombatantSprite } from './CombatantSprite.ts';
 import { CombatantStatusLayer, type CombatantStatusVisual } from './CombatantStatusLayer.ts';
 import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
+import { sampleBattleMotionPose } from './battle-motion.ts';
 
 /**
  * GPU model view driven entirely by a resolved BattleArtProfile. It has no
@@ -72,6 +73,7 @@ export class CombatantView extends Container {
   /** Normalized engine-authoritative windup progress for the persistent charge halo. */
   private chargeProgress = 0;
   private visualHoverOffsetY = 0;
+  private hoverPhase = 0;
   private movementVelocity = { x: 0, y: 0 };
   private movementSpeed = 0;
   private movementBobOffsetY = 0;
@@ -229,15 +231,19 @@ export class CombatantView extends Container {
   update(dtSeconds: number): void {
     this.locomotionHoldSeconds = Math.max(0, this.locomotionHoldSeconds - dtSeconds);
     this.updateMovementFeel(dtSeconds);
-    const clip = this.presentation.profile.motions[this.motion];
+    let clip = this.presentation.profile.motions[this.motion];
     const elapsedMs = dtSeconds * 1000;
     this.motionElapsedMs += elapsedMs;
+    let beganNextMotion = false;
     const durationMs = this.activeMotionDurationMs();
     const finite = !clip.loop || this.motionDurationOverrideMs !== null;
-    const progress = finite ? Math.min(1, this.motionElapsedMs / durationMs) : (this.motionElapsedMs % durationMs) / durationMs;
+    let progress = finite ? Math.min(1, this.motionElapsedMs / durationMs) : (this.motionElapsedMs % durationMs) / durationMs;
     if (finite && progress >= 1 && this.motion !== 'faint') {
       const next = this.queuedMotions.shift();
       this.setMotion(next?.motion ?? 'idle', next?.durationMs, next?.choreography, next?.target, next?.element);
+      clip = this.presentation.profile.motions[this.motion];
+      progress = 0;
+      beganNextMotion = true;
     }
 
     const pulse = this.motion === 'idle' ? Math.sin(progress * Math.PI * 2) * 0.025
@@ -254,7 +260,7 @@ export class CombatantView extends Container {
           : this.motion === 'recover' ? -Math.sin(progress * Math.PI) * 8
             : 0;
     const faintScale = this.motion === 'faint' || !this.alive ? 1 - Math.min(0.3, progress * 0.3) : 1;
-    const pose = this.presentation.profile.motionPoses[this.motion] ?? {};
+    const pose = sampleBattleMotionPose(this.presentation.profile.motionPoses[this.motion] ?? {}, this.presentation.profile.motionTracks?.[this.motion], progress);
     const choreography = this.choreographyTransform(progress);
     const target: MotionTransform = {
       // The resolver has already selected the source view for facing (+1 back,
@@ -268,8 +274,8 @@ export class CombatantView extends Container {
       y: (pose.offsetY ?? 0) + choreography.y + this.movementBobOffsetY,
       rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + this.movementTiltRad,
     };
-    this.sprite.advance(elapsedMs, this.presentation.profile.motions[this.motion].loop);
-    const transform = this.interpolateTransition(target, elapsedMs);
+    this.sprite.advance(beganNextMotion ? 0 : elapsedMs, clip.loop, clip.loop ? undefined : this.activeMotionDurationMs());
+    const transform = this.interpolateTransition(target, beganNextMotion ? 0 : elapsedMs);
     const hover = this.hoverTransform(elapsedMs);
     this.visualHoverOffsetY = hover.offsetY;
     this.body.scale.set(transform.scaleX, transform.scaleY);
@@ -315,8 +321,8 @@ export class CombatantView extends Container {
   private hoverTransform(elapsedMs: number): { offsetY: number; heightRatio: number } {
     const profile = this.presentation.profile;
     if (profile.locomotionMode === 'grounded') return { offsetY: 0, heightRatio: 0 };
-    const phase = this.motionElapsedMs / 1000 * (this.moving ? 9 : 5.2) + elapsedMs / 1000;
-    const bob = Math.sin(phase) * profile.hoverAmplitude;
+    this.hoverPhase += elapsedMs / 1000 * (this.moving ? 9 : 5.2);
+    const bob = Math.sin(this.hoverPhase) * profile.hoverAmplitude;
     return { offsetY: -profile.hoverHeight + bob, heightRatio: Math.min(1, profile.hoverHeight / 14) };
   }
 
@@ -361,19 +367,12 @@ export class CombatantView extends Container {
   }
 
   private setMotion(motion: BattleArtMotionId, durationMs?: number, choreography?: BattleActorChoreography, target?: { x: number; y: number }, element?: TypeName): void {
-    if (this.motion === motion) {
-      if (durationMs !== undefined) {
-        this.motionDurationOverrideMs = durationMs;
-        this.motionElapsedMs = 0;
-        this.activeChoreography = choreography && target ? { spec: choreography, target, theme: choreographyThemeFor(element) } : null;
-      }
-      return;
-    }
+    if (this.motion === motion && durationMs === undefined && this.presentation.profile.motions[motion].loop) return;
     this.transitionFrom = {
       scaleX: this.body.scale.x,
       scaleY: this.body.scale.y,
       x: this.body.position.x,
-      y: this.body.position.y,
+      y: this.body.position.y - this.visualHoverOffsetY,
       rotation: this.body.rotation,
     };
     this.transitionElapsedMs = 0;

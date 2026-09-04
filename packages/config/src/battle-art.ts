@@ -136,6 +136,10 @@ export interface BattleArtMotionPose {
   glowScale?: number;
 }
 
+/** Normalized, presentation-only poses; omitted fields inherit the motion pose. */
+export interface BattleArtMotionKeyframe extends BattleArtMotionPose { at: number }
+export type BattleArtMotionTracks = Partial<Readonly<Record<BattleArtMotionId, readonly BattleArtMotionKeyframe[]>>>;
+
 export interface BattleMotionMarker {
   id: 'prepare' | 'release' | 'impact-ready' | 'recover';
   at: number;
@@ -180,6 +184,7 @@ export interface BattleArtProfile {
   motions: BattleMotionSet;
   layers: readonly BattleArtLayerSpec[];
   motionPoses: Partial<Readonly<Record<BattleArtMotionId, BattleArtMotionPose>>>;
+  motionTracks?: BattleArtMotionTracks;
   scale: number;
   shadowScale: number;
 }
@@ -518,6 +523,7 @@ interface RepresentativeBattleArtTuning {
   shadowScale: number;
   layers: readonly BattleArtLayerSpec[];
   motionPoses: Partial<Readonly<Record<BattleArtMotionId, BattleArtMotionPose>>>;
+  motionTracks?: BattleArtMotionTracks;
   locomotionMode?: BattleArtLocomotionMode;
   hoverHeight?: number;
   hoverAmplitude?: number;
@@ -615,6 +621,23 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
     frontAssetId: 'battle:flame-wing:v5:front:sequence',
     backAssetId: 'battle:flame-wing:v5:back:sequence',
     scale: 1.16, shadowScale: 1.22,
+    motionTracks: {
+      attack: [
+        { at: 0, offsetX: -8, offsetY: -7, rotationDeg: -5, scaleX: 0.98, scaleY: 1.02 },
+        { at: 0.48, offsetX: 21, offsetY: 4, rotationDeg: 15, scaleX: 1.12, scaleY: 0.90 },
+        { at: 1, offsetX: 2, offsetY: -6, rotationDeg: 1, scaleX: 1, scaleY: 1 },
+      ],
+      cast: [
+        { at: 0, offsetX: -5, offsetY: -7, rotationDeg: -4, glowAlpha: 0.24, glowScale: 1.10 },
+        { at: 0.54, offsetX: 14, offsetY: 2, rotationDeg: 11, glowAlpha: 0.38, glowScale: 1.24 },
+        { at: 1, offsetX: 2, offsetY: -6, rotationDeg: 1, scaleX: 1, scaleY: 1, glowAlpha: 0.20, glowScale: 1.04 },
+      ],
+      recover: [
+        { at: 0, offsetX: 2, offsetY: -6, rotationDeg: 1, scaleX: 1, scaleY: 1 },
+        { at: 0.35, offsetX: -5, offsetY: -4, rotationDeg: -3, scaleX: 0.97, scaleY: 1.02 },
+        { at: 1, offsetX: 0, offsetY: -8, rotationDeg: 0, scaleX: 1, scaleY: 1, glowAlpha: 0.20, glowScale: 1.04 },
+      ],
+    },
     layers: [
       { id: 'ember-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.20, scale: 1.15, pulse: 0.18 },
       { id: 'wing-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.16, scale: 0.92, pulse: 0.12 },
@@ -652,6 +675,18 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
     frontAssetId: 'battle:spectral-caster:v2:front:sequence',
     backAssetId: 'battle:spectral-caster:v2:back:sequence',
     scale: 1.04, shadowScale: 0.92,
+    motionTracks: {
+      cast: [
+        { at: 0, offsetY: -6, rotationDeg: -4, scaleX: 0.94, scaleY: 1.04, glowAlpha: 0.30, glowScale: 1.12 },
+        { at: 0.54, offsetY: -15, rotationDeg: 7, scaleX: 1.08, scaleY: 0.96, glowAlpha: 0.48, glowScale: 1.42 },
+        { at: 1, offsetY: -8, rotationDeg: -1, scaleX: 1, scaleY: 1, glowAlpha: 0.28, glowScale: 1.12 },
+      ],
+      recover: [
+        { at: 0, offsetY: -8, rotationDeg: -1, scaleX: 1, scaleY: 1, glowAlpha: 0.28, glowScale: 1.12 },
+        { at: 0.4, offsetY: -4, rotationDeg: -3, scaleX: 0.98, scaleY: 1.02 },
+        { at: 1, offsetY: -7, rotationDeg: -2, scaleX: 1, scaleY: 1, glowAlpha: 0.28, glowScale: 1.12 },
+      ],
+    },
     layers: [
       { id: 'spectral-mist', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.26, scale: 1.22, pulse: 0.20 },
       { id: 'rune-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.14, scale: 1.02, pulse: 0.18 },
@@ -735,6 +770,7 @@ function profileFor(species: Species): BattleArtProfile {
     motions: DEFAULT_MOTIONS,
     layers: tuning?.layers ?? DEFAULT_LAYERS,
     motionPoses: tuning?.motionPoses ?? DEFAULT_MOTION_POSES,
+    motionTracks: tuning?.motionTracks,
     scale: tuning?.scale ?? 1,
     shadowScale: tuning?.shadowScale ?? 1,
   };
@@ -962,6 +998,13 @@ export function validateBattleArtConfiguration(
     const anchorIds = new Set(profile.anchors.map((anchor) => anchor.id));
     if (profile.layers.some((layer) => !layer.id || layer.alpha < 0 || layer.alpha > 1 || layer.scale <= 0 || (layer.pulse !== undefined && (layer.pulse < 0 || layer.pulse > 1)))) invalidLayerProfileIds.push(profile.id);
     if (Object.values(profile.motionPoses).some((pose) => Object.values(pose).some((value) => !Number.isFinite(value)))) invalidLayerProfileIds.push(profile.id);
+    if (Object.entries(profile.motionTracks ?? {}).some(([motion, frames]) =>
+      !REQUIRED_MOTIONS.includes(motion as BattleArtMotionId) || frames.length < 2
+      || frames[0]?.at !== 0 || frames.at(-1)?.at !== 1
+      || frames.some((frame, index) => Object.values(frame).some((value) => !Number.isFinite(value))
+        || (index > 0 && frame.at <= frames[index - 1]!.at)
+        || [frame.scaleX, frame.scaleY, frame.glowScale].some((scale) => scale !== undefined && scale <= 0)
+        || (frame.glowAlpha !== undefined && (frame.glowAlpha < 0 || frame.glowAlpha > 1))))) invalidMotionProfileIds.push(profile.id);
     if (REQUIRED_ANCHORS.some((anchor) => !anchorIds.has(anchor))) invalidAnchorProfileIds.push(profile.id);
     for (const motion of REQUIRED_MOTIONS) {
       const clip = profile.motions[motion];
