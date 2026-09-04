@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { BattleStage } from '@pokemon-online/renderer-pixi';
+import { startRendererObservation } from '../visuals/runtime-observation.ts';
 
 const viewport = ref<HTMLElement | null>(null);
 const running = ref(false);
@@ -17,6 +18,7 @@ let raf = 0;
 let lastFrame = 0;
 let disposed = false;
 let resetVersion = 0;
+let stopObservation: (() => void) | null = null;
 
 function makeSimulation(): BattleSim {
   return new BattleSim({
@@ -70,12 +72,14 @@ onMounted(async () => {
   if (disposed) return;
   await resetBattle();
   if (disposed) return;
+  stopObservation = startRendererObservation('battle', () => stage.getDiagnostics() as unknown as Record<string, unknown>);
   lastFrame = performance.now();
   raf = requestAnimationFrame(frame);
 });
 onUnmounted(() => {
   disposed = true;
   resetVersion++;
+  stopObservation?.();
   cancelAnimationFrame(raf);
   stage.unmount();
 });

@@ -603,13 +603,9 @@ async function readHeap(page: Page): Promise<number> {
     const cdp = await page.context().newCDPSession(page);
     try {
         await cdp.send('HeapProfiler.collectGarbage');
-        const metrics = await cdp.send('Performance.getMetrics') as {
-            metrics: Array<{
-                name: string;
-                value: number;
-            }>;
-        };
-        return metrics.metrics.find((metric) => metric.name === 'JSHeapUsedSize')?.value ?? 0;
+        const { usedSize } = await cdp.send('Runtime.getHeapUsage');
+        assert(Number.isFinite(usedSize) && usedSize > 0, 'Chrome did not return a valid heap measurement');
+        return usedSize;
     }
     finally {
         await cdp.detach();

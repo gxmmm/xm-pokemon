@@ -54,7 +54,7 @@ watch(() => auth.isAuthenticated, (v) => {
 </script>
 
 <template>
-  <div class="app-stage">
+  <div class="app-stage" :class="{ 'battle-sandbox-stage': route.name === 'battle-sandbox' }">
     <main class="view">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
@@ -68,5 +68,9 @@ watch(() => auth.isAuthenticated, (v) => {
 </template>
 
 <style scoped>
-.app-stage { /* base styles in style.css (.app-stage) */ }
+/* This sandbox already reflows its HUD on narrow screens. Do not scale that
+ * responsive layout down again; playable world/battle keep the fixed stage. */
+@media (max-width: 820px) {
+  .app-stage.battle-sandbox-stage { width: 100%; height: 100%; transform: none; }
+}
 </style>

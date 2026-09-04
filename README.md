@@ -244,12 +244,17 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 | `npm run build` | 构建前端到 `apps/web/dist` |
 | `npm run typecheck` | vue-tsc + tsc 类型检查 |
 | `npm run smoke` | 引擎、原创主线、潮位、深空遗址与幻境之塔配置冒烟测试 |
+| `npm run visuals:battle` | 无存档战斗沙盒的真实浏览器生命周期、窄屏与持续运行验收 |
 | `npm run db:apply` | 本地 D1 建表 |
 | `npm run db:apply:remote` | 远程 D1 建表 |
 | `npm run deploy` | 构建 + `wrangler deploy` |
 | `npm run assets:download` | 下载宝可梦素材 |
 | `bash scripts/setup.sh` | 一键本地环境 |
 | `bash scripts/deploy.sh` | 一键 Cloudflare 部署 |
+
+战斗专项验收会自动启动本地 Vite（端口 `41775`）和独立无头 Chrome，不启动 Worker、不登录、不读写玩家存档。默认使用 Windows 标准安装位置的 Chrome；其他位置可通过环境变量 `PO_VISUAL_BROWSER` 指定可执行文件。
+
+覆盖资源加载中退出、6 轮 3v3 进入/重开/退出、5 种环境连续切换、60 秒持续采样与 390px 窄屏布局。截图及 JSON 报告输出到 Git 忽略的 `doc/visual-baselines/battle/`。此项使用 SwiftShader 软件渲染，只作为功能与资源生命周期回归，不等于真实显卡性能、长时间压力测试或正式剧情流程验收。
 
 ---
 

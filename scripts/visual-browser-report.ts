@@ -83,8 +83,9 @@ async function lifecycleObservation(page: Page, expectedEntries: readonly Matrix
   const cdp = await page.context().newCDPSession(page);
   const heapUsed = async (): Promise<number> => {
     await cdp.send('HeapProfiler.collectGarbage');
-    const metrics = await cdp.send('Performance.getMetrics') as { metrics: Array<{ name: string; value: number }> };
-    return metrics.metrics.find((metric) => metric.name === 'JSHeapUsedSize')?.value ?? 0;
+    const { usedSize } = await cdp.send('Runtime.getHeapUsage');
+    assert(Number.isFinite(usedSize) && usedSize > 0, 'Chrome did not return a valid heap measurement');
+    return usedSize;
   };
   const sceneIdFor = (mapId: typeof MAP_IDS[number]) => expectedEntries.find((entry) => entry.mapId === mapId)?.diagnostics.sceneId;
   const baseQuery = new URLSearchParams({ 'visual-regression': '1', 'visual-scene': 'viridian-forest' });
