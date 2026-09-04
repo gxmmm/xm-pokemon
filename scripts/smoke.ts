@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, movementStepIntervalForSpeed, roundCombatAmount, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, sceneForNpc, sceneForObject, storyQuestLabel, visibleStoryNpcs, visibleStoryObjects, STORY_TRAINERS, STORY_OBJECTS, isTideBlockedCell, isLowTideReefCell, isWalkable } from '@pokemon-online/config';
+import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 
 import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
@@ -98,14 +98,6 @@ testBattleReadability();
   const packageManifest = readFileSync('package.json', 'utf8');
   assert(!packageManifest.includes('canvas:archive-check') && !packageManifest.includes('check-canvas-archive'), 'build scripts do not retain Canvas archive checks');
   console.log('✓ legacy Canvas renderer removed');
-}
-
-// Long-run renderer observation stays outside rules: route handoffs retain
-// only visual map DTOs, never counters, heap data, or save facts.
-{
-  const observation = { stage: 'world' as const, heapUsedBytes: 1024, diagnostics: { canvasCount: 1, totalChildCount: 12, drawCallTotal: 7 } };
-  assert(observation.stage === 'world' && observation.heapUsedBytes === 1024 && observation.diagnostics.canvasCount === 1 && observation.diagnostics.drawCallTotal === 7 && Object.keys(observation).length === 3, 'renderer observation samples remain presentation-only');
-  console.log('✓ Stage 8 playable renderer observation contract');
 }
 
 // Stage 8 visual preferences are renderer-neutral and deliberately cannot
@@ -577,8 +569,7 @@ testBattleCamera();
 // Visual config must cover existing skills and the first two scene-pack samples.
 {
   assert(!!WORLD_SCENE_BY_MAP_ID.pallet && WORLD_SCENE_BY_MAP_ID.pallet.biome === 'mist-harbor', 'Mist Bay scene pack configured');
-  assert(!!WORLD_SCENE_BY_MAP_ID.route1 && WORLD_SCENE_BY_MAP_ID.route1.biome === 'lumen-forest', 'Lumen Trail scene pack configured');
-  assert(Object.keys(BIOME_VISUALS).length >= 8, 'biome visual catalog configured');
+  assert(Object.keys(BIOME_VISUALS).length === 2, 'biome visual catalog configured');
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
   assert(getSpecies(6).normalAttackDelivery === 'melee' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
   assert(normalAttackVisualStyleFor(68, 'melee') === 'fist' && normalAttackVisualStyleFor(6, 'melee') === 'claw' && normalAttackVisualStyleFor(65, 'ranged') === 'psychic-bolt', 'normal attacks resolve fighter, claw, and psychic-ranged styles from fixed species delivery configuration');
@@ -826,65 +817,6 @@ testBattleCamera();
   assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');
   console.log('✓ BattleDirector deterministic cue contract:', first.length);
 }
-// White Night remains available as a friendly test rematch after the opening
-// story duel, without duplicating EXP, flags, or quest advancement.
-{
-  const baiyeRematch = STORY_TRAINERS['baiye-rematch'];
-  assert(!!baiyeRematch && baiyeRematch.repeatable && baiyeRematch.rewardExp === false && baiyeRematch.winFlags.length === 0 && baiyeRematch.questAfter === '', 'White Night rematch has no progression side effects');
-  const completedBaiyeScene = sceneForNpc('rival-baiye', { flags: ['rival_defeated'], activeQuest: 'investigate-firefly', completedQuests: [], tide: 'high' });
-  assert(completedBaiyeScene.choices?.some((choice) => choice.battleId === 'baiye-rematch'), 'White Night offers repeat challenge after story duel');
-  console.log('✓ White Night repeatable sparring contract');
-}
-
-// The observatory Scene Pack keeps its landmark grammar independent from
-// collision, encounter, warp, and story state.
-{
-  const observatory = WORLD_SCENE_BY_MAP_ID['mt-moon'];
-  const observatoryLandmarks = observatory?.landmarks ?? [];
-  assert(observatory?.biome === 'moon-cavern' && observatory?.ambience.preset === 'starlight', 'Starfall Observatory scene config has moon-cavern starlight ambience');
-  assert(observatoryLandmarks.some((landmark) => landmark.kind === 'observatory-dome') && observatoryLandmarks.some((landmark) => landmark.kind === 'meteor-spire') && observatoryLandmarks.some((landmark) => landmark.kind === 'star-chart'), 'Starfall Observatory config has strong landmark vocabulary');
-  const domeRim = observatoryLandmarks.find((landmark) => landmark.id === 'dome-upper-rim' && landmark.depth === 'occlusion');
-  assert(!!domeRim && domeRim.x <= 7.7 && domeRim.x + (domeRim.width ?? 1) >= 7.7 && domeRim.y <= 9.7 && domeRim.y + (domeRim.height ?? 1) >= 9.7, 'Starfall Observatory dome occlusion covers sandbox player route');
-  assert(observatory?.characters?.some((character) => character.id === 'sky-cartographer' && character.behavior === 'trace-stars'), 'Starfall Observatory reserves cartographer star-tracing behavior');
-  assert(isGpuWorldMapId('mt-moon'), 'Starfall Observatory has a Pixi WorldView Scene Pack');
-  console.log('✓ Starfall Observatory WorldSceneSpec sandbox contract');
-}
-
-// Tide Dragon Den passed sandbox acceptance and is now approved for the
-// existing config-owned GPU WorldView bridge. The scene pack remains decorative
-// and must not become a second source for collision, encounter, warp or story facts.
-{
-  const dragonDen = WORLD_SCENE_BY_MAP_ID['dragon-den'];
-  const denLandmarks = dragonDen?.landmarks ?? [];
-  assert(dragonDen?.biome === 'dragon-grotto' && dragonDen?.ambience.preset === 'rune', 'Tide Dragon Den scene config has dragon-grotto rune ambience');
-  assert(denLandmarks.some((landmark) => landmark.kind === 'tide-cavern-wall') && denLandmarks.some((landmark) => landmark.kind === 'crystal-tide-pool') && denLandmarks.some((landmark) => landmark.kind === 'anchor-dais'), 'Tide Dragon Den config has reusable tide-cavern landmark vocabulary');
-  const caveVeil = denLandmarks.find((landmark) => landmark.id === 'south-brine-veil' && landmark.depth === 'foreground');
-  assert(!!caveVeil && caveVeil.x <= 7.8 && caveVeil.x + (caveVeil.width ?? 1) >= 7.8 && caveVeil.y <= 10.7 && caveVeil.y + (caveVeil.height ?? 1) >= 10.7, 'Tide Dragon Den foreground veil covers sandbox player route');
-  const denStoryObjectIds = STORY_OBJECTS.filter((object) => object.mapId === 'dragon-den').map((object) => object.id).sort();
-  const denVisualObjectIds = dragonDen?.objectVisuals?.map((object) => object.id).sort() ?? [];
-  assert(JSON.stringify(denVisualObjectIds) === JSON.stringify(denStoryObjectIds), 'Tide Dragon Den object visual recipes map exactly the existing story object identifiers');
-  assert(dragonDen?.characters?.some((character) => character.id === 'reef-keeper' && character.appearance === 'scout'), 'Tide Dragon Den reserves Reef Keeper renderer character styling');
-  assert(isGpuWorldMapId('dragon-den') && GPU_WORLD_MAP_IDS.includes('dragon-den'), 'Tide Dragon Den is approved for the controlled GPU WorldView gate after sandbox acceptance');
-  console.log('✓ Tide Dragon Den WorldSceneSpec sandbox contract');
-}
-
-// Deep-space passed sandbox acceptance and is now approved for the existing
-// config-owned GPU WorldView bridge. The scene pack remains decorative only and
-// must not become a second source for collision, encounter, warp or story facts.
-{
-  const deepSpace = WORLD_SCENE_BY_MAP_ID['deep-space'];
-  const deepLandmarks = deepSpace?.landmarks ?? [];
-  assert(deepSpace?.biome === 'deep-ruin' && deepSpace?.ambience.preset === 'rune', 'Deep-space scene config has deep-ruin rune ambience');
-  assert(deepLandmarks.some((landmark) => landmark.kind === 'gravity-platform') && deepLandmarks.some((landmark) => landmark.kind === 'rift-arch') && deepLandmarks.some((landmark) => landmark.kind === 'void-debris'), 'Deep-space config has reusable anomaly-ruin landmark vocabulary');
-  const nearShelf = deepLandmarks.find((landmark) => landmark.id === 'near-floating-shelf' && landmark.depth === 'occlusion');
-  assert(!!nearShelf && nearShelf.x <= 7.8 && nearShelf.x + (nearShelf.width ?? 1) >= 7.8 && nearShelf.y <= 10.8 && nearShelf.y + (nearShelf.height ?? 1) >= 10.8, 'Deep-space occlusion covers sandbox player route');
-  const deepStoryObjectIds = STORY_OBJECTS.filter((object) => object.mapId === 'deep-space').map((object) => object.id).sort();
-  const deepVisualObjectIds = deepSpace?.objectVisuals?.map((object) => object.id).sort() ?? [];
-  assert(JSON.stringify(deepVisualObjectIds) === JSON.stringify(deepStoryObjectIds), 'Deep-space object visual recipes map exactly the existing story object identifiers');
-  assert(isGpuWorldMapId('deep-space') && GPU_WORLD_MAP_IDS.includes('deep-space'), 'Deep-space is approved for the controlled GPU WorldView gate after sandbox acceptance');
-  console.log('✓ Deep-space WorldSceneSpec sandbox contract');
-}
-
 // Stage 8 scene-pack stability: each approved map stays under a config-owned
 // budget, keeps its preload boundary local, and matches its reviewed baseline.
 {
@@ -908,14 +840,6 @@ testBattleCamera();
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'ember')?.variant === 'default' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'flamethrower')?.variant === 'flame-stream' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'fire-blast')?.variant === 'fire-glyph', 'fire skills use distinct config-owned basic, sustained, and finisher visual motifs');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'blazing-dive')?.variant === 'dive' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'shadow-trap')?.variant === 'bind' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'chilling-snare')?.variant === 'snare', 'signature skills select config variants without renderer skill branches');
   console.log('✓ Stage 6 visual recipe and battle biome contract');
-}
-
-// Route renderer handoffs are intentionally visual-only DTOs so a world/battle
-// transition cannot carry simulation, collision, or save state across routes.
-{
-  const handoff = { mapId: 'pallet' };
-  assert(handoff.mapId === 'pallet' && Object.keys(handoff).length === 1, 'GPU world-battle handoff is visual-only');
-  console.log('✓ GPU world-battle visual handoff contract');
 }
 
 // Scene Packs are the single source of Pixi world eligibility. Every enabled
@@ -945,81 +869,10 @@ testBattleCamera();
   assert(!!roof && roof.x <= 7.2 && roof.x + (roof.width ?? 1) >= 7.2 && roof.y <= 9.6 && roof.y + (roof.height ?? 1) >= 9.6, 'Mist Bay roof occlusion covers sandbox player route');
   const characters = mistBay?.characters ?? [];
   assert(characters.some((character) => character.id === 'player' && character.appearance === 'hero'), 'Mist Bay scene config defines GPU player character');
-  assert(characters.filter((character) => character.behavior !== 'idle').length >= 3, 'Mist Bay scene config reserves three readable NPC behaviors');
-  assert(characters.some((character) => character.id === 'professor-lan' && character.behavior === 'study-tide') && characters.some((character) => character.id === 'harbor-villager' && character.behavior === 'look-out') && characters.some((character) => character.id === 'dock-fisher' && character.behavior === 'sort-nets'), 'Mist Bay scene config defines representative NPC behaviors');
+  assert(characters.length === 2 && characters.some((character) => character.id === 'dock-fisher'), 'Mist Bay keeps only player and ambient fisher');
   console.log('✓ Mist Bay WorldSceneSpec landmark contract');
 }
 
-// Stage 5 keeps route1 as an independent forest scene pack. It exposes visual
-// layers only, so formal WorldView GPU eligibility remains limited to Mist Bay.
-{
-  const lumenTrail = WORLD_SCENE_BY_MAP_ID.route1;
-  assert(lumenTrail?.biome === 'lumen-forest' && lumenTrail.palette.accent === '#d7ee7b', 'Lumen Trail WorldSceneSpec has forest palette');
-  const routeLandmarks = lumenTrail?.landmarks ?? [];
-  assert(routeLandmarks.some((landmark) => landmark.kind === 'tree-wall') && routeLandmarks.filter((landmark) => landmark.kind === 'tree-cluster').length >= 3, 'Lumen Trail has layered non-tile forest structure');
-  assert(routeLandmarks.some((landmark) => landmark.kind === 'canopy' && landmark.depth === 'occlusion') && routeLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Lumen Trail has readable canopy occlusion and foreground fog');
-  assert(lumenTrail?.ambience.preset === 'pollen' && (lumenTrail.ambience.density ?? 0) >= 0.6, 'Lumen Trail config reserves firefly pollen ambience');
-  assert(lumenTrail?.characters?.some((character) => character.id === 'lantern-scout' && character.behavior === 'tend-lantern'), 'Lumen Trail config reserves Lantern Scout environmental behavior');
-  console.log('✓ Lumen Trail WorldSceneSpec forest contract');
-}
-
-// Direct-map rollout: Red Rift Canyon enters the explicit config gate with only
-// renderer-generic canyon grammar. Its natural encounterFloor, collision cells,
-// cave warps and story gates remain authoritative map/story inputs.
-{
-  const canyon = WORLD_SCENE_BY_MAP_ID['rock-tunnel'];
-  assert(canyon?.biome === 'moon-cavern' && canyon.palette.accent === '#f0a46c', 'Red Rift Canyon WorldSceneSpec has low-light canyon palette');
-  const canyonLandmarks = canyon?.landmarks ?? [];
-  assert(canyonLandmarks.filter((landmark) => landmark.kind === 'canyon-wall').length === 3 && canyonLandmarks.filter((landmark) => landmark.kind === 'mineral-vein').length >= 3 && canyonLandmarks.some((landmark) => landmark.kind === 'rock-shelf'), 'Red Rift Canyon uses reusable canyon, mineral, and shelf landmark grammar');
-  assert(canyonLandmarks.some((landmark) => landmark.kind === 'cave-shadow' && landmark.depth === 'occlusion') && canyonLandmarks.some((landmark) => landmark.kind === 'cave-veil' && landmark.depth === 'foreground'), 'Red Rift Canyon has low-light occlusion and foreground dust');
-  assert(isGpuWorldMapId('rock-tunnel') && GPU_WORLD_MAP_IDS.includes('rock-tunnel') && WORLD_SCENE_VISUAL_BASELINES['rock-tunnel'] === worldSceneFingerprintHash(canyon!), 'Red Rift Canyon is approved through the explicit GPU gate with its reviewed config baseline');
-  console.log('✓ Red Rift Canyon direct GPU WorldSceneSpec contract');
-}
-
-// Stilltide Isles uses only renderer-generic reef, channel, wreck and cave-mouth
-// grammar. Its reviewed Scene Pack is promoted only through the explicit config
-// gate; tide state, encounterFloor, boat/cave warps and story visibility remain
-// authoritative map/story inputs.
-{
-  const isles = WORLD_SCENE_BY_MAP_ID['sea-route'];
-  assert(isles?.biome === 'tide-sea' && isles.palette.accent === '#80dce3', 'Stilltide Isles WorldSceneSpec has a distinct tide-sea palette');
-  const isleLandmarks = isles?.landmarks ?? [];
-  assert(isleLandmarks.filter((landmark) => landmark.kind === 'reef-islet').length >= 4 && isleLandmarks.filter((landmark) => landmark.kind === 'tide-channel').length === 2 && isleLandmarks.some((landmark) => landmark.kind === 'shipwreck') && isleLandmarks.some((landmark) => landmark.kind === 'tide-cave-mouth'), 'Stilltide Isles uses reusable reef, channel, wreck, and cave-mouth landmark grammar');
-  assert(isleLandmarks.some((landmark) => landmark.kind === 'reef-islet' && landmark.depth === 'occlusion') && isleLandmarks.some((landmark) => landmark.kind === 'cave-veil' && landmark.depth === 'foreground'), 'Stilltide Isles has readable reef occlusion and foreground spray');
-  const isleObjects = isles?.objectVisuals ?? [];
-  assert(isleObjects.map((object) => object.id).join(',') === 'tide-gauge,ship-log' && isleObjects.map((object) => object.kind).join(',') === 'tide-gauge,ship-log', 'Stilltide Isles maps tide story object DTO appearances without owning visibility or positions');
-  assert(isGpuWorldMapId('sea-route') && GPU_WORLD_MAP_IDS.includes('sea-route') && WORLD_SCENE_VISUAL_BASELINES['sea-route'] === worldSceneFingerprintHash(isles!), 'Stilltide Isles is approved through the explicit GPU gate with its reviewed config baseline');
-  console.log('✓ Stilltide Isles explicit GPU WorldSceneSpec contract');
-}
-
-// Stage 9.1-d-c promotes the accepted Starfall Ridge through the explicit
-// config-owned GPU gate. Its ancient-road collision, grass encounters, warp and
-// ordered story stars remain authoritative map/story inputs.
-{
-  const ridge = WORLD_SCENE_BY_MAP_ID.route3;
-  assert(ridge?.biome === 'sunlit-route' && ridge.palette.accent === '#ffe485', 'Starfall Ridge WorldSceneSpec has a distinct highland palette');
-  const ridgeLandmarks = ridge?.landmarks ?? [];
-  assert(ridgeLandmarks.filter((landmark) => landmark.kind === 'ridge-wall').length === 3 && ridgeLandmarks.some((landmark) => landmark.kind === 'stone-terrace') && ridgeLandmarks.filter((landmark) => landmark.kind === 'starfall-scar').length === 3, 'Starfall Ridge uses reusable ridge, terrace, and meteor-scar landmark grammar');
-  assert(ridgeLandmarks.some((landmark) => landmark.kind === 'ridge-overhang' && landmark.depth === 'occlusion') && ridgeLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Starfall Ridge has readable ridge occlusion and foreground haze');
-  const ridgeObjects = ridge?.objectVisuals ?? [];
-  assert(ridgeObjects.map((object) => object.id).join(',') === 'star-1,star-2,star-3' && ridgeObjects.every((object) => object.kind === 'star-scar'), 'Starfall Ridge maps ordered story star DTO appearances without owning visibility or positions');
-  assert(isGpuWorldMapId('route3') && GPU_WORLD_MAP_IDS.includes('route3') && WORLD_SCENE_VISUAL_BASELINES.route3 === worldSceneFingerprintHash(ridge!), 'Starfall Ridge is approved through the explicit GPU gate with its reviewed config baseline');
-  console.log('✓ Starfall Ridge sandbox-first WorldSceneSpec contract');
-}
-
-// Stage 9.1-c promotes the already accepted Mistwood trial through the explicit
-// config-owned GPU gate. Its story coordinates and visibility remain incoming DTOs,
-// not renderer-owned gameplay facts.
-{
-  const mistwood = WORLD_SCENE_BY_MAP_ID['viridian-forest'];
-  assert(mistwood?.biome === 'mist-forest' && mistwood.palette.accent === '#91e7d5', 'Mistwood trial WorldSceneSpec has a distinct mist forest palette');
-  const mistwoodLandmarks = mistwood?.landmarks ?? [];
-  assert(mistwoodLandmarks.some((landmark) => landmark.kind === 'spore-ring') && mistwoodLandmarks.some((landmark) => landmark.kind === 'canopy' && landmark.depth === 'occlusion') && mistwoodLandmarks.some((landmark) => landmark.kind === 'fog-bank' && landmark.depth === 'foreground'), 'Mistwood trial uses generic spore, occlusion, and foreground grammar');
-  const mistwoodObjects = mistwood?.objectVisuals ?? [];
-  assert(mistwoodObjects.filter((object) => object.kind === 'signal-spore').length === 3 && mistwoodObjects.some((object) => object.id === 'anomaly-core' && object.kind === 'anomaly-core'), 'Mistwood trial maps story object DTO appearances without owning visibility or positions');
-  assert(isGpuWorldMapId('viridian-forest') && GPU_WORLD_MAP_IDS.includes('viridian-forest') && WORLD_SCENE_VISUAL_BASELINES['viridian-forest'] === worldSceneFingerprintHash(mistwood!), 'Mistwood trial is approved through the explicit GPU gate with its reviewed config baseline');
-  console.log('✓ Mistwood trial sandbox-first WorldSceneSpec contract');
-}
 
 // Stage 3 primitive selection remains a pure renderer policy: renderer input
 // can be tested without Pixi, DOM, or BattleSim internals.
@@ -1146,7 +999,7 @@ assert(pveHits >= 1, `pve simultaneous landed hits (${pveHits}) - no stall`);
 console.log('✓ pve simultaneous 3v1: winner=', pveSim.state.winner, 'hits=', pveHits);
 
 // 2c. wild group rolls 1~3
-const grp = rollWildGroup(getMap('route1'));
+const grp = rollWildGroup(getMap('illusion-tower-1'));
 assert(grp.length >= 1 && grp.length <= 3, `wild group size 1..3 (${grp.length})`);
 console.log('✓ wild group size:', grp.length);
 
@@ -1666,107 +1519,6 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   console.log('✓ control and cooldown windows');
 }
 
-// 3af. Original story data: the opening scene points the player toward the
-// rival, and the rival becomes available only after the researcher briefing.
-{
-  const opening = { flags: [], activeQuest: 'meet-professor', completedQuests: [] };
-  assert(visibleStoryNpcs('pallet', opening).some((n) => n.id === 'professor-lan'), 'opening researcher is visible');
-  assert(!visibleStoryNpcs('pallet', opening).some((n) => n.id === 'rival-baiye'), 'rival waits for researcher briefing');
-  const briefing = sceneForNpc('professor-lan', opening);
-  assert(briefing.activeQuest === 'challenge-baiye' && (briefing.grantFlags ?? []).includes('professor_briefed'), 'researcher advances opening quest');
-  const briefed = { ...opening, flags: ['professor_briefed'], activeQuest: 'challenge-baiye' };
-  assert(visibleStoryNpcs('pallet', briefed).some((n) => n.id === 'rival-baiye'), 'rival appears after briefing');
-  assert(storyQuestLabel('investigate-firefly').includes('萤火林道'), 'story objective label is present');
-  console.log('✓ original story opening data');
-}
-
-// 3ad. Chapter-two story progression: the three ordered light clues reveal a
-// visible trainer trial, whose victory then reveals the anomaly-core battle.
-{
-  const state = { flags: ['rival_defeated', 'firefly_signal_found'], activeQuest: 'mistwood-open', completedQuests: [] };
-  assert(visibleStoryObjects('viridian-forest', state).some((o) => o.id === 'lumen-1'), 'first lumen is visible');
-  const first = sceneForObject('lumen-1', state);
-  assert((first.grantFlags ?? []).includes('lumen_1'), 'first lumen grants ordered flag');
-  const afterOne = { ...state, flags: [...state.flags, 'lumen_1'] };
-  assert(visibleStoryObjects('viridian-forest', afterOne).some((o) => o.id === 'lumen-2'), 'second lumen follows first');
-  const afterThree = { ...state, flags: [...state.flags, 'lumen_1', 'lumen_2', 'lumen_3'] };
-  assert(visibleStoryNpcs('viridian-forest', afterThree).some((n) => n.id === 'mist-runner'), 'trial trainer appears after all lumens');
-  assert(STORY_TRAINERS['mist-runner-trial']?.questAfter === 'confront-anomaly', 'trial points to anomaly objective');
-  const afterTrial = { ...afterThree, flags: [...afterThree.flags, 'mist_runner_defeated'] };
-  assert(visibleStoryObjects('viridian-forest', afterTrial).some((o) => o.id === 'anomaly-core'), 'anomaly core appears after trial');
-  assert(sceneForObject('anomaly-core', afterTrial).choices?.some((c) => c.battleId === 'anomaly-core'), 'anomaly core launches a story battle');
-  const calm = { ...afterTrial, flags: [...afterTrial.flags, 'anomaly_calm'] };
-  assert((sceneForNpc('professor-lan', calm).grantFlags ?? []).includes('chapter_one_complete'), 'professor closes chapter one after anomaly');
-  console.log('✓ original story chapter two data');
-}
-
-// 3ae. Chapter-three story: returning with the calm tide opens the starfall
-// route; ordered star marks open the cartographer trial and then the star lens.
-{
-  const base = { flags: ['rival_defeated', 'firefly_signal_found', 'lumen_1', 'lumen_2', 'lumen_3', 'mist_runner_defeated', 'anomaly_calm', 'chapter_one_complete'], activeQuest: 'climb-starfell', completedQuests: [] };
-  assert(visibleStoryObjects('route3', base).some((o) => o.id === 'star-1'), 'first star mark is visible');
-  const starOne = sceneForObject('star-1', base);
-  assert((starOne.grantFlags ?? []).includes('star_1') && starOne.activeQuest === 'read-stars', 'first star mark advances route puzzle');
-  const stars = { ...base, flags: [...base.flags, 'star_1', 'star_2', 'star_3'] };
-  assert(visibleStoryNpcs('mt-moon', stars).some((n) => n.id === 'sky-cartographer'), 'cartographer appears after three star marks');
-  assert(STORY_TRAINERS['cartographer-trial']?.questAfter === 'align-lens', 'cartographer points to lens alignment');
-  const trialWon = { ...stars, flags: [...stars.flags, 'cartographer_defeated'] };
-  assert(visibleStoryObjects('mt-moon', trialWon).some((o) => o.id === 'observatory-lens'), 'star lens appears after cartographer trial');
-  assert(sceneForObject('observatory-lens', trialWon).choices?.some((c) => c.battleId === 'observatory-lens'), 'lens launches chapter-three boss battle');
-  console.log('✓ original story chapter three data');
-}
-
-// 3af. Tide-island chapter: the tide instrument exposes a real walkable reef
-// shelf, reveals the ship log, then unlocks the tide-cave anchor and deep-space gate.
-{
-  const base = { flags: ['lens_aligned'], activeQuest: 'eastbound-signal', completedQuests: [], tide: 'high' as const };
-  assert(visibleStoryNpcs('sea-route', base).some((n) => n.id === 'tide-captain'), 'tide captain appears after lens alignment');
-  const captain = sceneForNpc('tide-captain', base);
-  assert((captain.grantFlags ?? []).includes('tide_briefed'), 'captain introduces tide puzzle');
-  const briefed = { ...base, flags: [...base.flags, 'tide_briefed'] };
-  assert(visibleStoryObjects('sea-route', briefed).some((o) => o.id === 'tide-gauge'), 'tide gauge appears after captain briefing');
-  const tideScene = sceneForObject('tide-gauge', briefed);
-  assert(tideScene.choices?.some((c) => c.kind === 'set-tide' && c.tide === 'low'), 'tide gauge offers low tide');
-  assert(isTideBlockedCell('sea-route', 10, 4, 'high') && !isTideBlockedCell('sea-route', 10, 4, 'low') && isLowTideReefCell('sea-route', 10, 4), 'reef shelf changes walkability by tide');
-  const low = { ...briefed, flags: [...briefed.flags, 'tide_low'], tide: 'low' as const, activeQuest: 'find-ship-log' };
-  assert(visibleStoryObjects('sea-route', low).some((o) => o.id === 'ship-log'), 'ship log appears at low tide');
-  const log = sceneForObject('ship-log', low);
-  assert((log.grantFlags ?? []).includes('ship_log_found'), 'ship log points into tide cave');
-  const logFound = { ...low, flags: [...low.flags, 'ship_log_found'] };
-  assert(visibleStoryNpcs('dragon-den', logFound).some((n) => n.id === 'reef-keeper'), 'tide keeper appears with log');
-  const trialWon = { ...logFound, flags: [...logFound.flags, 'reef_trial_won'] };
-  assert(visibleStoryObjects('dragon-den', trialWon).some((o) => o.id === 'tide-anchor'), 'tide anchor appears after reef trial');
-  const calm = { ...trialWon, flags: [...trialWon.flags, 'deep_anchor_calm'] };
-  assert(visibleStoryObjects('dragon-den', calm).some((o) => o.id === 'deep-space-gate'), 'deep-space gate appears after anchor boss');
-  assert(sceneForObject('deep-space-gate', calm).choices?.some((c) => c.kind === 'warp' && c.mapId === 'deep-space'), 'deep-space gate warps to next region');
-  console.log('✓ original story tide-island data');
-}
-
-// 3ag. Deep-space chapter: three gravity nodes wake the terminal, which summons
-// the rift guardian and then reveals a non-capturable legendary-related echo.
-{
-  const arrived = { flags: ['deep_anchor_calm'], activeQuest: 'deep-space-gate', completedQuests: [], tide: 'low' as const };
-  assert(visibleStoryObjects('deep-space', arrived).some((o) => o.id === 'gravity-node-1'), 'first gravity node appears after entering deep space');
-  const nodeOne = sceneForObject('gravity-node-1', arrived);
-  assert((nodeOne.grantFlags ?? []).includes('gravity_node_1') && nodeOne.activeQuest === 'stabilize-gravity', 'first gravity node starts stabilization puzzle');
-  const nodeOneSet = { ...arrived, flags: [...arrived.flags, 'gravity_node_1'] };
-  assert(visibleStoryObjects('deep-space', nodeOneSet).some((o) => o.id === 'gravity-node-2'), 'second gravity node follows first');
-  const nodeTwoSet = { ...nodeOneSet, flags: [...nodeOneSet.flags, 'gravity_node_2'] };
-  assert(visibleStoryObjects('deep-space', nodeTwoSet).some((o) => o.id === 'gravity-node-3'), 'third gravity node follows second');
-  const stabilized = { ...nodeTwoSet, flags: [...nodeTwoSet.flags, 'gravity_node_3'] };
-  assert(visibleStoryObjects('deep-space', stabilized).some((o) => o.id === 'ancient-terminal'), 'terminal appears after all gravity nodes');
-  const terminal = sceneForObject('ancient-terminal', stabilized);
-  assert((terminal.grantFlags ?? []).includes('terminal_awakened') && terminal.activeQuest === 'face-rift-guardian', 'terminal activates guardian objective');
-  const awakened = { ...stabilized, flags: [...stabilized.flags, 'terminal_awakened'] };
-  assert(visibleStoryObjects('deep-space', awakened).some((o) => o.id === 'rift-heart'), 'rift guardian appears after terminal activation');
-  assert(sceneForObject('rift-heart', awakened).choices?.some((c) => c.battleId === 'rift-heart'), 'rift guardian launches chapter boss battle');
-  assert(STORY_TRAINERS['rift-heart']?.questAfter === 'follow-legend-echo', 'guardian victory points to legend echo');
-  const guardianCalm = { ...awakened, flags: [...awakened.flags, 'rift_guardian_calm'] };
-  assert(visibleStoryObjects('deep-space', guardianCalm).some((o) => o.id === 'legend-echo'), 'legend echo appears after guardian battle');
-  const echo = sceneForObject('legend-echo', guardianCalm);
-  assert((echo.grantFlags ?? []).includes('deep_space_chapter_complete') && echo.choices?.some((c) => c.kind === 'warp' && c.mapId === 'pallet'), 'legend echo closes chapter and offers return');
-  console.log('✓ original story deep-space data');
-}
 
 // 3ah. Illusion tower: the town-side sandbox has five linked floors with
 // intentionally escalating encounter bands for battle, capture, and breeding tests.
@@ -1789,6 +1541,31 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   assert(towerSpecies.size === SPECIES_LIST.length && SPECIES_LIST.every((species) => towerSpecies.has(species.id)), 'tower floors collectively cover the complete Pokedex');
   assert(getMap('illusion-tower-1').warps.some((w) => w.toMapId === 'illusion-tower-2'), 'tower first floor leads upward');
   assert(getMap('illusion-tower-5').warps.some((w) => w.toMapId === 'illusion-tower-4'), 'tower summit leads back downward');
+  assert(MAPS.length === 6 && GPU_WORLD_MAP_IDS.length === 6, 'only the town and five tower floors remain');
+  assert(town.encounters.length === 0 && town.warps.length === 1 && !isWalkable(town.tiles[0]![8]!), 'town has no encounter or abandoned northern exit');
+  // Every arrival cell must reach every exit without passing through another warp.
+  for (const map of MAPS) {
+    assert(map.tiles.length === map.height && map.tiles.every((row) => row.length === map.width), map.id + ' grid dimensions');
+    assert(map.connected.length === map.warps.length && map.connected.every((edge) => map.warps.some((warp) => warp.toMapId === edge.to && warp.x === edge.x && warp.y === edge.y)), map.id + ' links match exits');
+    const arrivals = MAPS.flatMap((from) => from.warps.filter((warp) => warp.toMapId === map.id));
+    for (const arrival of arrivals) {
+      assert(isWalkable(map.tiles[arrival.toY]?.[arrival.toX] ?? 1), map.id + ' walkable arrival');
+      const queue = [{ x: arrival.toX, y: arrival.toY }];
+      const seen = new Set(queue.map(({ x, y }) => x + ',' + y));
+      for (let i = 0; i < queue.length; i++) {
+        const cell = queue[i]!;
+        if (map.warps.some((warp) => warp.x === cell.x && warp.y === cell.y)) continue;
+        for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+          const x = cell.x + dx!, y = cell.y + dy!, key = x + ',' + y;
+          if (!seen.has(key) && isWalkable(map.tiles[y]?.[x] ?? 1)) { seen.add(key); queue.push({ x, y }); }
+        }
+      }
+      for (const warp of map.warps) {
+        assert(MAPS.some((target) => target.id === warp.toMapId), map.id + ' warp target exists');
+        assert(seen.has(warp.x + ',' + warp.y), map.id + ' every exit reachable from every arrival');
+      }
+    }
+  }
   console.log('✓ illusion tower complete-Pokedex sandbox data');
 }
 
@@ -1900,10 +1677,10 @@ for (const m of MAPS) {
 assert(any, 'at least one map yields encounters');
 console.log('✓ encounters roll OK');
 
-// 7. legendary encounter from dragon-den
-const den = getMap('dragon-den');
+// 7. legendary encounter from illusion-tower-5
+const den = getMap('illusion-tower-5');
 const leg = rollEncounter(den);
-assert(leg !== null, 'dragon-den yields encounter');
-console.log('✓ dragon-den encounter:', getSpecies(leg!.speciesId).name, 'lvl', leg!.level);
+assert(leg !== null, 'illusion-tower-5 yields encounter');
+console.log('✓ illusion-tower-5 encounter:', getSpecies(leg!.speciesId).name, 'lvl', leg!.level);
 
 console.log('\n🎉 ALL ENGINE SMOKE TESTS PASSED');

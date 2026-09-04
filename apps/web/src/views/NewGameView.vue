@@ -29,7 +29,7 @@ async function confirm(): Promise<void> {
   <div class="view">
     <div class="panel">
       <h2 class="h-title">选择你的初始伙伴</h2>
-      <p class="muted tiny">大木博士为你准备了三只宝可梦，选一只开始冒险吧。</p>
+      <p class="muted tiny">选择一位伙伴，从雾湾镇开始训练之旅。</p>
       <div class="grid grid-3 starter-grid">
         <div v-for="id in starters" :key="id" class="starter" :class="{ active: selected === id }" @click="selected = id">
           <PokemonSprite :species-id="id" :size="88" />

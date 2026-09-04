@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP, STORY_TRAINERS, TYPE_COLORS, isGpuWorldMapId, type BattleEnvironmentId } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, TYPE_COLORS, isGpuWorldMapId, type BattleEnvironmentId } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
 import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
@@ -27,7 +27,7 @@ const resultMsg = ref('');
 const expResults = ref<ExpGainResult[]>([]);
 const totalExp = ref(0);
 const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
-// BattleStage is the only gameplay renderer for wild, story, and PvP battles.
+// BattleStage is the only gameplay renderer for wild and PvP battles.
 const gpuUnavailable = ref<string | null>(null);
 const pixiStatus = ref(enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
 const returningToWorld = ref(false);
@@ -148,10 +148,6 @@ function hpColor(c: BattleCombatant): string {
 }
 const biome = computed<BattleEnvironmentId>(() => {
   if (battle.mode === 'pvp') return 'arena';
-  const id = battle.mapId ?? '';
-if (id.includes('dragon') || id === 'deep-space') return 'dragon';
-  if (id.includes('moon') || id.includes('tunnel') || id.includes('cave')) return 'cave';
-  if (id.includes('sea') || id.includes('water')) return 'water';
   return 'grass';
 });
 function skillTargetLabel(id: string): string {
@@ -254,21 +250,6 @@ function handlePveEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
 }
 
 function handlePvpEnd(winner: 'player' | 'enemy' | 'draw' | undefined): void {
-  const scripted = battle.storyBattleId ? STORY_TRAINERS[battle.storyBattleId] : undefined;
-  if (scripted) {
-    if (winner === 'player') {
-      if (scripted.rewardExp !== false) {
-        const total = Math.max(20, scripted.team.reduce((sum, entry) => sum + entry.level * 6, 0));
-        totalExp.value = total;
-        for (const p of game.pveTeamInstances) expResults.value.push(game.grantExp(p.uid, Math.floor(total / Math.max(1, game.pveTeamInstances.length))));
-      }
-      if (!scripted.repeatable) game.advanceStory(scripted.winFlags, scripted.questAfter);
-      resultMsg.value = scripted.winText ?? `${scripted.name} 露出不甘心的笑容："这次算你赢。潮汐的谜团，我们各凭本事。"`;
-    } else {
-      resultMsg.value = `${scripted.name}："别灰心。回去调整队伍，再来一次。"`;
-    }
-    return;
-  }
   if (winner === 'player') {
     const oppLevel = sim.value?.state.combatants.filter((c) => c.side === 'enemy').reduce((s, c) => s + c.level, 0) ?? 0;
     const total = Math.max(20, Math.floor(oppLevel * 5));

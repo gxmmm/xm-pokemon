@@ -1,8 +1,7 @@
 /**
  * Map-crossing transitions. Replaces instant teleporting: when the player
  * steps on an exit tile, the screen is covered, the map is swapped under the
- * cover, then revealed. `fade`/`cave`/`door` are quick dark wipes; `boat`
- * is a longer letterboxed "sailing" beat with a destination caption.
+ * cover, then revealed. All crossings use a short dark wipe.
  *
  * The state is reactive so a Vue overlay can bind to `active`/`kind`/`progress`.
  */
@@ -49,9 +48,9 @@ export async function runTransition(
   state.active = true;
   state.kind = kind;
   state.label = label;
-  const outMs = kind === 'boat' ? 700 : 320;
-  const holdMs = kind === 'boat' ? 900 : 140;
-  const inMs = kind === 'boat' ? 600 : 280;
+  const outMs = 320;
+  const holdMs = 140;
+  const inMs = 280;
   await animatePhase(state, 'out', outMs);
   state.phase = 'hold';
   state.progress = 1;

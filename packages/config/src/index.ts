@@ -7,7 +7,6 @@ export * from './skills.ts';
 export * from './skill-budget.ts';
 export * from './pokemon.ts';
 export * from './maps.ts';
-export * from './story.ts';
 export * from './items.ts';
 export * from './exp.ts';
 export * from './visuals.ts';

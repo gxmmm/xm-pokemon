@@ -14,20 +14,18 @@
     "build": "npm run build:web",
     "build:web": "vite build --config apps/web/vite.config.ts",
     "typecheck": "vue-tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit",
-    "smoke": "npx esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=.smoke.mjs --log-level=warning && node .smoke.mjs && node -e \"require('fs').rmSync('.smoke.mjs', { force: true })\"",
+    "smoke": "node scripts/run.mjs smoke",
     "db:apply": "wrangler d1 execute pokemon-online --local --file=database/schema.sql",
     "db:apply:remote": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
-    "db:seed": "wrangler d1 execute pokemon-online --local --file=database/seed.sql",
     "deploy": "npm run build && wrangler deploy",
     "deploy:db": "wrangler d1 execute pokemon-online --remote --file=database/schema.sql",
     "assets:download": "node scripts/download-sprites.mjs",
     "postinstall": "node scripts/check-env.mjs || true",
-    "balance": "npx esbuild scripts/balance-report.ts --bundle --platform=node --format=esm --outfile=.balance-report.mjs --log-level=warning && node .balance-report.mjs && node -e \"require('fs').rmSync('.balance-report.mjs', { force: true })\"",
-    "tactics": "npx esbuild scripts/tactics-report.ts --bundle --platform=node --format=esm --outfile=.tactics-report.mjs --log-level=warning && node .tactics-report.mjs && node -e \"require('fs').rmSync('.tactics-report.mjs', { force: true })\"",
-    "visuals:report": "npx esbuild scripts/visual-report.ts --bundle --platform=node --format=esm --outfile=.visual-report.mjs --log-level=warning && node .visual-report.mjs && node -e \"require('fs').rmSync('.visual-report.mjs', { force: true })\"",
-    "visuals:battle": "npx esbuild scripts/battle-browser-report.ts --bundle --platform=node --format=esm --packages=external --outfile=.battle-browser-report.mjs --log-level=warning && node .battle-browser-report.mjs && node -e \"require('fs').rmSync('.battle-browser-report.mjs', { force: true })\"",
-    "visuals:browser": "npx esbuild scripts/visual-browser-report.ts --bundle --platform=node --format=esm --packages=external --outfile=.visual-browser-report.mjs --log-level=warning && node .visual-browser-report.mjs && node -e \"require('fs').rmSync('.visual-browser-report.mjs', { force: true })\"",
-    "visuals:playable": "npx esbuild scripts/playable-renderer-observation.ts --bundle --platform=node --format=esm --packages=external --outfile=.playable-renderer-observation.mjs --log-level=warning && node .playable-renderer-observation.mjs && node -e \"require('fs').rmSync('.playable-renderer-observation.mjs', { force: true })\""
+    "balance": "node scripts/run.mjs balance-report",
+    "tactics": "node scripts/run.mjs tactics-report",
+    "visuals:report": "node scripts/run.mjs visual-report",
+    "visuals:battle": "node scripts/run.mjs battle-browser-report",
+    "visuals:browser": "npm run build && node scripts/run.mjs visual-browser-report"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241101.0",
@@ -38,7 +36,8 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vue-tsc": "^2.1.10",
-    "wrangler": "^3.86.0"
+    "wrangler": "^3.86.0",
+    "esbuild": "^0.21.5"
   },
   "engines": {
     "node": ">=18"

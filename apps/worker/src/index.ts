@@ -111,7 +111,7 @@ export default {
             const body = await readBody<{ save?: PlayerSave }>(request);
             if (!body || !body.save) return fail('缺少存档数据');
             const save = body.save;
-            save.version = SAVE_VERSION;
+            if (save.version !== SAVE_VERSION) return fail('存档版本已更新，请开始新游戏');
             save.playerId = player.id;
             save.username = player.username;
             save.updatedAt = Date.now();

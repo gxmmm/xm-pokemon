@@ -257,12 +257,12 @@ export interface EncounterEntry {
 export type Facing = 'up' | 'down' | 'left' | 'right';
 
 /** Cinematic transition played when crossing between maps. */
-export type TransitionType = 'fade' | 'boat' | 'cave' | 'door';
+export type TransitionType = 'fade' | 'cave' | 'door';
 
 /**
  * MapExit - a tile (edge or door) that, when stepped on, transitions the
  * player to another map. Replaces the old instant warp: crossings now play a
- * transition (fade/boat/cave/door) and never teleport instantly. `toll` is
+ * transition (fade/cave/door) and never teleport instantly. `toll` is
  * reserved for a future road-toll/boat-fare mechanic (not charged yet).
  */
 export interface MapExit {
@@ -378,18 +378,6 @@ export interface PlayerSettings {
   battleSpeed: number; // 1, 2, 3
 }
 
-export type TideState = 'high' | 'low';
-
-export interface StoryState {
-  /** Monotonic world-story switches. They are deliberately generic so future
-   * chapters can add content without migrating a rigid quest schema. */
-  flags: string[];
-  activeQuest: string;
-  completedQuests: string[];
-  /** Static tide phase for island puzzles; changed only at tide instruments. */
-  tide: TideState;
-}
-
 /**
  * PlayerSave - the entire player state. The Worker stores this (as a JSON blob)
  * because the backend is a save server, not a compute server. Static config is
@@ -397,7 +385,7 @@ export interface StoryState {
  *
  * Carry model: a single `roster` of up to ROSTER_MAX (20) carried Pokemon. No
  * warehouse yet (a future `warehouse` field is reserved). Two ordered loadouts:
- * `pveTeam` (3, sequential deployment) and `pvpTeam` (3, simultaneous 3v3).
+ * `pveTeam` (3, simultaneous deployment) and `pvpTeam` (3, simultaneous 3v3).
  */
 export interface PlayerSave {
   version: number;
@@ -425,8 +413,6 @@ export interface PlayerSave {
   stats: { battles: number; wins: number; caught: number; bred: number };
   /** map ids the player has visited (drives world-map navigation discovery). */
   visitedMaps: string[];
-  /** Original story progress, NPC state, and current objective. */
-  story: StoryState;
 }
 
 export interface BattleResult {

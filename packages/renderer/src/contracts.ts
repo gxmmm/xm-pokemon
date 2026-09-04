@@ -30,7 +30,7 @@ export interface GameRenderer {
 
 export interface WorldEntityRenderSnapshot {
   id: string;
-  kind: 'player' | 'npc' | 'wild' | 'object';
+  kind: 'player' | 'npc' | 'wild';
   position: { x: number; y: number };
   facing?: 'up' | 'down' | 'left' | 'right';
 }

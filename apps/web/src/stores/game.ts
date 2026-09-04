@@ -39,47 +39,7 @@ function freshSave(playerId: string, username: string, starterId: number): Playe
     lastBattleResult: undefined,
     stats: { battles: 0, wins: 0, caught: 0, bred: 0 },
     visitedMaps: ['pallet'],
-    story: { flags: [], activeQuest: 'meet-professor', completedQuests: [], tide: 'high' },
   };
-}
-
-/** Migrate older save shapes (party+box+battleTeam) to the roster + dual-loadout model. */
-function migrateSave(s: PlayerSave): PlayerSave {
-  const old = s as unknown as { party?: string[]; box?: string[]; battleTeam?: string[] };
-  if (Array.isArray(old.party) && !Array.isArray(s.roster)) {
-    s.roster = [...(old.party ?? []), ...(old.box ?? [])];
-    const bt = old.battleTeam ?? [];
-    s.pveTeam = bt.length ? bt.slice(0, PVE_TEAM_SIZE) : s.roster.slice(0, PVE_TEAM_SIZE);
-    s.pvpTeam = bt.length ? bt.slice(0, PVP_TEAM_SIZE) : s.roster.slice(0, PVP_TEAM_SIZE);
-    delete old.party;
-    delete old.box;
-    delete old.battleTeam;
-  }
-  if (!Array.isArray(s.roster)) s.roster = [];
-  if (!Array.isArray(s.pveTeam)) s.pveTeam = [];
-  if (!Array.isArray(s.pvpTeam)) s.pvpTeam = [];
-  // v5: original story state. Old free-exploration saves enter at the opening
-  // objective without losing any captured Pokemon or map progress.
-  if (!s.story) s.story = { flags: [], activeQuest: 'meet-professor', completedQuests: [], tide: 'high' };
-  if (!Array.isArray(s.story.flags)) s.story.flags = [];
-  if (!Array.isArray(s.story.completedQuests)) s.story.completedQuests = [];
-  if (s.story.tide !== 'high' && s.story.tide !== 'low') s.story.tide = 'high';
-  if (!s.story.activeQuest) s.story.activeQuest = 'meet-professor';
-  // v4: free-placement formation (阵型). Missing/short -> default.
-  if (!Array.isArray(s.formation) || s.formation.length < 3) s.formation = defaultFormation();
-  // prune loadout uids no longer in roster
-  s.pveTeam = s.pveTeam.filter((u) => s.instances[u]);
-  s.pvpTeam = s.pvpTeam.filter((u) => s.instances[u]);
-  // v3: player facing on the world map + visited-maps discovery
-  if (!s.position) s.position = { x: 8, y: 6, facing: 'down' };
-  if (!s.position.facing) s.position.facing = 'down';
-  if (!Array.isArray(s.visitedMaps) || s.visitedMaps.length === 0) {
-    s.visitedMaps = [s.currentMapId];
-  } else if (!s.visitedMaps.includes(s.currentMapId)) {
-    s.visitedMaps.push(s.currentMapId);
-  }
-  s.version = SAVE_VERSION;
-  return s;
 }
 
 export interface ExpGainResult {
@@ -128,7 +88,7 @@ export const useGameStore = defineStore('game', () => {
     loading.value = true; error.value = null;
     try {
       const s = await api.getSave();
-      save.value = s ? migrateSave(s) : s;
+      save.value = s?.version === SAVE_VERSION ? s : null;
     } catch (e) {
       error.value = e instanceof Error ? e.message : '加载存档失败';
     } finally {
@@ -323,23 +283,6 @@ export const useGameStore = defineStore('game', () => {
     if (!save.value.friends.includes(username)) save.value.friends.push(username);
   }
 
-  function hasStoryFlag(flag: string): boolean {
-    return !!save.value?.story.flags.includes(flag);
-  }
-
-  function advanceStory(flags: string[] = [], activeQuest?: string): void {
-    if (!save.value) return;
-    for (const flag of flags) if (!save.value.story.flags.includes(flag)) save.value.story.flags.push(flag);
-    if (activeQuest) save.value.story.activeQuest = activeQuest;
-    void persist();
-  }
-
-  function setTide(tide: 'high' | 'low'): void {
-    if (!save.value || save.value.story.tide === tide) return;
-    save.value.story.tide = tide;
-    void persist();
-  }
-
   function travelTo(mapId: string, x: number, y: number): void {
     if (!save.value) return;
     save.value.currentMapId = mapId;
@@ -366,7 +309,7 @@ export const useGameStore = defineStore('game', () => {
     getInstance, load, startWithStarter, persist,
     see, caught, addCaughtInstance, release, setPveTeam, setPvpTeam, setFormation,
     healAll, useItem, buyItem, grantExp, doEvolve, breed, recordBattle, addFriend,
-    hasStoryFlag, advanceStory, setTide, travelTo, updateSettings, reset,
+    travelTo, updateSettings, reset,
   };
 });
 
