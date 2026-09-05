@@ -7,6 +7,8 @@ import { CombatantStatusLayer, type CombatantStatusVisual } from './CombatantSta
 import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
 import { sampleBattleMotionPose } from './battle-motion.ts';
+import { drawBodyFlames, drawElementMotes, moteSite } from './natural-effect-shapes.ts';
+import { BATTLE_FOOT_CONTACT } from '@pokemon-online/config';
 
 /**
  * GPU model view driven entirely by a resolved BattleArtProfile. It has no
@@ -42,6 +44,8 @@ export interface CombatantViewDiagnostics {
 }
 
 export class CombatantView extends Container {
+  /** Sorted with this actor, so rear terrain cannot cover nearer actors. */
+  readonly footOcclusion = new Container();
   private readonly body = new Container();
   private readonly behindLayers = new Container();
   private readonly frontLayers = new Container();
@@ -49,13 +53,14 @@ export class CombatantView extends Container {
   /** Generic casting halo driven by castProgress; no model or skill branches. */
   private readonly chargeAura = new Graphics({ blendMode: 'add' });
   /** Generic element-tinted outline used by configuration-owned actor travel. */
-  private readonly choreographyOutline = new Graphics({ blendMode: 'add' });
+  private readonly choreographyOutline = new Graphics({ blendMode: 'normal' });
   private readonly statusLayer = new CombatantStatusLayer();
   private readonly fallback = new Graphics();
   private readonly decorations = new Map<string, { graphic: Graphics; spec: BattleArtLayerSpec }>();
   private readonly sprite: CombatantSprite;
   private presentation: ResolvedBattleArtPresentation;
   private motionElapsedMs = 0;
+  private bodyEffectSeconds = 0;
   private motion: BattleArtMotionId;
   private motionDurationOverrideMs: number | null = null;
   private activeChoreography: ActiveActorChoreography | null = null;
@@ -105,7 +110,7 @@ export class CombatantView extends Container {
     // The contact shadow belongs to the projected ground root, not the animated
     // body. Attacks, recoil, tilt, hover, and future world-z motion must not drag
     // it away from the terrain.
-    this.addChild(this.shadow, this.body);
+    this.addChild(this.shadow, this.body, this.footOcclusion);
     this.refresh(combatant);
     void this.sprite.setAsset(this.presentation.asset, this.motion);
   }
@@ -229,6 +234,20 @@ export class CombatantView extends Container {
   }
 
   /** Stage-plane coordinates, excluding camera transforms shared by the VFX layer. */
+  getFootContactFrame() {
+    const anchor = resolveBattleArtAnchor(this.presentation.profile, 'ground');
+    const body = this.sprite.visible ? this.sprite.getBodyBounds(true) : { x: 0, y: -8, width: 64, height: 76 };
+    return {
+      container: this.footOcclusion,
+      x: this.groundingOffset.x + (body.x + anchor.x * body.width) * this.baseScale,
+      y: this.groundingOffset.y + (body.y + body.height / 2) * this.baseScale + (this.presentation.profile.motionPoses.idle?.offsetY ?? 0),
+      width: body.width * this.baseScale * BATTLE_FOOT_CONTACT.widthRatio,
+      height: body.height * this.baseScale * BATTLE_FOOT_CONTACT.heightRatio,
+      scale: this.scale.y,
+      grounded: this.alive && this.projectedLiftPixels < 2,
+    };
+  }
+
   getAnchorPosition(id: BattleArtAnchorId): { x: number; y: number } {
     const anchor = resolveBattleArtAnchor(this.presentation.profile, id);
     const width = this.sprite.visible ? this.sprite.width : BATTLE_SPRITE_DISPLAY_HEIGHT;
@@ -266,6 +285,7 @@ export class CombatantView extends Container {
   }
 
   update(dtSeconds: number): void {
+    this.bodyEffectSeconds += dtSeconds;
     this.locomotionHoldSeconds = Math.max(0, this.locomotionHoldSeconds - dtSeconds);
     this.updateMovementFeel(dtSeconds);
     let clip = this.presentation.profile.motions[this.motion];
@@ -331,7 +351,10 @@ export class CombatantView extends Container {
     this.updateShadowForHover(hover.heightRatio);
     this.updateLayers(progress, pose.glowAlpha, pose.glowScale);
     this.updateChargeAura();
-    this.statusLayer.render(this.motionElapsedMs / 1000);
+    const bodyBounds = this.sprite.visible ? this.sprite.getBodyBounds() : { x: 0, y: -8, width: 64, height: 76 };
+    this.statusLayer.position.set(bodyBounds.x, bodyBounds.y + 8);
+    this.statusLayer.scale.x = this.facing;
+    this.statusLayer.render(this.bodyEffectSeconds, bodyBounds.width, bodyBounds.height, Math.abs(this.body.scale.y * this.scale.y));
     this.updateChoreographyOutline(progress);
     this.alpha = this.alive ? 1 : 0.25;
   }
@@ -370,15 +393,16 @@ export class CombatantView extends Container {
   }
 
   private updateShadowForHover(heightRatio: number): void {
-    const profile = this.presentation.profile;
     const plan = groundShadowPlan(
       this.projectedLiftPixels,
       heightRatio,
       this.terrainShadowAlphaMultiplier,
       this.terrainShadowScaleMultiplier,
     );
-    this.shadow.position.set(this.groundingOffset.x, this.groundingOffset.y);
-    this.shadow.scale.set(profile.shadowScale * plan.scaleX, plan.scaleY);
+    const foot = this.getFootContactFrame();
+    this.shadow.clear().ellipse(0, 0, foot.width * 0.68, Math.max(2, foot.height * 0.7)).fill({ color: 0x07101a, alpha: 0.30 });
+    this.shadow.position.set(foot.x, foot.y);
+    this.shadow.scale.set(plan.scaleX, plan.scaleY);
     this.shadow.alpha = plan.alpha;
   }
 
@@ -499,38 +523,15 @@ export class CombatantView extends Container {
     }
     const spec = active.spec;
     const wrapped = progress < spec.revealAt;
-    // Keep the sprite legible under a deliberately opaque model-cover layer.
-    // Previous implementation faded it to 10% then drew only an outline, which
-    // read as a weak ring rather than a body wrapped in flame.
-    this.sprite.alpha = wrapped ? 0.68 : 1;
-    this.fallback.alpha = wrapped ? 0.62 : 1;
+    this.sprite.alpha = 1;
+    this.fallback.alpha = 1;
     const color = parseHexColor(active.theme.primary, 0xff824e);
     const highlight = parseHexColor(active.theme.highlight, 0xffeea8);
-    const phase = progress * Math.PI * 7;
-    const swell = 1 + Math.sin(phase) * 0.10;
-    const width = 37 * swell;
-    const height = 49 * swell;
     this.choreographyOutline.clear();
     if (!wrapped) return;
-    // A translucent fill covers the full body, then animated tongues cross the
-    // silhouette. This reads as an actual flame-wrapped model at a glance.
-    this.choreographyOutline
-      .ellipse(0, -8, width * 0.96, height * 1.06).fill({ color, alpha: 0.34 })
-      .ellipse(0, -8, width, height).stroke({ color, alpha: 0.94, width: 6 })
-      .ellipse(0, -8, width * 0.78, height * 0.80).stroke({ color: highlight, alpha: 0.86, width: 3.4 });
-    const tongues = 9;
-    for (let index = 0; index < tongues; index++) {
-      const angle = phase + index / tongues * Math.PI * 2;
-      const x = Math.cos(angle) * width * 0.76;
-      const y = -8 + Math.sin(angle) * height * 0.78;
-      const tipX = x + Math.cos(angle) * (12 + (index % 3) * 4);
-      const tipY = y - 16 - (index % 2) * 10;
-      this.choreographyOutline.poly([x - 6, y + 8, tipX, tipY, x + 7, y + 8]).fill({ color: index % 2 ? color : highlight, alpha: 0.88 });
-    }
-    for (let ember = 0; ember < 7; ember++) {
-      const angle = phase * 1.35 + ember * Math.PI * 2 / 7;
-      this.choreographyOutline.circle(Math.cos(angle) * width * 0.65, -8 + Math.sin(angle) * height * 0.62, 3 + ember % 2 * 2).fill({ color: ember % 2 ? color : highlight, alpha: 0.78 });
-    }
+    const body = this.sprite.visible ? this.sprite.getBodyBounds() : { x: 0, y: -8, width: 64, height: 76 };
+    this.choreographyOutline.position.set(body.x, body.y + 8);
+    drawBodyFlames(this.choreographyOutline, this.bodyEffectSeconds * 1.5, body.width, body.height, color, highlight, Math.abs(this.body.scale.y * this.scale.y));
   }
 
   private rebuildLayers(): void {
@@ -540,8 +541,7 @@ export class CombatantView extends Container {
     for (const spec of this.presentation.profile.layers) {
       const graphic = new Graphics();
       const color = parseHexColor(this.presentation.theme[spec.color], 0xffffff);
-      if (spec.kind === 'aura') graphic.ellipse(0, -4, 34, 42).fill({ color, alpha: spec.alpha });
-      else graphic.circle(0, -8, 39).stroke({ color, alpha: spec.alpha, width: 3 });
+      drawElementMotes(graphic, 'generic', 0, -8, 0.3, color);
       if (spec.depth === 'behind') this.behindLayers.addChild(graphic);
       else this.frontLayers.addChild(graphic);
       this.decorations.set(spec.id, { graphic, spec });
@@ -570,18 +570,13 @@ export class CombatantView extends Container {
     const progress = clamp01(this.chargeProgress);
     const primary = parseHexColor(this.presentation.theme.primary, 0xffe3a3);
     const highlight = parseHexColor(this.presentation.theme.highlight, 0xffffff);
-    const phase = (this.motionElapsedMs / 1000) * 7.5;
-    const radius = 26 + progress * 19 + Math.sin(phase) * 2;
-    const alpha = 0.22 + progress * 0.43;
-    this.chargeAura.clear()
-      .ellipse(0, 8, radius * 1.2, radius * 0.34).stroke({ color: primary, alpha, width: 2 + progress * 2 })
-      .circle(0, -7, radius * 0.72).stroke({ color: highlight, alpha: alpha * 0.5, width: 1.4 });
-    const sparkRadius = radius * (0.55 + progress * 0.25);
-    for (let index = 0; index < 4; index++) {
-      const angle = phase + index * Math.PI / 2;
-      const x = Math.cos(angle) * sparkRadius;
-      const y = -7 + Math.sin(angle) * sparkRadius * 0.62;
-      this.chargeAura.circle(x, y, 2.2 + progress * 2.4).fill({ color: highlight, alpha: 0.3 + progress * 0.5 });
+    this.chargeAura.clear();
+    for (let index = 0; index < 7; index++) {
+      const site = moteSite(index);
+      const phase = (this.bodyEffectSeconds * 0.8 + index * 0.17) % 1;
+      const x = site.x * (42 - phase * 24);
+      const y = -8 + site.y * (42 - phase * 24);
+      this.chargeAura.moveTo(x, y).lineTo(x * 0.88, y * 0.88).stroke({ color: index % 2 ? primary : highlight, alpha: Math.sin(phase * Math.PI) * (0.35 + progress * 0.4), width: 1.6 });
     }
   }
 

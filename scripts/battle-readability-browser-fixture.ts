@@ -16,7 +16,7 @@ export async function createBattleReadabilityFixture() {
   section.id = 'readability-fixture';
   Object.assign(section.style, { position: 'fixed', inset: '0', zIndex: '9999', background: '#10201d', color: 'white', padding: '20px' });
   const label = document.createElement('h2');
-  label.textContent = '3v3 密集范围特效 · 地面光圈 / 角色 / 命中前景';
+  label.textContent = '3v3 密集范围特效 · 水花 / 火苗 / 精神碎片';
   const host = document.createElement('div');
   Object.assign(host.style, { width: '1120px', height: '630px' });
   section.append(label, host);
@@ -29,10 +29,38 @@ export async function createBattleReadabilityFixture() {
   const views = (stage as unknown as { combatants: { views: Map<string, CombatantView> } }).combatants.views;
   return {
     read: () => ({ ...stage.getDiagnostics(), settled: stage.isSettled(),
-      motions: Object.fromEntries([...views].map(([uid, view]) => [uid, view.getDiagnostics()])) }),
-    async play(reduceFlicker = false) {
+      motions: Object.fromEntries([...views].map(([uid, view]) => [uid, view.getDiagnostics()])),
+      feet: [...views].map(([uid, view]) => {
+        const { container, ...foot } = view.getFootContactFrame();
+        const bounds = container.getLocalBounds();
+        return { uid, ...foot, children: container.children.length, ownedByActor: container.parent === view,
+          bounds: { minY: bounds.minY, maxY: bounds.maxY, width: bounds.width }, screen: container.getBounds() };
+      }),
+    }),
+    async bodyState(state: 'burn' | 'clear' | 'faint' | 'move', biome: BattleEnvironmentId = 'grass') {
+      label.textContent = `身体状态与脚部接地 · ${state} / ${biome}`;
+      const cells = [{ x: 4, y: 5 }, { x: 6, y: 10 }, { x: 7, y: 5 }, { x: 12, y: 4 }, { x: 13, y: 10 }, { x: 16, y: 7 }];
+      const actors = combatants.map((c, index) => ({ ...c, pixel: { x: cells[index]!.x + (state === 'move' ? 1.5 : 0), y: cells[index]!.y },
+        position: cells[index]!, alive: state !== 'faint', currentHp: state === 'faint' ? 0 : c.maxHp,
+        status: state === 'burn' || state === 'move' ? 'burn' as const : null, statusTimer: 2 }));
+      stage.setVisualSettings({ cameraIntensity: 'off' });
+      if (stage.getDiagnostics().biomeId !== biome) await stage.enterBattle({ biomeId: biome, combatants: actors });
+      else stage.applyBattleSnapshot({ time: 1, combatants: actors });
+    },
+    async statusGallery(stun = false) {
+      label.textContent = stun ? '异常状态 · 眩晕 / 头顶小星标' : '异常状态对照 · 后排：燃烧 / 中毒 / 麻痹 · 前排：冰冻 / 睡眠 / 混乱';
+      const statuses = ['burn', 'poison', 'paralyze', 'freeze', 'sleep', 'confuse'] as const;
+      const actors = combatants.map((c, index) => ({ ...c, speciesId: 25, side: 'enemy' as const, facing: -1 as const,
+        pixel: { x: 5 + index % 3 * 5, y: index < 3 ? 4 : 10 },
+        status: stun ? null : statuses[index]!, flinchUntil: stun ? 5 : 0, alive: true, statusTimer: 2 }));
+      stage.setVisualSettings({ cameraIntensity: 'off' });
+      await stage.enterBattle({ biomeId: 'grass', combatants: actors });
+      stage.applyBattleSnapshot({ time: 1, combatants: actors });
+    },
+    async play(reduceFlicker = false, electric = false) {
+      label.textContent = electric ? '电系范围反馈 · 短电弧 / 无装饰环' : '3v3 密集范围特效 · 水花 / 火苗 / 精神碎片';
       stage.setVisualSettings({ reduceFlicker, cameraIntensity: 'reduced' });
-      const cues: BattleCue[] = (['fire', 'water', 'psychic'] as const).flatMap((element, index) => [
+      const cues: BattleCue[] = (['fire', 'water', electric ? 'electric' : 'psychic'] as const).flatMap((element, index) => [
         { type: 'vfx', recipe: { id: `readability:${element}`, delivery: 'area', element, particleBudget: 16 },
           anchors: { actorId: combatants[index]!.uid, targetIds }, intensity: 0.8, eventType: 'skill' },
         { type: 'environment', reaction: 'splash', anchors: { targetIds } },

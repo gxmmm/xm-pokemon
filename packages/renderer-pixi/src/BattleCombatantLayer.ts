@@ -22,6 +22,7 @@ export class BattleCombatantLayer {
   private readonly views = new Map<string, CombatantView>();
   private readonly positions = new BattlePositionTracker();
   private readonly terrainPlans = new Map<string, TerrainContactPlan>();
+  private biomeId = 'grass';
 
   constructor(
     private readonly assets: BattleArtAssetLoader,
@@ -35,6 +36,7 @@ export class BattleCombatantLayer {
   }
 
   applySnapshot(snapshot: BattleRenderSnapshot, biomeId: string): void {
+    this.biomeId = biomeId;
     const active = new Set(snapshot.combatants.map((combatant) => combatant.uid));
     for (const uid of this.views.keys()) {
       if (!active.has(uid)) this.remove(uid);
@@ -70,7 +72,6 @@ export class BattleCombatantLayer {
         groundScale: groundProjection.scale,
       }, hasContinuousWorldPosition || isNewView);
       this.applyFrame(view, frame, plan);
-      this.terrainContacts.update(combatant.uid, frame.groundPoint, plan, environment);
     }
   }
 
@@ -125,11 +126,11 @@ export class BattleCombatantLayer {
   }
 
   private remove(uid: string): void {
+    this.terrainContacts.remove(uid);
     this.views.get(uid)?.destroy({ children: true });
     this.views.delete(uid);
     this.positions.remove(uid);
     this.terrainPlans.delete(uid);
-    this.terrainContacts.remove(uid);
   }
 
   private applyFrame(view: CombatantView, frame: BattlePositionFrame, plan: TerrainContactPlan): void {
@@ -143,5 +144,6 @@ export class BattleCombatantLayer {
       plan.shadowAlphaMultiplier,
       plan.shadowScaleMultiplier * frame.groundScale / safeScale,
     );
+    this.terrainContacts.update(frame.uid, frame.groundPoint, plan, battleEnvironmentFor(this.biomeId), view.getFootContactFrame());
   }
 }

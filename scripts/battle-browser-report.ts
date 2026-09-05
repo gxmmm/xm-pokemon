@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import type { RendererObservationReport } from '../apps/web/src/visuals/runtime-observation.ts';
+import { checkNaturalBattle } from './battle-natural-browser-checks.ts';
 
 const PORT = 41775;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -92,6 +93,15 @@ async function main(): Promise<void> {
     });
 
     await page.goto(`${BASE}/battle-sandbox?renderer-observation=1`, { waitUntil: 'networkidle' });
+    if (process.argv.includes('--natural-only')) {
+      await page.clock.install({ time: new Date('2026-09-05T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-05T01:00:00Z'));
+      const natural = await checkNaturalBattle(page, OUTPUT);
+      assert.deepEqual(errors, []);
+      await writeFile(resolve(OUTPUT, 'natural-report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, natural, errors }, null, 2));
+      console.log('✓ natural body/terrain browser acceptance');
+      return;
+    }
     await selectTeams(page);
     const idleTasks = await page.evaluate(() => window.__BATTLE_BROWSER_TASKS__());
     // Keep the initial background load pending until the component is removed.
@@ -338,13 +348,14 @@ async function main(): Promise<void> {
       await page.screenshot({ path: resolve(OUTPUT, `projection-edge-${biome}.png`) });
     }
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
+    const natural = await checkNaturalBattle(page, OUTPUT);
     console.log('✓ actual browser: concurrent attacks survive repeated damage; real interruption clears charge');
     console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
     assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     console.log('✓ actual browser: engine-owned allied stops and neutral opening/mid-fight snapshots');
     console.log('✓ actual browser: five-biome projection edges and central small-model visibility');
-    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, spreadSamples, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
+    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, natural, spreadSamples, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {
     await browser?.close();

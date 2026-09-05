@@ -4,6 +4,7 @@ import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
+import { drawElementMotes } from './natural-effect-shapes.ts';
 
 export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default'): void {
   const graphic = new Graphics({ blendMode: variant === 'shadow-orb' || variant === 'flame-stream' ? 'normal' : 'add' });
@@ -38,8 +39,7 @@ export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, col
       return;
     }
     const radius = 12 + progress * (34 + intensity * 28);
-    graphic.circle(at.x, at.y, radius).stroke({ color, alpha: (1 - progress) * 0.8, width: 5 * (1 - progress) + 1 })
-      .star(at.x, at.y, variant === 'cross' ? 4 : 6, radius * 0.72, radius * 0.28).fill({ color, alpha: (1 - progress) * 0.36 });
+    graphic.star(at.x, at.y, variant === 'cross' ? 4 : 6, radius * 0.72, radius * 0.28).fill({ color, alpha: (1 - progress) * 0.36 });
     // Normal-attack motifs are supplied by static config through the cue. This
     // generic primitive only interprets a vocabulary; it never knows a species.
     if (variant === 'fist') {
@@ -153,7 +153,7 @@ export function spawnDive(runtime: BattleEffectPool, from: BattleStagePoint, to:
   });
 }
 
-export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: TypeName, opacity = 1): void {
+export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, _variant = 'default', particleBudget?: number, element?: TypeName, opacity = 1): void {
   const composition = BATTLE_EFFECT_COMPOSITION.burst;
   // Area releases are supporting color silhouettes. Actual damage keeps its
   // separate impact primitive; overlapping releases must not bleach the target.
@@ -190,25 +190,9 @@ export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, colo
           previous = { x: nx, y: ny };
         }
       }
-      graphic.circle(at.x, at.y, blast * 0.28).stroke({ color: 0xfff4a5, alpha: alpha * 0.76, width: 4 });
-    } else if (shape === 'psychic-orbit') {
-      for (let ring = 0; ring < composition.orbitCount; ring++) {
-        const radius = blast * (0.20 + ring * 0.13 + progress * 0.17);
-        const rotation = progress * 8 + ring * 0.64;
-        const cx = at.x + Math.cos(rotation) * ring * 8;
-        const cy = at.y + Math.sin(rotation) * ring * 5;
-        graphic.ellipse(cx, cy, radius, radius * 0.38).stroke({ color, alpha: alpha * (0.80 - ring * 0.09), width: 3 });
-      }
-      for (let rune = 0; rune < 7; rune++) {
-        const angle = rune / 7 * Math.PI * 2 - progress * 5;
-        graphic.circle(at.x + Math.cos(angle) * blast * 0.52, at.y + Math.sin(angle) * blast * 0.28, 5 + intensity * 3).fill({ color, alpha: alpha * 0.82 });
-      }
+      drawElementMotes(graphic, 'lightning', at.x, at.y, progress, color, 4, blast * 0.3, blast * 0.2);
     } else {
-      for (let index = 0; index < particleCount; index++) {
-        const angle = index / particleCount * Math.PI * 2;
-        const radius = progress * blast * (0.65 + (index % 3) * 0.16);
-        graphic.circle(at.x + Math.cos(angle) * radius, at.y + Math.sin(angle) * radius * (variant === 'surge' ? 0.82 : 0.55), 4 + intensity * 5).fill({ color, alpha: alpha * 0.82 });
-      }
+      drawElementMotes(graphic, shape, at.x, at.y, progress, color, particleCount, blast * 0.65, blast * 0.35);
     }
   }, 'front', opacity);
 }

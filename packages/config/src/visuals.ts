@@ -11,10 +11,25 @@ export const BATTLE_EFFECT_COMPOSITION = {
     coreRadiusRatio: 0.14,
     coreOpacity: 0.24,
     highlightOpacity: 0.38,
-    orbitCount: 3,
   },
 } as const;
 export type BattleEffectLayer = 'ground' | 'front';
+
+/** Local body coverage and terrain contact budgets, in unprojected sprite units. */
+export const BATTLE_BODY_EFFECTS = {
+  flameAnchors: [[-0.23, -0.32], [0.19, -0.27], [-0.08, -0.19], [0.29, -0.08], [-0.29, -0.04],
+    [0.07, -0.02], [-0.17, 0.10], [0.22, 0.16], [-0.03, 0.23], [0.05, -0.37]],
+  moteCount: 9,
+  minimumScreenPixel: { body: 0.85, flame: 1.1, glyph: 1.8 },
+  palette: { ember: 0xa93624, fire: 0xed7027, fireTip: 0xffca62, poison: 0x885b9f, poisonLight: 0xb78bc3, poisonCore: 0x512368,
+    electric: 0xf3ce5c, ice: 0x79bdd3, iceLight: 0xc3e5ec, sleep: 0xb8cfdf, confuse: 0xc495bb, shadow: 0x293448 },
+} as const;
+export const BATTLE_FOOT_CONTACT = {
+  widthRatio: 0.58,
+  heightRatio: 0.065,
+  bladeCount: 7,
+  opacity: 0.76,
+} as const;
 
 /** Ordinary damage accents never replace the actor's ongoing skill timeline. */
 export const BATTLE_HIT_REACTION = { durationMs: 160, offsetX: 4 } as const;

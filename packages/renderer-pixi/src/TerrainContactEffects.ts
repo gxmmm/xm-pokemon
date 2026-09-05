@@ -1,9 +1,16 @@
 import type { BattleEnvironmentSpec } from '@pokemon-online/config';
+import { BATTLE_FOOT_CONTACT } from '@pokemon-online/config';
 import { Graphics, type Container } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { parseHexColor } from './pixi-color.ts';
 import { movementPressurePlan, type MovementPressurePlan, type TerrainContactPlan } from './terrain-contact-plan.ts';
+import { drawElementMotes } from './natural-effect-shapes.ts';
+
+export interface TerrainFootprint {
+  container: Container;
+  x: number; y: number; width: number; height: number; scale: number; grounded: boolean;
+}
 
 /** Owns per-combatant terrain-contact state and its transient Pixi graphics. */
 export class TerrainContactEffects {
@@ -17,7 +24,7 @@ export class TerrainContactEffects {
     private readonly occlusionLayer: Container,
   ) {}
 
-  update(uid: string, point: BattleStagePoint, plan: TerrainContactPlan, spec: BattleEnvironmentSpec): void {
+  update(uid: string, point: BattleStagePoint, plan: TerrainContactPlan, spec: BattleEnvironmentSpec, footprint?: TerrainFootprint): void {
     const previous = this.contactPositions.get(uid);
     this.contactPositions.set(uid, point);
     const travel = previous ? Math.hypot(point.x - previous.x, point.y - previous.y) : 0;
@@ -30,21 +37,22 @@ export class TerrainContactEffects {
     }
 
     const existing = this.contactGraphics.get(uid);
-    if (plan.occludesFeet) {
+    if (plan.occludesFeet && (footprint?.grounded ?? true)) {
       const graphic = existing ?? new Graphics();
       if (!existing) {
         this.contactGraphics.set(uid, graphic);
-        this.occlusionLayer.addChild(graphic);
+        (footprint?.container ?? this.occlusionLayer).addChild(graphic);
       }
-      this.drawFootOcclusion(graphic, point, spec, groundedStep ? 3 : 0);
+      this.drawFootOcclusion(graphic, footprint ?? { ...point, width: 48, height: 7 }, spec);
     } else if (existing) {
       existing.destroy();
       this.contactGraphics.delete(uid);
     }
 
     const cooldown = this.contactCooldowns.get(uid) ?? 0;
-    if (groundedStep && cooldown <= 0) {
-      this.spawnTerrainContact(point, plan.particleKind, plan.particleBudget, spec);
+    if (groundedStep && cooldown <= 0 && (footprint?.grounded ?? true)) {
+      const at = footprint ? { x: point.x + footprint.x * footprint.scale, y: point.y + footprint.y * footprint.scale } : point;
+      this.spawnTerrainContact(at, plan.particleKind, plan.particleBudget, spec);
       this.contactCooldowns.set(uid, 0.10);
     }
   }
@@ -76,16 +84,18 @@ export class TerrainContactEffects {
     this.pressureCooldowns.clear();
   }
 
-  private drawFootOcclusion(graphic: Graphics, point: BattleStagePoint, spec: BattleEnvironmentSpec, sway: number): void {
-    const { groundDetail, accent } = spec.palette;
+  private drawFootOcclusion(graphic: Graphics, foot: Pick<TerrainFootprint, 'x' | 'y' | 'width' | 'height'>, spec: BattleEnvironmentSpec): void {
+    const { groundDetail, ground } = spec.palette;
     graphic.clear();
-    // Small local clumps live above characters, never a global overlay. Their
-    // baseline follows each projected unit root, preserving combat readability.
-    for (let index = 0; index < 5; index++) {
-      const x = point.x + (index - 2) * 9;
-      const h = 9 + (index % 3) * 3 + (index === 2 ? sway : 0);
-      graphic.moveTo(x - 3, point.y + 18).lineTo(x + (index - 2) * 1.4, point.y + 18 - h).lineTo(x + 4, point.y + 18)
-        .fill({ color: index % 2 ? groundDetail : accent, alpha: 0.46 });
+    // Narrow irregular blades, in actor-local units. Parent depth/scale handles
+    // perspective; there is no full-screen layer or movement-dependent height pop.
+    for (let index = 0; index < BATTLE_FOOT_CONTACT.bladeCount; index++) {
+      const site = (index + 0.5) / BATTLE_FOOT_CONTACT.bladeCount - 0.5;
+      const x = foot.x + site * foot.width;
+      const h = foot.height * (0.55 + (index * 7 % 5) * 0.11);
+      const half = foot.width * 0.025;
+      graphic.moveTo(x - half, foot.y + 1).quadraticCurveTo(x + half, foot.y - h * 0.45, x + (index % 2 ? -1 : 1) * half * 2, foot.y - h)
+        .lineTo(x + half, foot.y + 1).fill({ color: index % 2 ? groundDetail : ground, alpha: BATTLE_FOOT_CONTACT.opacity });
     }
   }
 
@@ -119,13 +129,13 @@ export class TerrainContactEffects {
     this.effectPool.add(graphic, kind === 'ripples' ? 0.34 : 0.24, (progress) => {
       graphic.clear();
       if (kind === 'ripples') {
-        graphic.ellipse(at.x, at.y + 19, 13 + progress * 24, 3 + progress * 5).stroke({ color, alpha: (1 - progress) * 0.58, width: 2 });
+        drawElementMotes(graphic, 'water-wave', at.x, at.y, progress, color, budget + 2, 15, 3);
         return;
       }
       for (let index = 0; index < budget; index++) {
         const direction = index - (budget - 1) / 2;
         const x = at.x + direction * 9 + progress * direction * 10;
-        const y = at.y + 19 - progress * (12 + (index % 2) * 7);
+        const y = at.y - progress * (12 + (index % 2) * 7);
         if (kind === 'runes') graphic.star(x, y, 4, 3.5, 1.4).fill({ color, alpha: (1 - progress) * 0.6 });
         else graphic.rect(x - 2, y - 2, 4, 4 + index % 2 * 2).fill({ color, alpha: (1 - progress) * 0.60 });
       }

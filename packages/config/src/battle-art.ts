@@ -640,10 +640,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
         { at: 1, offsetX: 0, offsetY: -8, rotationDeg: 0, scaleX: 1, scaleY: 1, glowAlpha: 0.20, glowScale: 1.04 },
       ],
     },
-    layers: [
-      { id: 'ember-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.20, scale: 1.15, pulse: 0.18 },
-      { id: 'wing-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.16, scale: 0.92, pulse: 0.12 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -8, glowAlpha: 0.20, glowScale: 1.04 },
       locomotion: { offsetY: -10, rotationDeg: -3, scaleX: 1.04, scaleY: 0.96, glowAlpha: 0.30, glowScale: 1.16 },
@@ -658,9 +655,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
   },
   25: {
     modelId: 'showcase:volt-scout', scale: 0.96, shadowScale: 0.86,
-    layers: [
-      { id: 'spark-aura', kind: 'aura', color: 'highlight', depth: 'behind', alpha: 0.18, scale: 0.82, pulse: 0.26 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -3, glowAlpha: 0.16, glowScale: 1.08 },
       locomotion: { offsetX: 5, offsetY: -2, rotationDeg: 4, scaleX: 1.05, scaleY: 0.94 },
@@ -689,10 +684,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
         { at: 1, offsetY: -7, rotationDeg: -2, scaleX: 1, scaleY: 1, glowAlpha: 0.28, glowScale: 1.12 },
       ],
     },
-    layers: [
-      { id: 'spectral-mist', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.26, scale: 1.22, pulse: 0.20 },
-      { id: 'rune-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.14, scale: 1.02, pulse: 0.18 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -7, rotationDeg: -2, glowAlpha: 0.28, glowScale: 1.12 },
       locomotion: { offsetY: -10, rotationDeg: 3, scaleX: 1.05, scaleY: 0.95, glowAlpha: 0.34, glowScale: 1.20 },
@@ -706,10 +698,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
   },
   131: {
     modelId: 'showcase:tide-guardian', scale: 1.14, shadowScale: 1.34,
-    layers: [
-      { id: 'tide-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.22, scale: 1.34, pulse: 0.16 },
-      { id: 'foam-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.13, scale: 1.12, pulse: 0.10 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -4, glowAlpha: 0.20, glowScale: 1.08 },
       attack: { offsetX: 14, offsetY: -2, rotationDeg: 5, scaleX: 1.08, scaleY: 0.94 },
@@ -722,9 +711,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
   },
   143: {
     modelId: 'showcase:fortress-tank', scale: 1.20, shadowScale: 1.42,
-    layers: [
-      { id: 'fortress-halo', kind: 'halo', color: 'primary', depth: 'behind', alpha: 0.14, scale: 1.30, pulse: 0.08 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -2, glowAlpha: 0.12, glowScale: 1.02 },
       attack: { offsetX: 16, rotationDeg: 5, scaleX: 1.12, scaleY: 0.90 },
@@ -736,10 +723,7 @@ const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeB
   },
   149: {
     modelId: 'showcase:sky-dragon', scale: 1.13, shadowScale: 1.18,
-    layers: [
-      { id: 'dragon-aura', kind: 'aura', color: 'secondary', depth: 'behind', alpha: 0.22, scale: 1.20, pulse: 0.18 },
-      { id: 'sky-halo', kind: 'halo', color: 'highlight', depth: 'front', alpha: 0.15, scale: 1.00, pulse: 0.14 },
-    ],
+    layers: [],
     motionPoses: {
       idle: { offsetY: -6, glowAlpha: 0.22, glowScale: 1.08 },
       attack: { offsetX: 20, offsetY: -4, rotationDeg: 7, scaleX: 1.11, scaleY: 0.90 },

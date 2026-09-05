@@ -1,118 +1,78 @@
 import type { BattleCombatant } from '@pokemon-online/shared';
+import { BATTLE_BODY_EFFECTS } from '@pokemon-online/config';
 import { Graphics } from 'pixi.js';
+import { drawBodyFlames } from './natural-effect-shapes.ts';
 
 export type CombatantStatusVisual = 'none' | 'sleep' | 'freeze' | 'stun' | 'paralyze' | 'confuse' | 'burn' | 'poison';
-
 type CombatantStatusState = Pick<BattleCombatant, 'alive' | 'status' | 'stunActive'>;
+const GLYPHS = {
+  sleep: ['1111', '0001', '0010', '0100', '1111'],
+  confuse: ['0110', '1001', '0010', '0000', '0010'],
+  stun: ['00100', '10101', '01110', '10101', '00100'],
+} as const;
 
-/** Persistent, model-local status silhouettes driven only by renderer-facing combatant state. */
+/** Restrained sprite-like details; state comes exclusively from delayed DTOs. */
 export class CombatantStatusLayer extends Graphics {
   private visual: CombatantStatusVisual = 'none';
-  private alive = true;
-
-  constructor() {
-    super({ blendMode: 'add' });
-  }
-
-  get statusVisual(): CombatantStatusVisual {
-    return this.visual;
-  }
+  constructor() { super({ blendMode: 'normal' }); }
+  get statusVisual(): CombatantStatusVisual { return this.visual; }
 
   refresh(combatant: CombatantStatusState): void {
-    this.alive = combatant.alive;
-    this.visual = combatant.status === 'sleep' || combatant.status === 'freeze' || combatant.status === 'paralyze' || combatant.status === 'confuse' || combatant.status === 'burn' || combatant.status === 'poison'
-      ? combatant.status
-      : combatant.stunActive ? 'stun' : 'none';
+    this.visual = !combatant.alive ? 'none' : combatant.status ?? (combatant.stunActive ? 'stun' : 'none');
+    if (this.visual === 'none') this.clear();
   }
 
-  render(phaseSeconds: number): void {
+  render(seconds: number, width = 106, height = 106, displayScale = 1): void {
     this.clear();
-    if (!this.alive || this.visual === 'none') return;
-
-    if (this.visual === 'sleep') {
-      // Large drifting Z glyphs and a dim breathing halo remain readable under occlusion.
-      const drift = Math.sin(phaseSeconds * 2.4) * 3;
-      this.ellipse(0, -22, 44, 19).fill({ color: 0x596bdb, alpha: 0.18 + Math.sin(phaseSeconds * 2) * 0.05 });
-      for (let index = 0; index < 3; index++) {
-        const t = (phaseSeconds * 0.42 + index / 3) % 1;
-        const x = 17 + index * 11;
-        const y = -61 - t * 22 + drift;
-        const size = 7 + index * 2;
-        this.moveTo(x - size * 0.48, y - size * 0.52).lineTo(x + size * 0.48, y - size * 0.52).lineTo(x - size * 0.35, y + size * 0.54).lineTo(x + size * 0.48, y + size * 0.54)
-          .stroke({ color: 0xd5e7ff, alpha: 0.88 - t * 0.32, width: 3 });
+    const palette = BATTLE_BODY_EFFECTS.palette;
+    const scale = Math.max(0.2, displayScale);
+    const pixel = Math.max(0.9, Math.min(1.35, height / 60), BATTLE_BODY_EFFECTS.minimumScreenPixel.body / scale);
+    if (this.visual === 'burn') {
+      drawBodyFlames(this, seconds, width, height, palette.fire, palette.fireTip, scale);
+    } else if (this.visual === 'sleep' || this.visual === 'confuse' || this.visual === 'stun') {
+      const count = this.visual === 'stun' ? 3 : 2;
+      const color = this.visual === 'sleep' ? palette.sleep : this.visual === 'confuse' ? palette.confuse : palette.electric;
+      const glyphPixel = Math.max(pixel, BATTLE_BODY_EFFECTS.minimumScreenPixel.glyph / scale);
+      const pattern = GLYPHS[this.visual];
+      for (let i = 0; i < count; i++) {
+        const drift = Math.sin(seconds * 1.8 + i * 1.7) * 2;
+        const x = (i - (count - 1) / 2) * (pattern[0].length * glyphPixel + 4 / scale) - pattern[0].length * glyphPixel / 2;
+        const y = -height / 2 - pattern.length * glyphPixel - 5 / scale + drift - i % 2 * 3;
+        pattern.forEach((row, py) => [...row].forEach((cell, px) => {
+          if (cell !== '1') return;
+          this.rect(x + px * glyphPixel + 1 / scale, y + py * glyphPixel + 1 / scale, glyphPixel, glyphPixel).fill({ color: palette.shadow, alpha: 0.8 })
+            .rect(x + px * glyphPixel, y + py * glyphPixel, glyphPixel, glyphPixel).fill({ color, alpha: 0.95 });
+        }));
       }
-    } else if (this.visual === 'freeze') {
-      // A cyan body shell, cracks, and edge spikes make containment explicit.
-      const pulse = 1 + Math.sin(phaseSeconds * 5) * 0.05;
-      this.ellipse(0, -12, 46 * pulse, 61 * pulse).fill({ color: 0x83ddf6, alpha: 0.50 })
-        .ellipse(0, -12, 43 * pulse, 57 * pulse).stroke({ color: 0x9feeff, alpha: 0.96, width: 5 })
-        .ellipse(0, -12, 35 * pulse, 48 * pulse).stroke({ color: 0xe3fbff, alpha: 0.72, width: 2.2 });
-      for (const [x1, y1, x2, y2] of [[-22, -48, -8, -20], [-8, -20, -22, 7], [18, -43, 6, -15], [6, -15, 23, 10], [-2, -55, 5, -32]] as const) {
-        this.moveTo(x1, y1).lineTo(x2, y2).stroke({ color: 0xe9fdff, alpha: 0.78, width: 2.2 });
-      }
-      for (let index = -2; index <= 2; index++) {
-        const x = index * 15;
-        const height = 14 + (Math.abs(index) % 2) * 8;
-        this.poly([x - 6, 24, x, 24 - height, x + 7, 24]).fill({ color: index === 0 ? 0xe4fbff : 0x72d8f4, alpha: 0.92 });
-      }
-      for (let index = 0; index < 4; index++) {
-        const angle = phaseSeconds * 1.8 + index * Math.PI / 2;
-        this.circle(Math.cos(angle) * 38, -13 + Math.sin(angle) * 32, 3.5).fill({ color: 0xffffff, alpha: 0.84 });
+    } else if (this.visual === 'poison') {
+      const smokePixel = Math.max(pixel, 1.2 / scale);
+      for (let i = 0; i < 4; i++) {
+        const life = (seconds * 0.3 + i * 0.237) % 1;
+        const x = (i % 2 ? 0.25 : -0.35) * width;
+        const y = height * (0.22 - life * 0.40);
+        const alpha = 0.35 + Math.sin(life * Math.PI) * 0.50;
+        this.rect(x - smokePixel, y, 5 * smokePixel, 3 * smokePixel).fill({ color: palette.poison, alpha })
+          .rect(x, y - 2 * smokePixel, 3 * smokePixel, 2 * smokePixel).fill({ color: palette.poisonLight, alpha: alpha * 0.85 })
+          .rect(x, y, 2 * smokePixel, 2 * smokePixel).fill({ color: palette.poisonCore, alpha: 0.65 + Math.sin(life * Math.PI) * 0.25 });
       }
     } else if (this.visual === 'paralyze') {
-      // Thick intermittent arcs cross the body instead of reading as a foot effect.
-      const flash = Math.sin(phaseSeconds * 16) > -0.2 ? 1 : 0.38;
-      for (let bolt = 0; bolt < 4; bolt++) {
-        const baseY = -45 + bolt * 20;
-        const zig = (bolt % 2 ? 1 : -1) * 12;
-        this.moveTo(-38, baseY).lineTo(-12, baseY + zig).lineTo(9, baseY - zig * 0.7).lineTo(39, baseY + 5)
-          .stroke({ color: 0xffdf58, alpha: 0.90 * flash, width: 4.5 })
-          .moveTo(-38, baseY).lineTo(-12, baseY + zig).lineTo(9, baseY - zig * 0.7).lineTo(39, baseY + 5)
-          .stroke({ color: 0xffffff, alpha: 0.82 * flash, width: 1.5 });
+      const arcPixel = Math.max(pixel, 1.25 / scale);
+      for (let i = 0; i < 2; i++) {
+        const x = (i ? 0.30 : -0.30) * width, y = (i ? 0.12 : -0.12) * height;
+        const alpha = 0.60 + Math.max(0, Math.sin(seconds * 4 + i * Math.PI)) * 0.35;
+        const path = () => this.moveTo(x - 2 * arcPixel, y - 4 * arcPixel).lineTo(x, y - arcPixel)
+          .lineTo(x - 2 * arcPixel, y + arcPixel).lineTo(x + 2 * arcPixel, y + 4 * arcPixel);
+        path().stroke({ color: palette.shadow, alpha: alpha * 0.9, width: 3.5 / scale });
+        path().stroke({ color: palette.electric, alpha, width: 1.8 / scale });
+        path().stroke({ color: palette.iceLight, alpha: alpha * 0.85, width: 0.65 / scale });
       }
-      this.circle(0, -12, 28).stroke({ color: 0xffdf58, alpha: 0.44 * flash, width: 3 });
-    } else if (this.visual === 'confuse') {
-      // Counter-rotating purple glyphs communicate loss of control without moving the root.
-      for (let ring = 0; ring < 3; ring++) {
-        const angle = phaseSeconds * (ring % 2 ? -4.8 : 4.2) + ring * 1.8;
-        const radius = 28 + ring * 10;
-        const x = Math.cos(angle) * radius;
-        const y = -14 + Math.sin(angle) * radius * 0.45;
-        this.star(x, y, 4, 8 + ring * 2, 3).stroke({ color: ring === 0 ? 0xffffff : 0xc787e8, alpha: 0.86, width: 2.4 });
+    } else if (this.visual === 'freeze') {
+      for (const [ax, ay] of [[-0.25, 0.25], [0.20, 0.28], [-0.30, -0.05], [0.29, -0.16], [-0.12, 0.12]] as const) {
+        const x = ax * width, y = ay * height;
+        this.poly([x - 3 * pixel, y + 2 * pixel, x - 4 * pixel, y - 4 * pixel, x, y - 9 * pixel, x + 3 * pixel, y - 4 * pixel, x + 2 * pixel, y + 2 * pixel])
+          .fill({ color: palette.ice, alpha: 0.65 })
+          .moveTo(x, y - 7 * pixel).lineTo(x, y).stroke({ color: palette.iceLight, alpha: 0.82, width: pixel });
       }
-      this.ellipse(0, -13, 43, 17).stroke({ color: 0xc787e8, alpha: 0.70, width: 3 })
-        .circle(0, -13, 5).fill({ color: 0xffffff, alpha: 0.86 });
-    } else if (this.visual === 'burn') {
-      // Low-frequency flames cling to the body for the full status duration.
-      for (let flame = 0; flame < 6; flame++) {
-        const phaseOffset = phaseSeconds * 3 + flame * 1.14;
-        const x = Math.sin(phaseOffset) * (16 + flame % 3 * 8);
-        const y = 20 - ((phaseSeconds * 20 + flame * 17) % 58);
-        const size = 8 + flame % 3 * 3;
-        this.poly([x - size * 0.45, y + size * 0.55, x + Math.sin(phaseOffset) * 4, y - size, x + size * 0.45, y + size * 0.55]).fill({ color: flame % 2 ? 0xff7448 : 0xffd36b, alpha: 0.82 });
-        this.circle(x, y + 2, size * 0.22).fill({ color: 0xfff0ad, alpha: 0.88 });
-      }
-      this.ellipse(0, 16, 38, 10).fill({ color: 0xd94330, alpha: 0.18 });
-    } else if (this.visual === 'poison') {
-      // Heavy violet-green fumes stay visually distinct from upward orange burn embers.
-      for (let bubble = 0; bubble < 7; bubble++) {
-        const t = (phaseSeconds * 0.26 + bubble / 7) % 1;
-        const x = Math.sin(phaseSeconds * 3 + bubble * 2.4) * (12 + bubble % 3 * 9);
-        const y = 22 - t * 68;
-        const radius = 6 + (1 - t) * (bubble % 2 ? 7 : 4);
-        this.circle(x, y, radius).fill({ color: bubble % 2 ? 0xb65bd5 : 0x82c86a, alpha: 0.46 + (1 - t) * 0.28 })
-          .circle(x - radius * 0.25, y - radius * 0.22, radius * 0.24).fill({ color: 0xe0b4f4, alpha: 0.72 });
-      }
-      this.ellipse(0, 15, 42, 14).fill({ color: 0x6c3f86, alpha: 0.24 });
-    } else {
-      const orbit = 31 + Math.sin(phaseSeconds * 7) * 3;
-      for (let index = 0; index < 3; index++) {
-        const angle = phaseSeconds * 5 + index * Math.PI * 2 / 3;
-        const x = Math.cos(angle) * orbit;
-        const y = -57 + Math.sin(angle) * 10;
-        this.star(x, y, 5, 10, 4).fill({ color: index === 0 ? 0xffffff : 0xffdf58, alpha: 0.94 });
-      }
-      this.ellipse(0, -28, 38, 16).stroke({ color: 0xffdf58, alpha: 0.64, width: 2.4 });
     }
   }
 }
