@@ -242,14 +242,22 @@ async function main(): Promise<void> {
       window.__READABILITY_FIXTURE__ = await fixture.createBattleReadabilityFixture();
     }, `/@fs/${resolve('scripts/battle-readability-browser-fixture.ts').replaceAll('\\', '/')}`);
     await page.clock.runFor(200);
+    const spreadSamples: { reduced: boolean; atMs: number; effects: number }[] = [];
     for (const reduced of [false, true]) {
       await page.evaluate((reduced) => window.__READABILITY_FIXTURE__.play(reduced), reduced);
-      await page.clock.runFor(160);
-      const dense = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
-      assert.equal(dense.combatantCount, 6);
-      assert.equal(dense.activeEffectCount, 27, 'three spread releases cover three targets plus their ground responses');
-      assert.equal(dense.effectChildCount, 27);
-      await page.locator('#readability-fixture').screenshot({ path: resolve(OUTPUT, `readability-spread-${reduced ? 'reduced' : 'standard'}.png`) });
+      let previousMs = 0;
+      for (const atMs of [80, 160, 320]) {
+        await page.clock.runFor(atMs - previousMs);
+        previousMs = atMs;
+        const dense = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
+        assert.equal(dense.combatantCount, 6);
+        assert.equal(dense.activeEffectCount, 27, 'three spread releases cover three targets plus their ground responses');
+        assert.equal(dense.effectChildCount, 27);
+        assert.equal(dense.motions['unit-5']!.statusVisual, 'sleep', 'overlapping releases preserve the status marker');
+        spreadSamples.push({ reduced, atMs, effects: dense.activeEffectCount });
+        const suffix = atMs === 160 ? '' : `-${atMs}ms`;
+        await page.locator('#readability-fixture').screenshot({ path: resolve(OUTPUT, `readability-spread-${reduced ? 'reduced' : 'standard'}${suffix}.png`) });
+      }
       await page.clock.runFor(1200);
       const settled = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());
       assert(settled.settled && settled.effectChildCount === 0, 'all spread and ground effects settle');
@@ -336,7 +344,7 @@ async function main(): Promise<void> {
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     console.log('✓ actual browser: engine-owned allied stops and neutral opening/mid-fight snapshots');
     console.log('✓ actual browser: five-biome projection edges and central small-model visibility');
-    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
+    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, spreadSamples, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {
     await browser?.close();

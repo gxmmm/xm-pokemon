@@ -3,7 +3,16 @@ import type { BattleActorChoreography, TypeName } from '@pokemon-online/shared';
 /** One standard composition: spread accents support, rather than bury, actors. */
 export const BATTLE_EFFECT_COMPOSITION = {
   groundRingScaleY: 0.38,
-  spreadBurstOpacity: 0.28,
+  // Alpha-composited color remains visible without adding white over actors.
+  spreadBurstOpacity: 0.42,
+  burst: {
+    blendMode: 'normal',
+    maxRadius: 76,
+    coreRadiusRatio: 0.14,
+    coreOpacity: 0.24,
+    highlightOpacity: 0.38,
+    orbitCount: 3,
+  },
 } as const;
 export type BattleEffectLayer = 'ground' | 'front';
 

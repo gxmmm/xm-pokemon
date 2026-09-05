@@ -1,4 +1,5 @@
 import type { TypeName } from '@pokemon-online/shared';
+import { BATTLE_EFFECT_COMPOSITION } from '@pokemon-online/config';
 import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
@@ -153,18 +154,21 @@ export function spawnDive(runtime: BattleEffectPool, from: BattleStagePoint, to:
 }
 
 export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', particleBudget?: number, element?: TypeName, opacity = 1): void {
-  const graphic = new Graphics({ blendMode: 'add' });
+  const composition = BATTLE_EFFECT_COMPOSITION.burst;
+  // Area releases are supporting color silhouettes. Actual damage keeps its
+  // separate impact primitive; overlapping releases must not bleach the target.
+  const graphic = new Graphics({ blendMode: composition.blendMode });
   const particleCap = 16;
   const particleCount = Math.min(Math.max(particleBudget ?? particleCap, 9), particleCap);
   const shape = elementalVfxShapeFor(element);
   const duration = 0.46 + intensity * 0.22;
   runtime.add(graphic, duration, (progress) => {
-    const blast = 46 + intensity * 78;
+    const blast = Math.min(composition.maxRadius, 46 + intensity * 78);
     const alpha = (1 - progress) * 0.92;
     graphic.clear();
     if (shape === 'flame') {
       graphic.circle(at.x, at.y, blast * (0.22 + progress * 0.48)).fill({ color, alpha: alpha * 0.28 })
-        .circle(at.x, at.y, blast * (0.13 + progress * 0.25)).fill({ color: 0xffefad, alpha: alpha * 0.84 });
+        .circle(at.x, at.y, blast * composition.coreRadiusRatio).fill({ color: 0xffc95d, alpha: alpha * composition.coreOpacity });
       for (let flame = 0; flame < 10; flame++) {
         const angle = flame / 10 * Math.PI * 2 + progress * 0.8;
         const rise = blast * (0.34 + progress * 0.5);
@@ -182,18 +186,18 @@ export function spawnBurst(runtime: BattleEffectPool, at: BattleStagePoint, colo
           const nx = previous.x + (end.x - previous.x) * t + Math.sin(segment * 3.2 + bolt) * 12;
           const ny = previous.y + (end.y - previous.y) * t;
           graphic.moveTo(previous.x, previous.y).lineTo(nx, ny).stroke({ color: 0xffe96a, alpha, width: 5 + intensity * 3 })
-            .moveTo(previous.x, previous.y).lineTo(nx, ny).stroke({ color: 0xffffff, alpha, width: 1.8 });
+            .moveTo(previous.x, previous.y).lineTo(nx, ny).stroke({ color: 0xffffff, alpha: alpha * composition.highlightOpacity, width: 1.8 });
           previous = { x: nx, y: ny };
         }
       }
       graphic.circle(at.x, at.y, blast * 0.28).stroke({ color: 0xfff4a5, alpha: alpha * 0.76, width: 4 });
     } else if (shape === 'psychic-orbit') {
-      for (let ring = 0; ring < 5; ring++) {
+      for (let ring = 0; ring < composition.orbitCount; ring++) {
         const radius = blast * (0.20 + ring * 0.13 + progress * 0.17);
         const rotation = progress * 8 + ring * 0.64;
         const cx = at.x + Math.cos(rotation) * ring * 8;
         const cy = at.y + Math.sin(rotation) * ring * 5;
-        graphic.ellipse(cx, cy, radius, radius * 0.38).stroke({ color: ring % 2 ? color : 0xffffff, alpha: alpha * (0.80 - ring * 0.09), width: 3 });
+        graphic.ellipse(cx, cy, radius, radius * 0.38).stroke({ color, alpha: alpha * (0.80 - ring * 0.09), width: 3 });
       }
       for (let rune = 0; rune < 7; rune++) {
         const angle = rune / 7 * Math.PI * 2 - progress * 5;

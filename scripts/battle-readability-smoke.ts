@@ -3,6 +3,8 @@ import { BATTLE_EFFECT_COMPOSITION, BATTLE_ENVIRONMENTS } from '@pokemon-online/
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
 import { BattleVfxExecutor } from '../packages/renderer-pixi/src/BattleVfxExecutor.ts';
 import { planBattleCue } from '../packages/renderer-pixi/src/battle-plan.ts';
+import { spawnBurst } from '../packages/renderer-pixi/src/impact-vfx.ts';
+import { Graphics } from 'pixi.js';
 
 export function testBattleReadability(): void {
   const pool = new BattleEffectPool();
@@ -45,5 +47,29 @@ export function testBattleReadability(): void {
   assert.equal(pool.childCount, 0);
   assert.equal(executor.spawnPlans([{ primitive: 'chain', targetIds: ['a', 'b', 'c'], actorId: 'actor', intensity: 1 }], BATTLE_ENVIRONMENTS.grass), 1, 'chain remains a single connected path');
   pool.clear();
+  // Sample the whole burst, including the late expansion that a single peak
+  // screenshot misses. Supporting area color must stay local at either strength.
+  for (const intensity of [0.15, 1]) {
+    for (const element of ['fire', 'water', 'psychic', 'electric'] as const) {
+      const color = 0xb779dd;
+      spawnBurst(pool, { x: 700, y: 430 }, color, intensity, 'default', 16, element);
+      const graphic = pool.container.children[0] as Graphics;
+      assert.equal(graphic.blendMode, 'normal', 'overlapping area accents must not add into white');
+      const duration = 0.46 + intensity * 0.22;
+      for (let frame = 0; frame < 9; frame++) {
+        pool.update(duration / 10);
+        const bounds = graphic.getLocalBounds();
+        assert(bounds.width > 0 && bounds.height > 0);
+        assert(bounds.minX >= 600 && bounds.maxX <= 800 && bounds.minY >= 320 && bounds.maxY <= 530, 'area accent stays within the target-local coverage budget');
+        if (element === 'psychic') {
+          assert(graphic.context.instructions.every((item) => item.data.style.color === color), 'psychic orbits retain their element color');
+        }
+      }
+      assert.equal(pool.activeCount, 1, 'composition preserves the existing burst lifetime');
+      pool.update(duration / 10 + 0.00001);
+      assert.equal(pool.activeCount, 0);
+      assert(graphic.destroyed);
+    }
+  }
   console.log('✓ spread target coverage, ground/front layers, accent opacity, pause and disposal');
 }
