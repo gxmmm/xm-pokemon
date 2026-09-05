@@ -17,7 +17,7 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "pokemon-online"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "e039a675-d926-4677-b91d-79f94061bce1"
 
 # Optional: KV for sessions if you prefer KV over D1 for sessions.
 # [[kv_namespaces]]
