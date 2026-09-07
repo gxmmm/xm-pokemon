@@ -8,7 +8,7 @@ import { parseHexColor } from './pixi-color.ts';
 import { groundShadowPlan } from './terrain-contact-plan.ts';
 import { sampleBattleMotionPose } from './battle-motion.ts';
 import { drawBodyFlames, drawElementMotes, moteSite } from './natural-effect-shapes.ts';
-import { BATTLE_FOOT_CONTACT } from '@pokemon-online/config';
+import { BATTLE_FOOT_CONTACT, BATTLE_BODY_DISPLAY } from '@pokemon-online/config';
 
 /**
  * GPU model view driven entirely by a resolved BattleArtProfile. It has no
@@ -120,7 +120,7 @@ export class CombatantView extends Container {
     const changedAsset = this.presentation.asset.id !== resolved.asset.id;
     const changedProfile = this.presentation.profile.id !== resolved.profile.id;
     this.presentation = resolved;
-    this.baseScale = resolved.profile.scale;
+    this.baseScale = this.displayScale();
     this.facing = combatant.facing;
     this.alive = combatant.alive;
     this.statusLayer.refresh(combatant);
@@ -221,6 +221,16 @@ export class CombatantView extends Container {
     return this.motionElapsedMs >= this.activeMotionDurationMs();
   }
 
+  private displayScale(): number {
+    const authored = this.presentation.profile.scale;
+    if (!this.sprite.visible) return authored;
+    // Use the stable contact frame, so animated frame silhouettes never pump
+    // the body size. Pose, status, shadow and anchors share this same scale.
+    const body = this.sprite.getBodyBounds(true);
+    return authored * Math.min(1, BATTLE_BODY_DISPLAY.maxWidth / Math.max(1, body.width * authored),
+      BATTLE_BODY_DISPLAY.maxHeight / Math.max(1, body.height * authored));
+  }
+
   setGrounding(
     offset: { x: number; y: number },
     projectedLiftPixels: number,
@@ -285,6 +295,7 @@ export class CombatantView extends Container {
   }
 
   update(dtSeconds: number): void {
+    this.baseScale = this.displayScale();
     this.bodyEffectSeconds += dtSeconds;
     this.locomotionHoldSeconds = Math.max(0, this.locomotionHoldSeconds - dtSeconds);
     this.updateMovementFeel(dtSeconds);

@@ -6,6 +6,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import type { RendererObservationReport } from '../apps/web/src/visuals/runtime-observation.ts';
 import { checkNaturalBattle } from './battle-natural-browser-checks.ts';
 import { checkSkillShowcases } from './skill-showcase-browser-checks.ts';
+import { checkBattleSpacing } from './battle-spacing-browser-checks.ts';
 
 const PORT = 41775;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -94,6 +95,14 @@ async function main(): Promise<void> {
     });
 
     await page.goto(`${BASE}/battle-sandbox?renderer-observation=1`, { waitUntil: 'networkidle' });
+    if (process.argv.includes('--spacing-only')) {
+      await page.clock.install({ time: new Date('2026-09-07T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));
+      await checkBattleSpacing(page, OUTPUT);
+      assert.deepEqual(errors, []);
+      console.log('✓ deterministic 3v3 camera spacing samples');
+      return;
+    }
     if (process.argv.includes('--skills-only')) {
       await page.clock.install({ time: new Date('2026-09-07T00:00:00Z') });
       await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));

@@ -6,6 +6,11 @@ import { NORMAL_ATTACK, SKILLS } from './skills.ts';
 import { SKILL_VISUAL_RECIPE_MAP } from './skill-visuals.ts';
 import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
 
+/** Opaque idle body budget in stage pixels, before perspective and action poses.
+ * Small sprites retain their authored size; transparent texture margins do not
+ * consume the budget. This never affects engine collision or attack ranges. */
+export const BATTLE_BODY_DISPLAY = { maxWidth: 100, maxHeight: 92 };
+
 /**
  * Battle art is static presentation configuration. It deliberately contains no
  * Pixi objects, DOM state, battle results, or save data. Renderer consumers

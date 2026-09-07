@@ -9,15 +9,17 @@ export interface BattleGroundProjection extends BattleGroundPoint { depth: numbe
 /** Pinhole projection for the configurable 2.5D spectator camera. */
 export function projectBattleWorldPoint(position: BattleWorldPosition, camera: BattleCameraSpec): BattleGroundProjection {
   const pitch = camera.pitchDegrees * Math.PI / 180;
+  const yaw = (camera.yawDegrees ?? 0) * Math.PI / 180;
   const distance = camera.height / Math.max(0.12, Math.tan(pitch));
-  const cameraPosition = { x: camera.target.x, y: camera.target.y + distance, z: camera.target.z + camera.height };
+  const dx = position.x - camera.target.x, dy = position.y - camera.target.y;
+  // Rotate one camera basis for actors, grounding, height and effect anchors.
   const relative = {
-    x: position.x - cameraPosition.x,
-    y: position.y - cameraPosition.y,
-    z: position.z - cameraPosition.z,
+    x: dx * Math.cos(yaw) - dy * Math.sin(yaw),
+    y: dx * Math.sin(yaw) + dy * Math.cos(yaw) - distance,
+    z: position.z - camera.target.z - camera.height,
   };
-  // Camera basis for a level horizon: right is world +x; view-up combines
-  // ground depth and elevation according to the configured pitch.
+  // Keep a level horizon in the rotated basis; view-up combines ground depth
+  // and elevation according to the configured pitch.
   const depth = Math.max(1, -relative.y * Math.cos(pitch) - relative.z * Math.sin(pitch));
   const cameraUp = -relative.y * Math.sin(pitch) + relative.z * Math.cos(pitch);
   const perspective = camera.focalLength / depth;

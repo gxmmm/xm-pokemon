@@ -7,14 +7,14 @@ import { projectBattleGroundPoint } from '../packages/renderer-pixi/src/battle-g
 import { isCellInArena } from '../packages/engine/src/grid.ts';
 
 export function testBattleCamera(): void {
-  const previousCameras = { grass: [15, 36, 448], cave: [14, 38, 452], water: [16, 34, 442], dragon: [14.5, 37, 450], arena: [17, 39, 454] } as const;
   for (const environment of Object.values(BATTLE_ENVIRONMENTS)) {
     const camera = environment.camera;
-    const [height, pitchDegrees, principalY] = previousCameras[environment.id];
-    const previous = { ...camera, height, pitchDegrees, principal: { x: 640, y: principalY } };
-    const depthGap = (spec: typeof camera) => projectBattleGroundPoint(10, 9, spec).y - projectBattleGroundPoint(10, 7, spec).y;
-    assert(depthGap(camera) > depthGap(previous) * 1.05, `${environment.id}: central depth is visibly expanded`);
-    if (environment.id === 'grass') assert(depthGap(camera) > depthGap(previous) * 1.15);
+    const rear = projectBattleGroundPoint(10, 5, camera), front = projectBattleGroundPoint(10, 7, camera);
+    assert(Math.abs(front.x - rear.x) >= 30 && front.y > rear.y,
+      `${environment.id}: two-cell rows have visible lateral separation and correct depth`);
+    const center = projectBattleGroundPoint(9.5, 6.5, camera);
+    assert(Math.abs(center.x - camera.principal.x) < 1e-9 && Math.abs(center.y - camera.principal.y) < 1e-9,
+      'yaw rotates the shared world around the configured camera target');
     for (let x = 0; x < 20; x++) for (let y = 0; y < 14; y++) {
       if (!isCellInArena(x, y)) continue;
       const point = projectBattleGroundPoint(x, y, camera);
