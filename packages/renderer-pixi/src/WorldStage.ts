@@ -83,6 +83,7 @@ export class WorldStage implements WorldRenderer {
   private readonly foreground = new Container();
   private readonly overlay = new Container();
   private transitionGraphic: Graphics | null = null;
+  private basePaint: { sky: Graphics; ground: Graphics; shadow: Graphics } | null = null;
   private readonly characterViews = new Map<string, CharacterView>();
   private readonly ambientParticles: AmbientParticle[] = [];
   /** Asset keys retained only for the currently entered Scene Pack. Current world
@@ -156,6 +157,7 @@ export class WorldStage implements WorldRenderer {
     this.app = null;
     this.root = null;
     this.transitionGraphic = null;
+    this.basePaint = null;
     this.host?.replaceChildren();
     this.host = null;
     this.activeScene = null;
@@ -213,7 +215,8 @@ export class WorldStage implements WorldRenderer {
       const draw = (now: number): void => {
         if (finished) return;
         const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
-        overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: fill, alpha: peakAlpha * Math.sin(progress * Math.PI) });
+        const bounds = this.viewportBounds();
+        overlay.clear().rect(bounds.x, bounds.y, bounds.width, bounds.height).fill({ color: fill, alpha: peakAlpha * Math.sin(progress * Math.PI) });
         if (progress < 1) frame = requestAnimationFrame(draw);
         else finish();
       };
@@ -275,14 +278,30 @@ export class WorldStage implements WorldRenderer {
     this.drawBase(palette);
     if (this.activeScene) this.drawLandmarks(this.activeScene, palette);
     this.drawAmbience(this.activeScene?.ambience ?? { preset: 'mist', density: 0.3 }, palette);
+    this.resize();
   }
 
   private drawBase(palette: ScenePalette): void {
-    this.terrain.addChild(
-      new Graphics().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: palette.backdrop }),
-      new Graphics().rect(0, 410, DESIGN_WIDTH, 310).fill({ color: palette.ground }),
-      new Graphics().rect(0, 408, DESIGN_WIDTH, 8).fill({ color: palette.shadow, alpha: 0.18 }),
-    );
+    this.basePaint = { sky: new Graphics(), ground: new Graphics(), shadow: new Graphics() };
+    this.terrain.addChild(this.basePaint.sky, this.basePaint.ground, this.basePaint.shadow);
+    this.paintViewportBase(palette);
+  }
+
+  private viewportBounds(): { x: number; y: number; width: number; height: number } {
+    const scale = this.root?.scale.x ?? 1;
+    const width = (this.host?.clientWidth ?? DESIGN_WIDTH) / scale;
+    const height = (this.host?.clientHeight ?? DESIGN_HEIGHT) / scale;
+    return { x: -(this.root?.x ?? 0) / scale, y: -(this.root?.y ?? 0) / scale, width, height };
+  }
+
+  private paintViewportBase(palette: ScenePalette): void {
+    if (!this.basePaint) return;
+    const bounds = this.viewportBounds();
+    // Extend the continuous environment, keeping every map entity in the same
+    // uniform projection instead of stretching or cropping the playable map.
+    this.basePaint.sky.clear().rect(bounds.x, bounds.y, bounds.width, bounds.height).fill({ color: palette.backdrop });
+    this.basePaint.ground.clear().rect(bounds.x, 410, bounds.width, Math.max(0, bounds.y + bounds.height - 410)).fill({ color: palette.ground });
+    this.basePaint.shadow.clear().rect(bounds.x, 408, bounds.width, 8).fill({ color: palette.shadow, alpha: 0.18 });
   }
 
   private drawLandmarks(scene: WorldStageSceneSpec, palette: ScenePalette): void {
@@ -433,8 +452,20 @@ export class WorldStage implements WorldRenderer {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
     this.app.renderer.resize(width, height);
-    const scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+    // Buildings can extend above their map anchors. Fit their actual geometry
+    // with a small margin as well as the playable map; foreground fog may bleed.
+    let left = 0, top = 0, right = DESIGN_WIDTH, bottom = DESIGN_HEIGHT;
+    for (const layer of [this.scenery, this.occlusion]) {
+      if (!layer.children.length) continue;
+      const bounds = layer.getLocalBounds();
+      left = Math.min(left, bounds.x - 16);
+      top = Math.min(top, bounds.y - 16);
+      right = Math.max(right, bounds.x + bounds.width + 16);
+      bottom = Math.max(bottom, bounds.y + bounds.height + 16);
+    }
+    const scale = Math.min(width / (right - left), height / (bottom - top));
     this.root.scale.set(scale);
-    this.root.position.set((width - DESIGN_WIDTH * scale) / 2, (height - DESIGN_HEIGHT * scale) / 2);
+    this.root.position.set((width - (right + left) * scale) / 2, (height - (bottom + top) * scale) / 2);
+    this.paintViewportBase(this.activeScene?.palette ?? FALLBACK_PALETTE);
   }
 }

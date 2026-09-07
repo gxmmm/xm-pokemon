@@ -358,7 +358,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       </div>
     </div>
     <div class="battle-row">
-      <!-- LEFT: player team (outside arena) -->
+      <!-- Player HUD floats over the full-window battlefield. -->
       <div class="side-panel player-side">
         <div class="side-label">我方</div>
         <div v-for="c in playerComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
@@ -388,7 +388,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
       </div>
 
-      <!-- RIGHT: enemy team (outside arena) -->
+      <!-- Enemy HUD shares the opposite screen edge. -->
       <div class="side-panel enemy-side">
         <div class="side-label">敌方</div>
         <div v-for="c in enemyComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
@@ -494,20 +494,22 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 </template>
 
 <style scoped>
-.battle { display:flex; flex-direction:column; gap:8px; height:100%; }
+.battle { position:relative; width:100%; height:100%; isolation:isolate; }
 .wild-list { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
 .wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 
-.battle-row { display:flex; gap:10px; align-items:stretch; justify-content:center; flex:1; min-height:0; }
-.side-panel { width: 140px; flex-shrink:0; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
-.side-label { font-size:11px; font-weight:800; text-align:center; padding:2px; letter-spacing:1px; }
+.battle-row { position:absolute; inset:0; pointer-events:none; }
+.side-panel { position:absolute; top:88px; z-index:5; width:clamp(180px,15vw,228px); max-height:calc(100% - 176px); display:flex; flex-direction:column; gap:8px; overflow-y:auto; pointer-events:auto; }
+.player-side { left:24px; }.enemy-side { right:24px; }
+.side-label { font-size:12px; font-weight:800; padding:2px 6px; letter-spacing:1px; text-shadow:0 1px 5px #142537; }
 .player-side .side-label { color:#8acfff; }
 .enemy-side .side-label { color:#ff9b9b; }
 
 .mon-card {
-  background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 6px;
-  box-shadow: 0 2px 0 rgba(0,0,0,.15); border: 2px solid transparent;
+  background:rgba(13,30,43,.84); color:#edf5f5; border-radius:8px; padding:8px;
+  box-shadow:0 3px 12px rgba(0,0,0,.15); border:1px solid rgba(215,238,240,.22);
 }
+.mon-card .chip { background:rgba(238,248,255,.12); color:#dce8ef; }
 .mon-card.fainted { opacity:.4; filter: grayscale(.6); }
 .mon-card.casting { border-color: var(--gold); box-shadow: 0 0 8px rgba(255,203,5,.6); }
 .mc-head { display:flex; align-items:center; gap:5px; }
@@ -533,18 +535,19 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .status-tag.confuse { background:#e84393; color:#fff; }
 
 .arena {
-  position: relative; flex: 1 1 auto; min-width: 0; aspect-ratio: 20 / 14; max-height: none;
-  background: #0e1626; border-radius: 12px; border: 4px solid #1c2740; overflow: hidden; align-self: center;
+  position:absolute; inset:0; background:#0e1626; overflow:hidden; pointer-events:auto;
 }
 .arena.over { filter: brightness(.85); }
 .gpu-unavailable { position:absolute; inset:0; z-index:6; display:grid; place-items:center; padding:24px; text-align:center; color:#ffe4a6; background:rgba(8,13,24,.88); border:1px solid rgba(255,203,5,.35); }
 .tactic-ribbon { position:absolute; left:50%; transform:translateX(-50%); z-index:4; min-width:132px; max-width:calc(100% - 18px); padding:4px 8px; border-radius:7px; text-align:center; pointer-events:none; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.45); box-shadow:0 2px 8px rgba(0,0,0,.28); background:rgba(62,78,108,.88); }
-.tactic-ribbon.player { top:8px; }.tactic-ribbon.enemy { bottom:8px; }
+.tactic-ribbon.player { top:24px; }.tactic-ribbon.enemy { bottom:24px; }
 .tactic-ribbon span { display:block; font-size:10px; font-weight:900; letter-spacing:.4px; }.tactic-ribbon small { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; opacity:.92; }
 .tactic-ribbon.finish { background:rgba(196,78,64,.91); }.tactic-ribbon.protect { background:rgba(57,119,191,.91); }.tactic-ribbon.pressure { background:rgba(143,80,176,.91); }.tactic-ribbon.split { background:rgba(62,122,111,.91); }
 
-.battle-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; }
+.battle-toolbar { position:absolute; top:24px; left:24px; right:24px; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:8px; pointer-events:none; }
+.battle-toolbar > span { padding:9px 12px; border-radius:8px; background:rgba(13,30,43,.82); }
 .arena-controls { display:flex; gap:6px; }
+.arena-controls { pointer-events:auto; }
 .arena-controls button { min-height:40px; min-width:44px; }
 .arena-controls button { background: rgba(28,39,64,.8); }
 .damage-report { margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
@@ -581,17 +584,4 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .battle-result { max-width:640px; }
 .damage-side-head, .damage-side-head strong, .damage-member-top, .damage-member b,
 .damage-member small, .contribution-line, .recap-metrics, .recap-skills, .result-log-list { font-size:12px; }
-@media (max-width: 820px) {
-  .battle { height:auto; min-height:100%; }
-  .battle-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; }
-  .arena { grid-column:1 / -1; grid-row:1; width:100%; }
-  .side-panel { width:auto; min-width:0; overflow:visible; }
-  .mc-head { flex-wrap:wrap; }
-  .mc-hp { flex-basis:100%; }
-  .side-label, .cd-chip, .status-tag, .cast-tag, .tactic-ribbon span { font-size:12px; }
-  .tactic-ribbon small { display:none; }
-  .damage-sides { grid-template-columns:1fr; }
-  .contribution-line { flex-wrap:wrap; }
-  .contribution-line > span:last-child { white-space:normal; }
-}
 </style>

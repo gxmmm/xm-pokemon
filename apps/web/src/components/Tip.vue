@@ -7,13 +7,8 @@ import { ref, nextTick, onUnmounted } from 'vue';
  * Set to false for badges inside clickable parents (e.g. type badges on a
  * selectable card): the tip becomes hover-only and never blocks the parent click.
  *
- * The tooltip is `position: fixed` + clamped so it is never clipped by an
- * `overflow: auto` ancestor. IMPORTANT: `.app-stage` uses `transform: scale()`,
- * which makes it the containing block for fixed descendants -- so the tip is
- * laid out in the STAGE's local (design-px) coordinate system, not the
- * viewport. We convert the trigger's visual rect to stage-local coords and
- * clamp to the stage bounds; otherwise the tip lands outside the stage and is
- * clipped by its overflow:hidden.
+ * The tooltip is teleported to the document and clamped in viewport pixels.
+ * Scene transforms and scrolling panels cannot change its containing block.
  *
  * Hover shows the tip after a short dwell (500ms) so quick mouse-overs don't
  * pop tooltips constantly. Click (touch) shows it immediately.
@@ -30,25 +25,10 @@ function applyPosition(): void {
   const el = wrap.value, tip = box.value;
   if (!el || !tip || !show.value) return;
   const r = el.getBoundingClientRect();
-  const tw = tip.offsetWidth, th = tip.offsetHeight; // layout px (stage-local)
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
   const gap = 6, pad = 8;
-  // Convert the trigger's visual rect into the stage's local design-px coords
-  // (the tip is position:fixed, contained by the transformed .app-stage).
-  const stage = document.querySelector('.app-stage') as HTMLElement | null;
-  let localLeft: number, localTop: number, localW: number, localBottom: number, boundsW: number, boundsH: number;
-  if (stage) {
-    const sr = stage.getBoundingClientRect();
-    const scale = sr.width / stage.offsetWidth || 1;
-    localLeft = (r.left - sr.left) / scale;
-    localTop = (r.top - sr.top) / scale;
-    localW = r.width / scale;
-    localBottom = localTop + r.height / scale;
-    boundsW = stage.offsetWidth;
-    boundsH = stage.offsetHeight;
-  } else {
-    localLeft = r.left; localTop = r.top; localW = r.width; localBottom = r.bottom;
-    boundsW = window.innerWidth; boundsH = window.innerHeight;
-  }
+  const localLeft = r.left, localTop = r.top, localW = r.width, localBottom = r.bottom;
+  const boundsW = window.innerWidth, boundsH = window.innerHeight;
   // horizontal: center on the trigger, clamped into the stage (no left/right clip)
   let left = localLeft + localW / 2 - tw / 2;
   left = Math.max(pad, Math.min(left, boundsW - tw - pad));
@@ -103,9 +83,11 @@ onUnmounted(() => {
     @click="onClick"
   >
     <slot />
+    <Teleport to="body">
     <transition name="tip-fade">
       <span v-if="show && text" ref="box" class="tip-box" role="tooltip" :style="boxStyle">{{ text }}</span>
     </transition>
+    </Teleport>
   </span>
 </template>
 

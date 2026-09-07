@@ -78,5 +78,5 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.pixi-world-viewport { width: min(100%, 920px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,.25); }
+.pixi-world-viewport { position:absolute; inset:0; width:100%; height:100%; overflow:hidden; }
 </style>

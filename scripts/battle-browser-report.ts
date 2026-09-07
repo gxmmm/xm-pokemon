@@ -148,7 +148,7 @@ async function main(): Promise<void> {
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.waitForFunction(() => Math.abs(document.querySelector('.app-stage')!.getBoundingClientRect().width - 1440) < 1);
         const desktop = await page.locator('.app-stage').evaluate((element) => ({ width: element.getBoundingClientRect().width, layoutWidth: (element as HTMLElement).offsetWidth }));
-        assert.equal(desktop.layoutWidth, 1280, 'desktop sandbox retains the fixed design width');
+        assert.equal(desktop.layoutWidth, 1440, 'desktop sandbox layout fills the window in real pixels');
         assert(Math.abs(desktop.width - 1440) < 1, 'desktop sandbox did not scale to the viewport');
         assert(await page.locator('.arena').evaluate((element) => element.getBoundingClientRect().height >= 400), 'desktop battlefield became a miniature');
         await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-desktop-1440.png') });

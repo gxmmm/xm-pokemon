@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { Application, Graphics, Texture, type Container } from 'pixi.js';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
+import { WORLD_SCENES } from '@pokemon-online/config';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
 import { WorldStage } from '../packages/renderer-pixi/src/WorldStage.ts';
 import { BattleArtAssetLoader } from '../packages/renderer-pixi/src/BattleArtAssets.ts';
@@ -175,6 +176,31 @@ export async function testBattleStageLifecycle(): Promise<void> {
     await worldTransition;
     staleWorldDraw(performance.now() + 1000);
     assert.equal(frames.size, 0, 'world exit cancels transition and a stale frame never touches destroyed graphics');
+
+    await world.mount(host as unknown as HTMLElement);
+    await world.enterWorld({ sceneId: 'viewport-test', biomeId: 'grass' });
+    const worldInternals = world as unknown as { root: Container; scenery: Container; occlusion: Container; basePaint: { sky: Graphics }; resize(): void };
+    for (const scene of [null, ...WORLD_SCENES]) {
+      if (scene) await world.enterScene({ sceneId: scene.id, biomeId: scene.biome }, scene);
+      for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1920, 800]]) {
+        host.clientWidth = width!; host.clientHeight = height!;
+        worldInternals.resize();
+        const root = worldInternals.root;
+        assert.equal(root.scale.x, root.scale.y, 'world resizing preserves character proportions');
+        const first = root.toGlobal({ x: 0, y: 0 }), last = root.toGlobal({ x: 1280, y: 720 });
+        assert(first.x >= -0.01 && first.y >= -0.01 && last.x <= width! + 0.01 && last.y <= height! + 0.01, 'the entire authored map remains visible');
+        const sky = worldInternals.basePaint.sky.getBounds();
+        assert(Math.abs(sky.x) < 0.01 && Math.abs(sky.y) < 0.01 && Math.abs(sky.width - width!) < 0.01 && Math.abs(sky.height - height!) < 0.01, 'environment reaches every window edge without a letterbox');
+        for (const layer of [worldInternals.scenery, worldInternals.occlusion]) {
+          if (!layer.children.length) continue;
+          const bounds = layer.getBounds();
+          assert(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width! + 0.01 && bounds.y + bounds.height <= height! + 0.01,
+            `${scene?.id}: full building geometry, including roofs and lights, stays inside the viewport`);
+        }
+      }
+    }
+    world.unmount();
+    host.clientWidth = 1280; host.clientHeight = 720;
 
     const abandonedBattle = deferred();
     preloadQueue.push(abandonedBattle);

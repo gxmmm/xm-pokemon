@@ -25,14 +25,6 @@ const standaloneSandboxMode = computed(() => {
     && (path.endsWith('/world-stage-sandbox') || path.endsWith('/battle-stage-sandbox'));
 });
 
-/** Scale the fixed 1280x800 design stage to fit the viewport (proportional,
- *  letterboxed). Bigger screen -> bigger game. Pure visual; battle/world logic
- *  is grid-based and untouched. */
-function updateScale(): void {
-  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 800);
-  document.documentElement.style.setProperty('--scale', String(Math.max(0.3, Math.min(2.5, s))));
-}
-
 function protectUnsaved(event: BeforeUnloadEvent): void {
   if (!game.unsaved) return;
   event.preventDefault();
@@ -40,13 +32,10 @@ function protectUnsaved(event: BeforeUnloadEvent): void {
 }
 
 onMounted(() => {
-  updateScale();
-  window.addEventListener('resize', updateScale);
   // Authentication and save loading have a single owner: the route guard.
   window.addEventListener('beforeunload', protectUnsaved);
 });
 onUnmounted(() => {
-  window.removeEventListener('resize', updateScale);
   window.removeEventListener('beforeunload', protectUnsaved);
 });
 
@@ -58,7 +47,7 @@ watch(() => auth.isAuthenticated, (v) => {
 
 <template>
   <div class="app-stage" :class="{ 'battle-sandbox-stage': route.name === 'battle-sandbox' }">
-    <main ref="view" class="view" :class="{ 'with-menu': showChrome && route.name !== 'world' }">
+    <main ref="view" class="view" :class="{ 'with-menu': showChrome && route.name !== 'world', immersive: route.name === 'world' || route.name === 'battle' }">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />

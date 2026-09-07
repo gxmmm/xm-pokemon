@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { chromium, type Browser, type Locator } from 'playwright-core';
 import type { PlayerSave } from '@pokemon-online/shared';
+import { checkFullWindowScene } from './full-window-browser-checks.ts';
 
 const PORT = 41779;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -53,6 +54,7 @@ try {
   await page.getByRole('button', { name: /就决定是你了/ }).click();
   await page.waitForURL('**/world');
   await page.evaluate(async (url) => { window.__PLAYABLE_FIXTURE__ = await import(/* @vite-ignore */ url); }, '/@fs/' + resolve('scripts/playable-battle-browser-fixture.ts').replaceAll('\\', '/'));
+  await checkFullWindowScene(page, OUTPUT, 'world');
   const read = () => page.evaluate(() => window.__PLAYABLE_FIXTURE__.read());
   const assertInside = async (locator: Locator) => {
     const r = await locator.boundingBox();
@@ -67,7 +69,7 @@ try {
     });
     assert(Math.abs(info.stageWidth - page.viewportSize()!.width) < 1, `${label}: stage width ${JSON.stringify(info)}`);
     assert(info.scrollWidth <= info.clientWidth + 1, `${label}: horizontal overflow ${JSON.stringify(info)}`);
-    assert.equal(info.layoutWidth, 1280, `${label}: desktop design stage retains its layout size`);
+    assert.equal(info.layoutWidth, page.viewportSize()!.width, `${label}: desktop layout fills the viewport without scaling`);
   };
   const prepare = async (outcome: 'win' | 'loss' | 'long' | 'natural', speed: number) => {
     await page.evaluate(({ outcome, speed }) => window.__PLAYABLE_FIXTURE__.prepare(outcome, speed), { outcome, speed });
@@ -75,6 +77,10 @@ try {
     await page.locator('.arena canvas').waitFor();
   };
   await prepare('long', 3);
+  await page.getByRole('button', { name: '暂停', exact: true }).click();
+  await checkFullWindowScene(page, OUTPUT, 'battle');
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  checks.push('世界与战斗在1366×768、1440×900、1920×1080连续调整窗口后铺满四边，画布真实尺寸更新且仅一个实例');
   console.log('playable: checking controls and real simulation speed');
   await page.getByRole('button', { name: '3x', exact: true }).waitFor();
   await page.getByRole('button', { name: '3x', exact: true }).click();

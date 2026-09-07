@@ -242,17 +242,17 @@ watch(() => game.save?.position, () => {
 
 <template>
   <div class="world" v-if="game.save">
-    <div class="between" style="margin-bottom:8px">
-      <div>
+    <div class="world-toolbar">
+      <div class="world-title">
         <h2 class="h-title" style="margin:0">{{ map.name }}</h2>
         <span class="chip">{{ dn === 'day' ? '☀️ 白天' : '🌙 夜晚' }}</span>
       </div>
-      <div class="row" style="gap:6px">
+      <div class="row world-actions" style="gap:6px">
         <button class="sm ghost" @click="showMap = !showMap">🗺 地图</button>
         <button class="sm ghost" @click="heal">💊 治疗</button>
       </div>
     </div>
-    <p class="tiny muted" style="margin:0 0 5px">{{ map.description }} {{ map.ambient }}</p>
+    <p class="world-description">{{ map.description }} {{ map.ambient }}</p>
 
     <div class="canvas-wrap">
       <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
@@ -283,8 +283,14 @@ watch(() => game.save?.position, () => {
 </template>
 
 <style scoped>
-.world { display:flex; flex-direction:column; height:100%; gap:8px; }
-.canvas-wrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+.world { position:relative; width:100%; height:100%; isolation:isolate; }
+.canvas-wrap { position:absolute; inset:0; z-index:0; }
+.world-toolbar { position:absolute; top:24px; left:24px; right:24px; z-index:10; display:flex; align-items:flex-start; justify-content:space-between; pointer-events:none; }
+.world-title .h-title { color:#fff; font-size:24px; text-shadow:0 2px 8px rgba(8,22,28,.7); }
+.world-title .chip { margin-top:8px; background:rgba(13,30,39,.72); color:#edf5f2; }
+.world-actions { pointer-events:auto; }
+.world-actions button { min-height:40px; padding:8px 14px; background:rgba(13,30,39,.82); border:1px solid rgba(240,250,245,.35); }
+.world-description { position:absolute; left:24px; top:102px; z-index:10; max-width:440px; margin:0; font-size:12px; line-height:1.6; color:#edf5f2; text-shadow:0 1px 4px #172e38; pointer-events:none; }
 .gpu-unavailable { position:absolute; inset:0; z-index:20; display:grid; place-items:center; padding:24px; text-align:center; color:#ffe4a6; background:rgba(8,13,24,.88); border:1px solid rgba(255,203,5,.35); }
 
 .transition-overlay { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
