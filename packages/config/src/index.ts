@@ -15,3 +15,4 @@ export * from './normal-attack-visuals.ts';
 export * from './battle-environments.ts';
 export * from './battle-art.ts';
 export * from './battle-movement.ts';
+export * from './battle-hud.ts';

@@ -56,17 +56,18 @@ export async function checkNaturalBattle(page: Page, output: string) {
       assert(sample.feet.every((foot) => foot.children === 0), 'scene change clears grass contacts');
       await page.screenshot({ path: resolve(output, `natural-contact-${biome}.png`) });
     }
-    for (const stun of [false, true]) {
+    for (const stun of [false, true, 'combined'] as const) {
       await page.evaluate((stun) => window.__READABILITY_FIXTURE__.statusGallery(stun), stun);
       let previous = 0;
       for (const at of [80, 300, 650]) {
         await page.clock.runFor(at - previous); previous = at;
-        await page.screenshot({ path: resolve(output, `natural-status-${stun ? 'stun' : 'gallery'}-${at}.png`) });
+        await page.screenshot({ path: resolve(output, `natural-status-${stun === 'combined' ? 'combined' : stun ? 'stun' : 'gallery'}-${at}.png`) });
       }
       const sample = await read();
-      const expected = stun ? Array(6).fill('stun') : ['burn', 'poison', 'paralyze', 'freeze', 'sleep', 'confuse'];
+      const expected = stun === true ? Array(6).fill('stun') : ['burn', 'poison', 'paralyze', 'freeze', 'sleep', 'confuse'];
       assert.deepEqual(Object.values(sample.motions).map((model) => model.statusVisual), expected);
-      await page.screenshot({ path: resolve(output, `natural-status-${stun ? 'stun' : 'gallery'}.png`) });
+      if (stun) assert.deepEqual(sample.headIndicators, Array(6).fill('stun'));
+      await page.screenshot({ path: resolve(output, `natural-status-${stun === 'combined' ? 'combined' : stun ? 'stun' : 'gallery'}.png`) });
       samples.push({ gallery: stun ? 'stun' : 'all', statuses: expected });
     }
     return samples;

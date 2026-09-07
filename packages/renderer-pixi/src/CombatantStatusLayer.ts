@@ -14,11 +14,14 @@ const GLYPHS = {
 /** Restrained sprite-like details; state comes exclusively from delayed DTOs. */
 export class CombatantStatusLayer extends Graphics {
   private visual: CombatantStatusVisual = 'none';
+  private indicator: 'none' | 'sleep' | 'confuse' | 'stun' = 'none';
+  get headIndicator(): string { return this.indicator; }
   constructor() { super({ blendMode: 'normal' }); }
   get statusVisual(): CombatantStatusVisual { return this.visual; }
 
   refresh(combatant: CombatantStatusState): void {
     this.visual = !combatant.alive ? 'none' : combatant.status ?? (combatant.stunActive ? 'stun' : 'none');
+    this.indicator = !combatant.alive ? 'none' : combatant.stunActive ? 'stun' : combatant.status === 'sleep' || combatant.status === 'confuse' ? combatant.status : 'none';
     if (this.visual === 'none') this.clear();
   }
 
@@ -29,11 +32,12 @@ export class CombatantStatusLayer extends Graphics {
     const pixel = Math.max(0.9, Math.min(1.35, height / 60), BATTLE_BODY_EFFECTS.minimumScreenPixel.body / scale);
     if (this.visual === 'burn') {
       drawBodyFlames(this, seconds, width, height, palette.fire, palette.fireTip, scale);
-    } else if (this.visual === 'sleep' || this.visual === 'confuse' || this.visual === 'stun') {
-      const count = this.visual === 'stun' ? 3 : 2;
-      const color = this.visual === 'sleep' ? palette.sleep : this.visual === 'confuse' ? palette.confuse : palette.electric;
+    }
+    if (this.indicator !== 'none') {
+      const count = this.indicator === 'stun' ? 3 : 2;
+      const color = this.indicator === 'sleep' ? palette.sleep : this.indicator === 'confuse' ? palette.confuse : palette.electric;
       const glyphPixel = Math.max(pixel, BATTLE_BODY_EFFECTS.minimumScreenPixel.glyph / scale);
-      const pattern = GLYPHS[this.visual];
+      const pattern = GLYPHS[this.indicator];
       for (let i = 0; i < count; i++) {
         const drift = Math.sin(seconds * 1.8 + i * 1.7) * 2;
         const x = (i - (count - 1) / 2) * (pattern[0].length * glyphPixel + 4 / scale) - pattern[0].length * glyphPixel / 2;
@@ -44,7 +48,8 @@ export class CombatantStatusLayer extends Graphics {
             .rect(x + px * glyphPixel, y + py * glyphPixel, glyphPixel, glyphPixel).fill({ color, alpha: 0.95 });
         }));
       }
-    } else if (this.visual === 'poison') {
+    }
+    if (this.visual === 'poison') {
       const smokePixel = Math.max(pixel, 1.2 / scale);
       for (let i = 0; i < 4; i++) {
         const life = (seconds * 0.3 + i * 0.237) % 1;

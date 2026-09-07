@@ -4,6 +4,7 @@ import { projectBattleGroundPoint } from '../packages/renderer-pixi/src/battle-g
 import type { BattleCue, CameraPlan } from '@pokemon-online/presentation';
 import { BattleStage } from '../packages/renderer-pixi/src/BattleStage.ts';
 import type { CombatantView } from '../packages/renderer-pixi/src/CombatantView.ts';
+import type { CombatantStatusLayer } from '../packages/renderer-pixi/src/CombatantStatusLayer.ts';
 
 /** Test-only dense 3v3 composition; no simulation, login or saved data is changed. */
 export async function createBattleReadabilityFixture() {
@@ -30,6 +31,7 @@ export async function createBattleReadabilityFixture() {
   return {
     read: () => ({ ...stage.getDiagnostics(), settled: stage.isSettled(),
       motions: Object.fromEntries([...views].map(([uid, view]) => [uid, view.getDiagnostics()])),
+      headIndicators: [...views.values()].map((view) => (view as unknown as { statusLayer: CombatantStatusLayer }).statusLayer.headIndicator),
       feet: [...views].map(([uid, view]) => {
         const { container, ...foot } = view.getFootContactFrame();
         const bounds = container.getLocalBounds();
@@ -47,12 +49,13 @@ export async function createBattleReadabilityFixture() {
       if (stage.getDiagnostics().biomeId !== biome) await stage.enterBattle({ biomeId: biome, combatants: actors });
       else stage.applyBattleSnapshot({ time: 1, combatants: actors });
     },
-    async statusGallery(stun = false) {
+    async statusGallery(stun: boolean | 'combined' = false) {
       label.textContent = stun ? '异常状态 · 眩晕 / 头顶小星标' : '异常状态对照 · 后排：燃烧 / 中毒 / 麻痹 · 前排：冰冻 / 睡眠 / 混乱';
       const statuses = ['burn', 'poison', 'paralyze', 'freeze', 'sleep', 'confuse'] as const;
       const actors = combatants.map((c, index) => ({ ...c, speciesId: 25, side: 'enemy' as const, facing: -1 as const,
         pixel: { x: 5 + index % 3 * 5, y: index < 3 ? 4 : 10 },
-        status: stun ? null : statuses[index]!, flinchUntil: stun ? 5 : 0, alive: true, statusTimer: 2 }));
+        status: stun === true ? null : statuses[index]!, flinchUntil: stun ? 5 : 0, alive: true, statusTimer: 2 }));
+      if (stun === 'combined') label.textContent = '异常叠加眩晕 · 身体细节与头顶小星标同时保留';
 
       await stage.enterBattle({ biomeId: 'grass', combatants: actors });
       stage.applyBattleSnapshot({ time: 1, combatants: actors });

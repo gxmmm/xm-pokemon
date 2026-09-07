@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { chromium, type Browser, type Locator } from 'playwright-core';
 import type { PlayerSave } from '@pokemon-online/shared';
 import { checkFullWindowScene } from './full-window-browser-checks.ts';
+import { checkBattleHud } from './battle-hud-browser-checks.ts';
 
 const PORT = 41779;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -12,6 +13,7 @@ const OUTPUT = resolve('doc/visual-baselines/playable');
 declare global {
   interface Window { __PLAYABLE_FIXTURE__: typeof import('./playable-battle-browser-fixture.ts'); }
 }
+async function main(): Promise<void> {
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--config', 'apps/web/vite.config.ts', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { stdio: 'pipe', windowsHide: true });
 let browser: Browser | undefined;
 let serverLog = '';
@@ -54,7 +56,15 @@ try {
   await page.getByRole('button', { name: /就决定是你了/ }).click();
   await page.waitForURL('**/world');
   await page.evaluate(async (url) => { window.__PLAYABLE_FIXTURE__ = await import(/* @vite-ignore */ url); }, '/@fs/' + resolve('scripts/playable-battle-browser-fixture.ts').replaceAll('\\', '/'));
-  await checkFullWindowScene(page, OUTPUT, 'world');
+  if (!process.argv.includes('--hud-only')) await checkFullWindowScene(page, OUTPUT, 'world');
+  await checkBattleHud(page, OUTPUT);
+  checks.push('战斗HUD：三档桌面尺寸、六只同屏、长昵称、完整技能/CD、濒危施法、灼伤叠眩晕、倒下清理、暂停恢复与状态变化不跳位');
+  if (process.argv.includes('--hud-only')) {
+    assert.deepEqual(errors, []);
+    await writeFile(resolve(OUTPUT, 'hud-report.json'), JSON.stringify({ passed: true, checks, pageErrors: errors, at: new Date().toISOString() }, null, 2));
+    console.log('HUD acceptance passed');
+    return;
+  }
   const read = () => page.evaluate(() => window.__PLAYABLE_FIXTURE__.read());
   const assertInside = async (locator: Locator) => {
     const r = await locator.boundingBox();
@@ -241,3 +251,6 @@ try {
   await browser?.close();
   server.kill();
 }
+
+}
+await main();

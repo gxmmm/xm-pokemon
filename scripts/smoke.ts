@@ -41,6 +41,7 @@ import { testBattleControl } from './battle-control-smoke.ts';
 import { testBattleReadability } from './battle-readability-smoke.ts';
 import { testBattleMovement } from './battle-movement-smoke.ts';
 import { testProgress } from './progress-smoke.ts';
+import { testBattleHud } from './battle-hud-smoke.ts';
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) { console.error('✗ ASSERT FAIL:', msg); process.exit(1); }
@@ -57,6 +58,7 @@ testBattleCueTiming();
 testBattleOutcomes();
 testBattleControl();
 testBattleReadability();
+testBattleHud();
 
 // Pixi is the sole supported battle renderer. Three/GLB experiments must not
 // leave a route, package, asset cache, or runtime dependency in this project.
@@ -661,10 +663,10 @@ testBattleCamera();
   }
   statusLayer.refresh({ alive: true, status: 'sleep', stunActive: true });
   statusLayer.render(0.45);
-  assert(statusLayer.statusVisual === 'sleep', 'persistent status presentation takes priority over transient stun');
+  assert(statusLayer.statusVisual === 'sleep' && statusLayer.headIndicator === 'stun', 'persistent status stays tracked while transient stun owns the overhead indicator');
   statusLayer.refresh({ alive: true, status: null, stunActive: true });
   statusLayer.render(0.52);
-  assert(statusLayer.statusVisual === 'stun' && statusLayer.context.instructions.length > 0, 'stun fallback retains its orbiting star silhouette');
+  assert(statusLayer.statusVisual === 'stun' && statusLayer.context.instructions.length > 0, 'stun retains its compact overhead star glyphs');
   statusLayer.refresh({ alive: true, status: null, stunActive: false });
   statusLayer.render(0.6);
   assert(statusLayer.statusVisual === 'none' && statusLayer.context.instructions.length === 0, 'cleared combat status releases all status geometry');
@@ -705,7 +707,7 @@ testBattleCamera();
   assert(combatantView.getDiagnostics().statusVisual === 'poison', 'CombatantView mounts persistent violet-green poison fumes');
   combatantView.refresh({ ...viewCombatant, status: null, statusTimer: 0, stunActive: true });
   combatantView.update(0.08);
-  assert(combatantView.getDiagnostics().statusVisual === 'stun', 'CombatantView mounts a persistent, model-following stun star ring from the presentation stun flag');
+  assert(combatantView.getDiagnostics().statusVisual === 'stun', 'CombatantView mounts model-following overhead stars from the presentation stun flag');
   combatantView.refresh({ ...viewCombatant, status: null, statusTimer: 0 });
   combatantView.update(0.08);
   assert(combatantView.getDiagnostics().statusVisual === 'none', 'CombatantView clears persistent hard-control overlays when the status expires');

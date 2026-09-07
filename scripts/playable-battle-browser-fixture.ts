@@ -60,6 +60,35 @@ export function read() {
 
 export async function visit(path: string): Promise<void> { await router.push(path); }
 
+/** Paused presentation fixtures exercise the actual route without production debug hooks. */
+export function pinHud(cleared = false): void {
+  const team = (ids: number[], side: string) => ids.map((id, i) => ({ ...createWildInstance(id, 70, { rng: () => 0.5 }), uid: `hud-${side}-${i}` }));
+  const sim = new BattleSim({ mode: 'pve', player: team([6, 25, 94], 'p'), enemy: team([3, 9, 143], 'e'), seed: 4242 });
+  sim.state.combatants.forEach((c, i) => {
+    c.maxHp = 1000; c.currentHp = i === 0 ? 200 : i === 5 ? 0 : 750;
+    c.name = i === 0 ? '训练家的喷火龙超长昵称' : c.name;
+    c.activeSkills = ['hyper-beam', 'fire-blast', 'thunderbolt', 'hydro-pump'];
+    c.cooldowns = { 'hyper-beam': 0, 'fire-blast': 4.2, thunderbolt: 0.3, 'hydro-pump': 0 };
+    c.normalAttackCd = 0.7;
+    c.alive = i !== 5;
+    c.castProgress = i === 0 || i === 5 ? { skillId: 'hyper-beam', remaining: 0.3 } : null;
+    c.status = (['burn', 'burn', 'sleep', 'freeze', 'paralyze', 'confuse'] as const)[i]!;
+    c.statusTimer = 4;
+    c.flinchUntil = i === 1 ? 2.5 : 0;
+    if (cleared) { c.alive = true; c.currentHp = 1000; c.status = null; c.statusTimer = 0; c.flinchUntil = 0; c.castProgress = null; }
+  });
+  useBattleStore().sim = sim;
+}
+
+export function interruptHud(): void {
+  const sim = useBattleStore().sim!;
+  const c = sim.state.combatants[0]!;
+  c.castProgress = null;
+  sim.state.events.push({ t: sim.state.time, seq: Math.max(0, ...sim.state.events.map((e) => e.seq ?? 0)) + 1,
+    type: 'info', actor: c.uid, skillId: 'hyper-beam', vfx: { kind: 'interrupt' },
+    control: { uid: c.uid, at: sim.state.time, status: c.status, statusTimer: c.statusTimer, flinchUntil: 0, castProgress: null } });
+}
+
 export async function prepareCollection(): Promise<string> {
   const game = useGameStore();
   const pet = createWildInstance(1, 70);

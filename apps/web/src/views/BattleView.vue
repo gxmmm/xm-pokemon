@@ -3,12 +3,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBattleStore } from '../stores/battle.ts';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, SKILL_MAP, PERSONALITY_MAP, TYPE_COLORS, isGpuWorldMapId, type BattleEnvironmentId } from '@pokemon-online/config';
+import { getSpecies, SKILL_MAP, PERSONALITY_MAP, BATTLE_HUD, isGpuWorldMapId, type BattleEnvironmentId } from '@pokemon-online/config';
 import { defeatExpYield, maxHp, type BattleSim } from '@pokemon-online/engine';
 import type { BattleCombatant, PokemonInstance } from '@pokemon-online/shared';
 import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
+import BattleCombatantCard from '../components/BattleCombatantCard.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
@@ -56,6 +57,7 @@ const presentation = ref<BattlePresentation | null>(null);
 // do not. Keep DOM/reactivity updates at 12fps to avoid six cards re-rendering
 // for every animation frame.
 const hudCombatants = ref<BattleCombatant[]>([]);
+const hudTime = ref(0);
 const battleLog = ref<string[]>([]);
 const hudOver = ref(false);
 let nextHudSyncAt = 0;
@@ -136,25 +138,15 @@ const enemyTactic = computed(() => tacticPresentation(sim.value?.state.teamTacti
 
 function syncHud(s: BattleSim): void {
   hudCombatants.value = presentation.value?.combatants ?? s.state.combatants;
+  hudTime.value = presentation.value?.time ?? s.state.time;
   battleLog.value = (presentation.value?.events ?? []).map((event) => event.message).filter((message): message is string => !!message);
   hudOver.value = s.isOver && presentationCaughtUp;
 }
 
-function hpRatio(c: BattleCombatant): number {
-  return Math.max(0, c.currentHp / c.maxHp);
-}
-function hpColor(c: BattleCombatant): string {
-  const r = hpRatio(c);
-  return r > 0.5 ? '#4caf50' : r > 0.2 ? '#e0a800' : '#d23b3b';
-}
 const biome = computed<BattleEnvironmentId>(() => {
   if (battle.mode === 'pvp') return 'arena';
   return 'grass';
 });
-function skillTargetLabel(id: string): string {
-  const sk = SKILL_MAP[id];
-  return sk?.targetMode === 'all-enemies' ? `敌方全体（单目标伤害 ${Math.round((sk.areaMultiplier ?? 0.7) * 100)}%）` : '敌方单体';
-}
 function skillName(id: string | undefined): string {
   if (!id) return '';
   return SKILL_MAP[id]?.name ?? (id === '__normal__' ? '普通攻击' : id);
@@ -163,18 +155,6 @@ function instanceName(uid: string): string {
   const inst = game.getInstance(uid);
   return inst?.nickname || (inst ? getSpecies(inst.speciesId).name : '?');
 }
-
-// per-skill cooldown chips for a combatant: each active skill + the normal attack.
-// ready (cd<=0) -> bright skill initial; on cooldown -> dim countdown number.
-function skillCds(c: BattleCombatant): { id: string; name: string; char: string; color: string; cd: number; target: string }[] {
-  const list = c.activeSkills.map((id) => {
-    const sk = SKILL_MAP[id];
-    return { id, name: sk?.name ?? id, char: sk?.name?.[0] ?? '?', color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A', cd: c.cooldowns[id] ?? 0, target: skillTargetLabel(id) };
-  });
-  list.push({ id: '__normal__', name: '普通攻击', char: '普', color: '#6b7280', cd: c.normalAttackCd, target: '敌方单体' });
-  return list;
-}
-const STATUS_TAG: Record<string, string> = { burn: '灼', poison: '毒', paralyze: '痹', freeze: '冰', sleep: '眠', confuse: '乱' };
 
 function updatePresentation(s: BattleSim, dtScaled: number, visualSeconds: number): void {
   const frame = presentationBridge.advance(s, dtScaled, visualSeconds);
@@ -189,7 +169,8 @@ function updatePresentation(s: BattleSim, dtScaled: number, visualSeconds: numbe
 function processPresentationEvents(events: readonly import('@pokemon-online/shared').BattleEvent[]): void {
   for (const event of events) {
     if (event.type === 'skill' && event.actor) skillFlash.value[event.actor] = 1;
-    if (event.vfx?.kind === 'interrupt' && event.actor) interruptFlash.value[event.actor] = 1;
+    if (event.vfx?.kind === 'cast' && event.actor) delete interruptFlash.value[event.actor];
+    if (event.vfx?.kind === 'interrupt' && event.actor) interruptFlash.value[event.actor] = BATTLE_HUD.interruptNoticeSeconds;
   }
 }
 
@@ -213,7 +194,7 @@ function frame(now: number): void {
       if (v <= 0) delete skillFlash.value[k]; else skillFlash.value[k] = v;
     }
     for (const k of Object.keys(interruptFlash.value)) {
-      const v = interruptFlash.value[k] - realDt * 3;
+      const v = interruptFlash.value[k] - realDt;
       if (v <= 0) delete interruptFlash.value[k]; else interruptFlash.value[k] = v;
     }
   }
@@ -361,23 +342,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <!-- Player HUD floats over the full-window battlefield. -->
       <div class="side-panel player-side">
         <div class="side-label">我方</div>
-        <div v-for="c in playerComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
-          <div class="mc-head">
-            <span class="bold tiny ell">{{ c.name }}</span>
-            <span class="chip sm-chip">Lv.{{ c.level }}</span>
-            <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
-          </div>
-          <div class="mc-skills">
-            <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
-            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + ' · ' + s.target + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
-              <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
-              <span v-else>{{ s.char }}</span>
-            </div>
-            <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
-            <span v-if="c.castProgress" class="cast-tag">{{ skillName(c.castProgress.skillId) }} {{ Math.round((1 - c.castProgress.remaining / (SKILL_MAP[c.castProgress.skillId]?.castTime || 1)) * 100) }}%</span>
-            <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
-          </div>
-        </div>
+        <BattleCombatantCard v-for="c in playerComs" :key="c.uid" :combatant="c" :time="hudTime" :interrupted="interruptVal(c.uid) > 0" :avatar-style="avatarStyle(c.uid)" />
       </div>
 
       <!-- ARENA -->
@@ -391,23 +356,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <!-- Enemy HUD shares the opposite screen edge. -->
       <div class="side-panel enemy-side">
         <div class="side-label">敌方</div>
-        <div v-for="c in enemyComs" :key="c.uid" class="mon-card" :class="{ fainted: !c.alive, casting: !!c.castProgress }">
-          <div class="mc-head">
-            <span class="bold tiny ell">{{ c.name }}</span>
-            <span class="chip sm-chip">Lv.{{ c.level }}</span>
-            <div class="bar hp-bar mc-hp"><span :style="{ width: hpRatio(c)*100 + '%', background: hpColor(c) }"></span></div>
-          </div>
-          <div class="mc-skills">
-            <span class="mc-avatar" :style="avatarStyle(c.uid)"><PokemonSprite :species-id="c.speciesId" :size="26" :faded="!c.alive" /></span>
-            <div v-for="s in skillCds(c)" :key="s.id" class="cd-chip" :class="{ ready: s.cd <= 0 }" :style="{ background: s.color }" :title="s.name + ' · ' + s.target + (s.cd > 0 ? ' CD ' + Math.ceil(s.cd) + 's' : ' 就绪')">
-              <span v-if="s.cd > 0">{{ Math.ceil(s.cd) }}</span>
-              <span v-else>{{ s.char }}</span>
-            </div>
-            <span v-if="c.status" class="status-tag" :class="c.status">{{ STATUS_TAG[c.status] }}</span>
-            <span v-if="c.castProgress" class="cast-tag">{{ skillName(c.castProgress.skillId) }} {{ Math.round((1 - c.castProgress.remaining / (SKILL_MAP[c.castProgress.skillId]?.castTime || 1)) * 100) }}%</span>
-            <span v-else-if="interruptVal(c.uid) > 0" class="cast-tag bad">打断</span>
-          </div>
-        </div>
+        <BattleCombatantCard v-for="c in enemyComs" :key="c.uid" :combatant="c" :time="hudTime" :interrupted="interruptVal(c.uid) > 0" :avatar-style="avatarStyle(c.uid)" />
       </div>
     </div>
 
@@ -499,40 +448,11 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 
 .battle-row { position:absolute; inset:0; pointer-events:none; }
-.side-panel { position:absolute; top:88px; z-index:5; width:clamp(180px,15vw,228px); max-height:calc(100% - 176px); display:flex; flex-direction:column; gap:8px; overflow-y:auto; pointer-events:auto; }
+.side-panel { position:absolute; top:88px; z-index:5; width:clamp(252px,19vw,292px); max-height:calc(100% - 112px); display:flex; flex-direction:column; gap:8px; overflow-y:auto; pointer-events:auto; }
 .player-side { left:24px; }.enemy-side { right:24px; }
 .side-label { font-size:12px; font-weight:800; padding:2px 6px; letter-spacing:1px; text-shadow:0 1px 5px #142537; }
 .player-side .side-label { color:#8acfff; }
 .enemy-side .side-label { color:#ff9b9b; }
-
-.mon-card {
-  background:rgba(13,30,43,.84); color:#edf5f5; border-radius:8px; padding:8px;
-  box-shadow:0 3px 12px rgba(0,0,0,.15); border:1px solid rgba(215,238,240,.22);
-}
-.mon-card .chip { background:rgba(238,248,255,.12); color:#dce8ef; }
-.mon-card.fainted { opacity:.4; filter: grayscale(.6); }
-.mon-card.casting { border-color: var(--gold); box-shadow: 0 0 8px rgba(255,203,5,.6); }
-.mc-head { display:flex; align-items:center; gap:5px; }
-.mc-head .ell { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:78px; }
-.mc-hp { flex:1; min-width:30px; }
-.mc-skills { display:flex; align-items:center; gap:3px; margin-top:4px; flex-wrap:wrap; }
-.mc-avatar { display:inline-flex; transition: filter .08s ease, transform .08s ease; }
-
-.cd-chip {
-  width:22px; height:22px; border-radius:5px; display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:11px; font-weight:800; text-shadow:0 1px 1px rgba(0,0,0,.45);
-}
-.cd-chip.ready { box-shadow: 0 0 0 1.5px rgba(255,255,255,.65); }
-.cd-chip:not(.ready) { opacity:.5; filter: grayscale(.4); }
-.status-tag { font-size:10px; font-weight:800; padding:0 4px; border-radius:4px; margin-left:auto; }
-.cast-tag { font-size:9px; font-weight:800; padding:1px 5px; border-radius:4px; background:var(--gold); color:#333; box-shadow:0 0 6px rgba(255,203,5,.55); white-space:nowrap; max-width:122px; overflow:hidden; text-overflow:ellipsis; }
-.cast-tag.bad { background:var(--bad); color:#fff; box-shadow:0 0 6px rgba(210,59,59,.7); }
-.status-tag.burn { background:#e25822; color:#fff; }
-.status-tag.poison { background:#9b59b6; color:#fff; }
-.status-tag.paralyze { background:#f1c40f; color:#333; }
-.status-tag.freeze { background:#74b9ff; color:#333; }
-.status-tag.sleep { background:#7f8c8d; color:#fff; }
-.status-tag.confuse { background:#e84393; color:#fff; }
 
 .arena {
   position:absolute; inset:0; background:#0e1626; overflow:hidden; pointer-events:auto;
