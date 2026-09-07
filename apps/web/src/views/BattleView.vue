@@ -13,7 +13,6 @@ import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
 import { consumeBattleVisualTransition, requestWorldReturnVisualTransition } from '../game/SceneVisualTransition.ts';
-import { visualRuntimeSettings } from '../visuals/runtime-settings.ts';
 import { contributionSummary, roleLabel, tacticPresentation } from '../battle/CombatInsights.ts';
 
 const battle = useBattleStore();
@@ -383,7 +382,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :visual-settings="visualRuntimeSettings" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>

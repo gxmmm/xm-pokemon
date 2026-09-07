@@ -1,6 +1,5 @@
 import { BATTLE_CAMERA_MOTION as MOTION, type BattleCameraSpec } from '@pokemon-online/config';
 import type { BattleCameraPlan as CameraPlan } from '@pokemon-online/shared';
-import type { CameraIntensity } from '@pokemon-online/renderer';
 import type { Container } from 'pixi.js';
 import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH, type BattleStagePoint } from './battle-stage-layout.ts';
 
@@ -27,7 +26,6 @@ export class BattleCameraController {
   private targetScale = 1;
   private targetOffset: BattleStagePoint = { x: 0, y: 0 };
   private shake = 0;
-  private intensity: CameraIntensity = 'full';
   private boundLayers: readonly BattleCameraLayer[] = [];
   private pending: CameraPlan[] = [];
   private active: { plan: CameraPlan; ageMs: number } | null = null;
@@ -39,15 +37,8 @@ export class BattleCameraController {
     return !this.pending.length && !this.active && this.scale === 1 && this.offset.x === 0 && this.offset.y === 0 && this.shake === 0;
   }
 
-  setIntensity(intensity: CameraIntensity): void {
-    const previous = this.intensityFactor();
-    this.intensity = intensity;
-    if (intensity === 'off') this.reset();
-    else if (previous > 0) this.shake *= this.intensityFactor() / previous;
-  }
-
   focus(plan: CameraPlan): void {
-    if (this.intensity === 'off' || !Object.prototype.hasOwnProperty.call(MOTION.priority, plan.style)
+    if (!Object.prototype.hasOwnProperty.call(MOTION.priority, plan.style)
       || !Number.isFinite(plan.durationMs) || plan.durationMs <= 0) return;
     this.pending.push({ ...plan, focusIds: [...plan.focusIds],
       zoom: Number.isFinite(plan.zoom) ? plan.zoom : 1,
@@ -77,7 +68,7 @@ export class BattleCameraController {
       zoom: Math.min(...peers.map((plan) => plan.zoom ?? 1)),
       shake: Math.max(...peers.map((plan) => plan.shake ?? 0)),
     } };
-    this.shake = Math.max(this.shake, Math.min(2.5, this.active.plan.shake! * 2.5) * this.intensityFactor());
+    this.shake = Math.max(this.shake, Math.min(2.5, this.active.plan.shake! * 2.5));
   }
 
   private updateTarget(camera: BattleCameraSpec): void {
@@ -88,7 +79,6 @@ export class BattleCameraController {
       this.targetScale = 1;
       return;
     }
-    const intensity = this.intensityFactor();
     const decisiveZoom = Math.max(camera.framing.minZoom, Math.min(camera.framing.maxZoom, this.active!.plan.zoom ?? 1));
     const center = {
       x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
@@ -98,8 +88,8 @@ export class BattleCameraController {
       x: Math.max(-camera.framing.maxPanX, Math.min(camera.framing.maxPanX, (DESIGN_WIDTH / 2 - center.x) * 0.18)),
       y: Math.max(-camera.framing.maxPanY, Math.min(camera.framing.maxPanY, (DESIGN_HEIGHT * camera.framing.focusY - center.y) * 0.14)),
     };
-    this.targetOffset = { x: rawOffset.x * intensity, y: rawOffset.y * intensity };
-    this.targetScale = 1 + (decisiveZoom - 1) * intensity;
+    this.targetOffset = rawOffset;
+    this.targetScale = decisiveZoom;
   }
 
   update(dt: number, layers: readonly BattleCameraLayer[], nowMs = performance.now()): void {
@@ -149,9 +139,6 @@ export class BattleCameraController {
     };
   }
 
-  private intensityFactor(): number {
-    return this.intensity === 'full' ? 1 : this.intensity === 'reduced' ? 0.45 : 0;
-  }
 }
 
 function damp(value: number, target: number, dt: number, rate: number): number {

@@ -8,22 +8,20 @@ import { BATTLE_DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH, type BattleStagePoint } from
 export function spawnSkyStrike(runtime: BattleEffectPool, at: BattleStagePoint, intensity: number): void {
   const shade = new Graphics();
   const graphic = new Graphics({ blendMode: 'add' });
-  const duration = runtime.isReduceFlickerEnabled ? 0.56 : 0.48;
+  const duration = 0.48;
   runtime.add(shade, duration, (progress) => {
-    const reduced = runtime.isReduceFlickerEnabled;
     const rise = Math.min(1, progress / 0.16);
     const fall = progress < 0.42 ? 1 : Math.max(0, (1 - progress) / 0.58);
-    shade.clear().rect(0, 0, BATTLE_DESIGN_WIDTH, BATTLE_DESIGN_HEIGHT).fill({ color: 0x06121d, alpha: rise * fall * (reduced ? 0.055 : 0.14) });
+    shade.clear().rect(0, 0, BATTLE_DESIGN_WIDTH, BATTLE_DESIGN_HEIGHT).fill({ color: 0x06121d, alpha: rise * fall * 0.14 });
   });
   runtime.add(graphic, duration, (progress) => {
-    const reduced = runtime.isReduceFlickerEnabled;
     const strikeStart = 0.16;
-    const strikeEnd = reduced ? 0.62 : 0.56;
+    const strikeEnd = 0.56;
     const strikeProgress = Math.max(0, Math.min(1, (progress - strikeStart) / (strikeEnd - strikeStart)));
-    const strikeAlpha = progress < strikeStart || progress > strikeEnd ? 0 : Math.sin(strikeProgress * Math.PI) * (reduced ? 0.62 : 1);
+    const strikeAlpha = progress < strikeStart || progress > strikeEnd ? 0 : Math.sin(strikeProgress * Math.PI);
     const afterAlpha = progress < 0.34 ? 0 : (1 - progress) * 0.86;
     const top = Math.max(-50, at.y - (360 + intensity * 120));
-    const phase = Math.floor(strikeProgress * (reduced ? 3 : 6));
+    const phase = Math.floor(strikeProgress * 6);
     graphic.clear();
 
     const warningAlpha = progress < strikeStart ? (1 - progress / strikeStart) * 0.46 : 0;
@@ -33,7 +31,7 @@ export function spawnSkyStrike(runtime: BattleEffectPool, at: BattleStagePoint, 
     }
 
     if (strikeAlpha > 0) {
-      if (!reduced) graphic.rect(0, 0, BATTLE_DESIGN_WIDTH, BATTLE_DESIGN_HEIGHT).fill({ color: 0xdaf6ff, alpha: strikeAlpha * 0.075 });
+      graphic.rect(0, 0, BATTLE_DESIGN_WIDTH, BATTLE_DESIGN_HEIGHT).fill({ color: 0xdaf6ff, alpha: strikeAlpha * 0.075 });
       const segments = 10;
       let previous = { x: at.x + Math.sin(phase * 1.7) * 22, y: top };
       for (let segment = 1; segment <= segments; segment++) {
@@ -80,8 +78,8 @@ export function spawnChainLightning(runtime: BattleEffectPool, from: BattleStage
   const graphic = new Graphics({ blendMode: 'add' });
   const duration = 0.46;
   runtime.add(graphic, duration, (progress) => {
-    const alpha = Math.sin(Math.PI * Math.min(1, progress * 1.16)) * (runtime.isReduceFlickerEnabled ? 0.66 : 0.96);
-    const phase = Math.floor(progress * (runtime.isReduceFlickerEnabled ? 4 : 9));
+    const alpha = Math.sin(Math.PI * Math.min(1, progress * 1.16)) * 0.96;
+    const phase = Math.floor(progress * 9);
     const points = [from, ...targets];
     graphic.clear();
     for (let link = 0; link < points.length - 1; link++) {

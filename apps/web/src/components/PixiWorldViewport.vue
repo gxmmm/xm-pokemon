@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { WorldSceneSpec } from '@pokemon-online/config';
-import type { SceneTransitionRequest, VisualRuntimeSettings, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
+import type { SceneTransitionRequest, WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
 import { WorldStage } from '@pokemon-online/renderer-pixi';
 import { startRendererObservation } from '../visuals/runtime-observation.ts';
 
 const props = defineProps<{
   scene: WorldSceneSpec;
   entities: readonly WorldEntityRenderSnapshot[];
-  visualSettings?: VisualRuntimeSettings;
 }>();
 const emit = defineEmits<{
   ready: [];
@@ -40,7 +39,6 @@ onMounted(async () => {
     await stage.mount(host.value);
     if (disposed) return;
     mounted = true;
-    stage.setVisualSettings(props.visualSettings);
     await syncScene();
     if (disposed) return;
     stopObservation = startRendererObservation('world', () => stage.getDiagnostics() as unknown as Record<string, unknown>);
@@ -58,7 +56,6 @@ async function playTransition(request: SceneTransitionRequest): Promise<void> {
 
 function getDiagnostics() { return stage.getDiagnostics(); }
 
-watch(() => props.visualSettings, (settings) => stage.setVisualSettings(settings), { deep: true });
 watch(() => props.scene.id, () => { void syncScene(); });
 // WorldView remains authoritative for movement and interaction. This bridge only
 // mirrors its structured entity snapshot into the GPU stage.

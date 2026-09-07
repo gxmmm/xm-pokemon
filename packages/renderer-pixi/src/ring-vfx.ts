@@ -15,7 +15,8 @@ export function spawnRing(runtime: BattleEffectPool, at: BattleStagePoint, color
   const duration = variant === 'bind' || variant === 'snare' ? 0.64 : variant === 'dive' ? 0.80 : 0.48 + intensity * 0.16;
   runtime.add(graphic, duration, (progress) => {
     graphic.clear();
-    drawElementMotes(graphic, shape, 0, 0, progress, color, 9, 24 + intensity * 22, 20);
+    drawElementMotes(graphic, shape, 0, 0, progress, color, variant === 'cross' ? 2 : 9,
+      variant === 'cross' ? 12 : 24 + intensity * 22, variant === 'cross' ? 6 : 20);
     if (variant === 'bind' || variant === 'snare') {
       for (const side of [-1, 1]) graphic.moveTo(side * 26, 12).quadraticCurveTo(side * 8, -8, side * 23, -24)
         .stroke({ color, alpha: (1 - progress) * 0.7, width: 2.4 });

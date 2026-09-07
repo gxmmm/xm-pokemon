@@ -1,17 +1,35 @@
 import type { TypeName } from '@pokemon-online/shared';
-import { BATTLE_EFFECT_COMPOSITION } from '@pokemon-online/config';
+import { BATTLE_EFFECT_COMPOSITION, BATTLE_SKILL_DETAILS } from '@pokemon-online/config';
 import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
 import { drawElementMotes } from './natural-effect-shapes.ts';
 
-export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default'): void {
-  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' || variant === 'flame-stream' ? 'normal' : 'add' });
+export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', source?: BattleStagePoint): void {
+  const directional = (BATTLE_SKILL_DETAILS.directionalImpacts as readonly string[]).includes(variant);
+  const graphic = new Graphics({ blendMode: directional || variant === 'water-shot' || variant === 'arc-bolt' || variant === 'shadow-orb' || variant === 'flame-stream' ? 'normal' : 'add' });
+  if (source && directional) {
+    graphic.pivot.set(at.x, at.y); graphic.position.set(at.x, at.y);
+    graphic.rotation = Math.atan2(at.y - source.y, at.x - source.x);
+  }
   const duration = variant === 'dive' ? 0.48 : 0.28;
   runtime.add(graphic, duration, (progress) => {
     graphic.clear();
     const alpha = (1 - progress) * 0.92;
+    if (variant === 'water-shot' || variant === 'arc-bolt') {
+      drawElementMotes(graphic, variant === 'water-shot' ? 'water-wave' : 'lightning', at.x, at.y, progress, color, 6, 15 + progress * 12, 12);
+      return;
+    }
+    if (variant === 'cross') {
+      const reach = (14 + intensity * 10) * (0.6 + progress * 0.4);
+      const thickness = (6 + intensity) * (1 - progress * 0.5);
+      graphic.moveTo(at.x - reach * 0.55, at.y + reach)
+        .quadraticCurveTo(at.x + reach * 0.25 + thickness, at.y, at.x + reach * 0.45, at.y - reach)
+        .quadraticCurveTo(at.x + reach * 0.25 - thickness, at.y, at.x - reach * 0.55, at.y + reach)
+        .fill({ color: 0xffecd4, alpha: Math.min(1, alpha * 1.3) }).stroke({ color, alpha, width: 1.2 });
+      return;
+    }
     if (variant === 'shadow-orb') {
       const core = (23 + intensity * 13) * (1 - progress * 0.85);
       graphic.circle(at.x, at.y, core).fill({ color: 0x190d2c, alpha })

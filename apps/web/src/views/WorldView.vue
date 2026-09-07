@@ -11,7 +11,6 @@ import PixiWorldViewport from '../components/PixiWorldViewport.vue';
 import WorldMap from '../components/WorldMap.vue';
 import { createTransitionState, runTransition } from '../world/transitions.ts';
 import { consumeWorldReturnVisualTransition, requestBattleVisualTransition } from '../game/SceneVisualTransition.ts';
-import { visualRuntimeSettings } from '../visuals/runtime-settings.ts';
 import { rendererObservationEnabled } from '../visuals/runtime-observation.ts';
 
 declare global {
@@ -256,7 +255,7 @@ watch(() => game.save?.position, () => {
     <p class="tiny muted" style="margin:0 0 5px">{{ map.description }} {{ map.ambient }}</p>
 
     <div class="canvas-wrap">
-      <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" :visual-settings="visualRuntimeSettings" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
+      <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
       <div v-else class="gpu-unavailable">GPU 世界场景不可用。</div>
       <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 世界渲染不可用：{{ gpuUnavailable }}</div>
     </div>

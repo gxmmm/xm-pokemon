@@ -1,18 +1,5 @@
 import type { BattleActorChoreography, BattleCameraPlan, BattleCombatant, BattleWorldPosition, TypeName } from '@pokemon-online/shared';
 
-export type CameraIntensity = 'full' | 'reduced' | 'off';
-
-/** Low-frequency presentation preferences. They contain no game, save, or
- * simulation state and cross the Vue-to-renderer bridge as a renderer-neutral DTO. */
-export interface VisualRuntimeSettings {
-  reduceFlicker: boolean;
-  cameraIntensity: CameraIntensity;
-}
-
-export const DEFAULT_VISUAL_RUNTIME_SETTINGS: Readonly<VisualRuntimeSettings> = {
-  reduceFlicker: false,
-  cameraIntensity: 'full',
-};
 export type AssetKey = string & { readonly __assetKey: unique symbol };
 
 export interface SceneTransitionRequest {

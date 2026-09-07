@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import type { RendererObservationReport } from '../apps/web/src/visuals/runtime-observation.ts';
 import { checkNaturalBattle } from './battle-natural-browser-checks.ts';
+import { checkSkillShowcases } from './skill-showcase-browser-checks.ts';
 
 const PORT = 41775;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -93,6 +94,14 @@ async function main(): Promise<void> {
     });
 
     await page.goto(`${BASE}/battle-sandbox?renderer-observation=1`, { waitUntil: 'networkidle' });
+    if (process.argv.includes('--skills-only')) {
+      await page.clock.install({ time: new Date('2026-09-07T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));
+      await checkSkillShowcases(page, OUTPUT, process.argv.includes('--before'));
+      assert.deepEqual(errors, []);
+      console.log('✓ six representative skill showcases');
+      return;
+    }
     if (process.argv.includes('--natural-only')) {
       await page.clock.install({ time: new Date('2026-09-05T00:00:00Z') });
       await page.clock.pauseAt(new Date('2026-09-05T01:00:00Z'));
@@ -252,9 +261,9 @@ async function main(): Promise<void> {
       window.__READABILITY_FIXTURE__ = await fixture.createBattleReadabilityFixture();
     }, `/@fs/${resolve('scripts/battle-readability-browser-fixture.ts').replaceAll('\\', '/')}`);
     await page.clock.runFor(200);
-    const spreadSamples: { reduced: boolean; atMs: number; effects: number }[] = [];
-    for (const reduced of [false, true]) {
-      await page.evaluate((reduced) => window.__READABILITY_FIXTURE__.play(reduced), reduced);
+    const spreadSamples: { atMs: number; effects: number }[] = [];
+    {
+      await page.evaluate(() => window.__READABILITY_FIXTURE__.play());
       let previousMs = 0;
       for (const atMs of [80, 160, 320]) {
         await page.clock.runFor(atMs - previousMs);
@@ -264,9 +273,9 @@ async function main(): Promise<void> {
         assert.equal(dense.activeEffectCount, 27, 'three spread releases cover three targets plus their ground responses');
         assert.equal(dense.effectChildCount, 27);
         assert.equal(dense.motions['unit-5']!.statusVisual, 'sleep', 'overlapping releases preserve the status marker');
-        spreadSamples.push({ reduced, atMs, effects: dense.activeEffectCount });
+        spreadSamples.push({ atMs, effects: dense.activeEffectCount });
         const suffix = atMs === 160 ? '' : `-${atMs}ms`;
-        await page.locator('#readability-fixture').screenshot({ path: resolve(OUTPUT, `readability-spread-${reduced ? 'reduced' : 'standard'}${suffix}.png`) });
+        await page.locator('#readability-fixture').screenshot({ path: resolve(OUTPUT, `readability-spread-standard${suffix}.png`) });
       }
       await page.clock.runFor(1200);
       const settled = await page.evaluate(() => window.__READABILITY_FIXTURE__.read());

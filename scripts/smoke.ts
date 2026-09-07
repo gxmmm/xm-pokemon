@@ -10,7 +10,6 @@ import { BattleDirector, interpolateBattle, snapshotBattle, toBattlePresentation
 
 import { BattlePresentationBridge } from '../apps/web/src/game/BattlePresentationBridge.ts';
 import { buildVfxLabEvents, vfxLabTargetState } from '../apps/web/src/battle/VfxLab.ts';
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS } from '@pokemon-online/renderer';
 import { BattleArtAssetLoader, battleContactPoint, battleWorldPositionFromGrid, CombatantView, elementalVfxShapeFor, groundShadowPlan, isSpriteAsset, movementPressurePlan, planBattleCue, projectBattleGroundPoint, projectBattleWorldPoint, smoothBattlePresentationAxis, terrainContactPlan, type BattleStageVfxPlan } from '@pokemon-online/renderer-pixi';
 import { Container, Graphics, Texture } from 'pixi.js';
 
@@ -102,24 +101,15 @@ testBattleReadability();
   console.log('✓ legacy Canvas renderer removed');
 }
 
-// Stage 8 visual preferences are renderer-neutral and deliberately cannot
-// carry player/save/simulation data across the Vue-to-renderer boundary.
-{
-  const settings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, reduceFlicker: true, cameraIntensity: 'reduced' as const };
-  assert(settings.reduceFlicker && settings.cameraIntensity === 'reduced' && Object.keys(settings).length === 2, 'visual runtime preferences remain presentation-only');
-  console.log('✓ Stage 8 presentation-only visual settings contract');
-}
-
-// Transient Pixi effects share one owner so pause, accessibility opacity, and
+// Transient Pixi effects share one owner so pause, configured opacity, and
 // disposal cannot drift between individual visual primitives.
 {
   const pool = new BattleEffectPool();
   const graphic = new Graphics();
   let progress = 0;
   pool.add(graphic, 0.4, (value) => { progress = value; });
-  pool.setReduceFlicker(true);
   pool.update(0);
-  assert(pool.activeCount === 1 && progress === 0 && graphic.alpha === 0.46, 'effect pool pauses without aging effects and applies reduced flicker');
+  assert(pool.activeCount === 1 && progress === 0 && graphic.alpha === 1, 'effect pool pauses without aging effects or changing opacity');
   pool.update(0.1);
   assert(Math.abs(progress - 0.25) < 1e-9, 'effect pool advances effects with normalized progress');
   pool.update(0.3);
@@ -323,9 +313,8 @@ testBattleCamera();
   runtime.update(0.01);
   assert(runtime.activeCount === 0, 'full-motion sky strike settles at 480ms');
 
-  runtime.setReduceFlicker(true);
   spawnChainLightning(runtime, { x: 360, y: 400 }, [{ x: 760, y: 360 }, { x: 900, y: 430 }], 0.7);
-  assert(runtime.activeCount === 1 && runtime.container.children[0]?.alpha === 0.46, 'chain lightning inherits reduced-flicker opacity');
+  assert(runtime.activeCount === 1 && runtime.container.children[0]?.alpha === 1, 'chain lightning uses standard opacity');
   runtime.update(0.46);
   assert(runtime.activeCount === 0, 'chain lightning preserves its 460ms settlement timing');
   console.log('✓ standalone lightning VFX contracts');
@@ -343,9 +332,8 @@ testBattleCamera();
   runtime.update(0.01);
   assert(runtime.activeCount === 0, 'default projectile settles at 260ms');
 
-  runtime.setReduceFlicker(true);
   spawnProjectile(runtime, from, to, 0xff7b45, 1, 'fire-glyph', 'fire');
-  assert(runtime.container.children[0]?.alpha === 0.46, 'projectile inherits reduced-flicker opacity');
+  assert(runtime.container.children[0]?.alpha === 1, 'projectile uses standard opacity');
   runtime.update(0.48);
   assert(runtime.activeCount === 0, 'fire glyph projectile preserves its 480ms settlement timing');
 

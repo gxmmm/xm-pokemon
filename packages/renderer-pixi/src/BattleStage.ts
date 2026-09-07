@@ -1,4 +1,4 @@
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest, type VisualRuntimeSettings } from '@pokemon-online/renderer';
+import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation } from '@pokemon-online/config';
 import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { planBattleCue } from './battle-plan.ts';
@@ -50,7 +50,6 @@ export class BattleStage implements BattleRenderer {
   private biomeId = 'grass';
   private transitionLayer: Graphics | null = null;
   private drawCallObserver: DrawCallObserver | null = null;
-  private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
   private lifecycleVersion = 0;
   private battleVersion = 0;
   private cancelTransition: (() => void) | null = null;
@@ -129,12 +128,6 @@ export class BattleStage implements BattleRenderer {
     else app.stage?.destroy({ children: true });
   }
 
-  setVisualSettings(settings?: VisualRuntimeSettings): void {
-    this.visualSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, ...settings };
-    this.effectPool.setReduceFlicker(this.visualSettings.reduceFlicker);
-    this.camera.setIntensity(this.visualSettings.cameraIntensity);
-  }
-
   getDiagnostics(): BattleStageDiagnostics {
     const canvas = this.app?.canvas;
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
@@ -188,7 +181,7 @@ export class BattleStage implements BattleRenderer {
       const draw = (now: number): void => {
         if (finished) return;
         const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
-        const alpha = Math.min(this.visualSettings.reduceFlicker ? 0.32 : peakAlpha, peakAlpha) * Math.sin(progress * Math.PI);
+        const alpha = peakAlpha * Math.sin(progress * Math.PI);
         overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color, alpha });
         if (progress < 1) frame = requestAnimationFrame(draw);
         else finish();

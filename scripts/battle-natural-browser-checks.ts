@@ -12,21 +12,21 @@ export async function checkNaturalBattle(page: Page, output: string) {
   const samples: unknown[] = [];
   try {
     await page.clock.runFor(300);
-    for (const reduced of [false, true]) {
-      await page.evaluate((reduced) => window.__READABILITY_FIXTURE__.play(reduced), reduced);
+    {
+      await page.evaluate(() => window.__READABILITY_FIXTURE__.play());
       let previous = 0;
       for (const at of [80, 160, 320]) {
         await page.clock.runFor(at - previous); previous = at;
         const sample = await read();
         assert.equal(sample.activeEffectCount, 27);
         assert.equal(sample.motions['unit-5']!.statusVisual, 'sleep');
-        await page.screenshot({ path: resolve(output, `natural-spread-${reduced ? 'reduced' : 'standard'}-${at}.png`) });
-        samples.push({ reduced, at, effects: sample.activeEffectCount });
+        await page.screenshot({ path: resolve(output, `natural-spread-standard-${at}.png`) });
+        samples.push({ at, effects: sample.activeEffectCount });
       }
       await page.clock.runFor(1200);
       assert.equal((await read()).effectChildCount, 0);
     }
-    await page.evaluate(() => window.__READABILITY_FIXTURE__.play(false, true));
+    await page.evaluate(() => window.__READABILITY_FIXTURE__.play(true));
     await page.clock.runFor(160);
     assert.equal((await read()).activeEffectCount, 27);
     await page.screenshot({ path: resolve(output, 'natural-spread-electric.png') });

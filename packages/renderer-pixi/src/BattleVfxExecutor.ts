@@ -76,7 +76,8 @@ export class BattleVfxExecutor {
         if (!plan.actorId && plan.targetIds.length === 0) return false;
         return spawnEnvironmentReaction(this.effects, environment, target, plan.reaction);
       case 'impact':
-        spawnImpact(this.effects, target, color, plan.intensity, plan.variant);
+        spawnImpact(this.effects, target, color, plan.intensity, plan.variant,
+          plan.actorId ? this.resolveAnchor?.(plan.actorId, 'body') ?? actor : actor);
         return true;
     }
   }

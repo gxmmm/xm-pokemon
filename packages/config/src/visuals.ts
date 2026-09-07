@@ -15,6 +15,13 @@ export const BATTLE_EFFECT_COMPOSITION = {
 } as const;
 export type BattleEffectLayer = 'ground' | 'front';
 
+/** Shared directional detail budgets for the representative skill vocabulary. */
+export const BATTLE_SKILL_DETAILS = {
+  water: { length: 34, width: 9, highlight: 0xc0eaff, trailCount: 3 },
+  beam: { baseWidth: 12, strengthWidth: 16, coreOpacity: 0.50, flowCount: 5, energyColor: 0xe8ad5c, ignitionRatio: 0.08, fadeRatio: 0.24 },
+  directionalImpacts: ['cross', 'claw', 'horn', 'tail', 'wing-slap', 'beak-peck', 'tusk-gore', 'pincer-snap', 'whip-lash', 'kick'],
+} as const;
+
 /** Local body coverage and terrain contact budgets, in unprojected sprite units. */
 export const BATTLE_BODY_EFFECTS = {
   flameAnchors: [[-0.23, -0.32], [0.19, -0.27], [-0.08, -0.19], [0.29, -0.08], [-0.29, -0.04],

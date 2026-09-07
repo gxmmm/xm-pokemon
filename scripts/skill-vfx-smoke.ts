@@ -53,8 +53,7 @@ export function testSkillVfx(): void {
           graphic.geometry.once('destroy', () => { releasedResources++; });
         }
         assert.equal(graphic.blendMode, 'normal', 'colored silhouettes must survive bright stages');
-        runtime.setReduceFlicker(true);
-        assert.equal(graphic.alpha, 0.46);
+        assert.equal(graphic.alpha, 1);
         for (let frame = 0; frame < 9; frame++) {
           runtime.update(duration / 10);
           const bounds = graphic.getLocalBounds();
@@ -85,7 +84,7 @@ export function testSkillVfx(): void {
 
         spawnImpact(runtime, target, color, intensity, motif);
         const impact = runtime.container.children[0] as Graphics;
-        assert.equal(impact.alpha, 0.46, 'new impact inherits reduced flicker');
+        assert.equal(impact.alpha, 1, 'new impact retains standard opacity');
         assert.equal(impact.blendMode, 'normal');
         runtime.update(0.27);
         assert.equal(runtime.activeCount, 1, 'impact survives until its existing 280ms deadline');
@@ -95,7 +94,6 @@ export function testSkillVfx(): void {
         runtime.update(0.011);
         assert.equal(runtime.activeCount, 0);
         assert(impact.destroyed);
-        runtime.setReduceFlicker(false);
       }
     }
   }
@@ -106,5 +104,38 @@ export function testSkillVfx(): void {
     runtime.clear();
   }
   runtime.container.destroy();
+  // Directional regression: a vertical water shot must not keep a horizontal
+  // silhouette, and rotated melee feedback must stay pinned to the contact.
+  const directed = new BattleEffectPool();
+  {
+    spawnBeam(directed, from, to, 0xffffff, 0.24, 'meteor', 'normal');
+    directed.update(0.06);
+    const beam = directed.container.children[0] as Graphics;
+    assert(beam.context.instructions.some((item) => item.action === 'stroke'
+      && item.data.style.alpha * beam.alpha >= 0.4 && item.data.style.width >= 6),
+    'early beam keeps a readable colored core');
+    directed.update(0.364);
+    assert.equal(directed.activeCount, 0, 'beam retains its original lifetime');
+  }
+  for (const vertical of [false, true]) {
+    spawnProjectile(directed, { x: 300, y: 300 }, vertical ? { x: 300, y: 700 } : { x: 700, y: 300 }, 0x69c8ff, 1, 'water-shot', 'water');
+    directed.update(0.12);
+    const water = directed.container.children[0] as Graphics;
+    const bounds = water.getLocalBounds();
+    assert(vertical ? bounds.height > bounds.width * 2 : bounds.width > bounds.height * 2, 'water silhouette follows the flight axis');
+    assert.equal(water.blendMode, 'normal');
+    directed.clear();
+  }
+  for (const source of [{ x: 600, y: 350 }, { x: 860, y: 600 }, { x: 1100, y: 350 }]) {
+    spawnImpact(directed, to, 0xee7e64, 1, 'cross', source);
+    directed.update(0.08);
+    const slash = directed.container.children[0] as Graphics;
+    const contact = slash.toGlobal(to);
+    assert(Math.hypot(contact.x - to.x, contact.y - to.y) < 0.001, 'rotation cannot move the contact point');
+    assert(Math.abs(slash.rotation - Math.atan2(to.y - source.y, to.x - source.x)) < 0.001);
+    directed.update(0.201);
+    assert.equal(directed.activeCount, 0, 'directional feedback keeps the existing 280ms duration');
+  }
+  directed.container.destroy();
   console.log('✓ skill VFX: config routing, saturated silhouettes, bounded geometry, fallback isolation, and unchanged lifetimes');
 }

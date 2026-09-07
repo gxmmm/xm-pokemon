@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
-import type { SceneTransitionRequest, VisualRuntimeSettings } from '@pokemon-online/renderer';
+import type { SceneTransitionRequest } from '@pokemon-online/renderer';
 import { BattleStage } from '@pokemon-online/renderer-pixi';
 import { startRendererObservation } from '../visuals/runtime-observation.ts';
 
@@ -9,7 +9,6 @@ const props = defineProps<{
   presentation?: BattlePresentation;
   cues?: readonly DirectedBattleCue[];
   biome: string;
-  visualSettings?: VisualRuntimeSettings;
   introTransition?: boolean;
 }>();
 const emit = defineEmits<{
@@ -71,7 +70,6 @@ onMounted(async () => {
     await stage.mount(host.value);
     if (disposed) return;
     mounted = true;
-    stage.setVisualSettings(props.visualSettings);
     await syncPresentation();
     while (!disposed && props.presentation && (entering || enteredBiome !== props.biome)) await syncPresentation();
     if (disposed) return;
@@ -92,7 +90,6 @@ function reportUnavailable(error: unknown): void {
   emit('unavailable', message);
 }
 
-watch(() => props.visualSettings, (settings) => stage.setVisualSettings(settings), { deep: true });
 watch(() => props.presentation, (presentation) => { void syncPresentation(presentation).catch(reportUnavailable); });
 watch(() => props.biome, () => { void syncPresentation().catch(reportUnavailable); });
 // BattlePresentationBridge supplies an incremental array each frame. Deliberately

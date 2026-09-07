@@ -4,6 +4,7 @@ import { Graphics } from 'pixi.js';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
+import { drawWaterShot } from './water-vfx.ts';
 
 export function spawnProjectile(
   runtime: BattleEffectPool,
@@ -15,7 +16,7 @@ export function spawnProjectile(
   element?: TypeName,
 ): void {
   // A shadow needs to occlude the bright stage, not add light to it.
-  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' ? 'normal' : 'add' });
+  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' || variant === 'arc-bolt' || element === 'water' ? 'normal' : 'add' });
   const timing = projectileTimingFor(variant, intensity);
   const shape = elementalVfxShapeFor(element);
   runtime.add(graphic, timing.durationMs / 1000, (progress) => {
@@ -70,8 +71,7 @@ export function spawnProjectile(
         .poly([x - nx * 5, y - ny * 5, x + px * flameWidth * 0.38, y + py * flameWidth * 0.38, x + nx * (flameLength - 8), y + ny * (flameLength - 8), x - px * flameWidth * 0.38, y - py * flameWidth * 0.38]).fill({ color: 0xfff1a9, alpha: 0.96 });
       for (let ember = 0; ember < 4; ember++) graphic.circle(x - nx * (12 + ember * 9) + px * Math.sin(progress * 14 + ember) * 5, y - ny * (12 + ember * 9) + py * Math.sin(progress * 14 + ember) * 5, 3 + intensity * 2).fill({ color: ember % 2 ? color : 0xffcb69, alpha: 0.66 });
     } else if (variant === 'water-shot') {
-      graphic.ellipse(x, y, 14 + intensity * 8, 9 + intensity * 5).fill({ color, alpha: 0.82 }).ellipse(x + nx * 5, y + ny * 5, 8 + intensity * 4, 5 + intensity * 2).fill({ color: 0xe0faff, alpha: 0.92 });
-      for (let arc = -1; arc <= 1; arc++) graphic.moveTo(x - nx * 18 + px * arc * 8, y - ny * 18 + py * arc * 8).lineTo(x + nx * 13 + px * arc * 5, y + ny * 13 + py * arc * 5).stroke({ color: 0xc7f4ff, alpha: 0.64, width: 2 });
+      drawWaterShot(graphic, x, y, nx, ny, color, intensity, progress);
     } else if (variant === 'spark-bolt') {
       let previous = { x: x - nx * 18, y: y - ny * 18 };
       for (let segment = 1; segment <= 5; segment++) { const next = { x: x - nx * 18 + nx * segment * 10 + px * (segment % 2 ? 8 : -8), y: y - ny * 18 + ny * segment * 10 + py * (segment % 2 ? 8 : -8) }; graphic.moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color, alpha: 0.92, width: 4 + intensity * 2 }).moveTo(previous.x, previous.y).lineTo(next.x, next.y).stroke({ color: 0xffffff, alpha: 0.94, width: 1.5 }); previous = next; }
@@ -203,8 +203,7 @@ function drawElementalProjectile(
     }
     graphic.ellipse(at.x, at.y, 12 + intensity * 5, 7 + intensity * 3).stroke({ color: 0xffffff, alpha: 0.72, width: 2 });
   } else if (shape === 'water-wave') {
-    graphic.moveTo(at.x - nx * 18 - px * 8, at.y - ny * 18 - py * 8).lineTo(at.x + nx * 20 + px * 10, at.y + ny * 20 + py * 10).stroke({ color, alpha: 0.78, width: 7 + intensity * 5 })
-      .moveTo(at.x - nx * 16 + px * 8, at.y - ny * 16 + py * 8).lineTo(at.x + nx * 22 - px * 8, at.y + ny * 22 - py * 8).stroke({ color: 0xd7fbff, alpha: 0.78, width: 2.5 });
+    drawWaterShot(graphic, at.x, at.y, nx, ny, color, intensity, progress);
   } else if (shape === 'ice-shard') {
     graphic.poly([at.x + nx * 22, at.y + ny * 22, at.x - nx * 10 + px * 10, at.y - ny * 10 + py * 10, at.x - nx * 10 - px * 10, at.y - ny * 10 - py * 10]).fill({ color, alpha: 0.88 });
   } else if (shape === 'leaf') {

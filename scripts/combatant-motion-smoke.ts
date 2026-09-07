@@ -89,6 +89,21 @@ export function testCombatantMotion(): void {
     view.destroy({ children: true });
   }
   const fallbackPose = { offsetX: 5 };
+  for (const speciesId of [6, 149]) for (const facing of [1, -1] as const) {
+    const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(speciesId, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
+    const view = new CombatantView(actor, assets);
+    const body = view.children[1]!;
+    for (const direction of [facing, -facing as 1 | -1]) {
+      view.refresh({ ...actor, facing: direction });
+      view.playAnimation('beam', 'immediate', 400);
+      for (let frame = 0; frame < 16; frame++) {
+        view.update(0.01);
+        assert.equal(Math.sign(body.scale.x), direction, 'source facing must switch without interpolating its sign');
+        assert(Math.abs(body.scale.x) > body.scale.y * 0.6, 'a cast or mid-action turn cannot collapse the body horizontally');
+      }
+    }
+    view.destroy({ children: true });
+  }
   for (const facing of [1, -1] as const) {
     const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(6, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
     const hit = new CombatantView(actor, assets), reference = new CombatantView(actor, assets);

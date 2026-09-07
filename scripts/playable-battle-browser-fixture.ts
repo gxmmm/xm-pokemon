@@ -15,8 +15,8 @@ export async function prepare(outcome: 'win' | 'loss' | 'long' | 'natural', spee
   const game = useGameStore();
   const battle = useBattleStore();
   if (!game.save) throw new Error('Fixture requires an authenticated isolated save');
-  const players = [6, 9, 3].map((id) => createWildInstance(id, outcome === 'loss' ? 5 : 70));
-  const enemies = [10, 13, 16].map((id) => createWildInstance(id, outcome === 'win' || outcome === 'natural' ? 5 : 70));
+  const players = [6, 9, 3].map((id) => createWildInstance(id, outcome === 'loss' ? 5 : 70, { rng: () => 0.5 }));
+  const enemies = [10, 13, 16].map((id) => createWildInstance(id, outcome === 'win' || outcome === 'natural' ? 5 : 70, { rng: () => 0.5 }));
   if (outcome === 'natural') enemies.forEach((p) => { p.currentHp = 1; });
   game.save.roster = players.map((p) => p.uid);
   game.save.instances = Object.fromEntries(players.map((p) => [p.uid, p]));

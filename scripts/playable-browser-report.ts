@@ -27,7 +27,11 @@ try {
   assert(ready, 'Vite startup timed out: ' + serverLog);
   browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  await context.addInitScript(() => localStorage.setItem('po_token', 'isolated-playable-test'));
+  await context.addInitScript(() => {
+    localStorage.setItem('po_token', 'isolated-playable-test');
+    // Old device preferences must no longer add visual controls or alter play.
+    localStorage.setItem('pokemon-online.visual-runtime-settings.v1', JSON.stringify({ reduceFlicker: true, cameraIntensity: 'off' }));
+  });
   let cloud: PlayerSave | null = null;
   await context.route(`${BASE}/api/**`, async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -165,6 +169,7 @@ try {
     if (action === 'capture') await page.screenshot({ path:resolve(OUTPUT,'narrow-battle.png') });
     await page.getByRole('button', { name:'跳过', exact:true }).click();
     await page.locator('.battle-result').waitFor();
+    assert.equal((await read()).winner, action === 'loss' ? 'enemy' : 'player', 'narrow result fixture must produce its requested outcome');
     await page.locator('.result-log summary').click();
     await assertInside(page.locator('.battle-result'));
     assert(await page.locator('.damage-report').evaluate((el) => el.hasAttribute('open')));
@@ -192,6 +197,11 @@ try {
   for (const path of ['/world','/team','/breed',`/pokemon/${uid}`,'/pokedex','/settings']) {
     console.log('playable: layout ' + path);
     await visit(path);
+    if (path === '/settings') {
+      assert.equal(await page.getByText('减少闪烁', { exact: true }).count(), 0);
+      assert.equal(await page.getByText('镜头强度', { exact: true }).count(), 0);
+      checks.push('旧设备视觉偏好不再提供模式入口，正式战斗和世界按单一标准运行');
+    }
     if (path === '/team' || path === '/breed') await page.locator('.roster-cell').last().click();
     if (path === '/pokedex') await page.locator('.dex-cell').first().click();
     await inspectLayout(path);

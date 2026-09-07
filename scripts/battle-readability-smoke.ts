@@ -29,10 +29,6 @@ export function testBattleReadability(): void {
   const bounds = pool.groundContainer.children[0]!.getLocalBounds().width;
   pool.update(0);
   assert.equal(pool.groundContainer.children[0]!.getLocalBounds().width, bounds, 'both layers pause together');
-  pool.setReduceFlicker(true);
-  pool.container.children.forEach((graphic) => assert(Math.abs(graphic.alpha - BATTLE_EFFECT_COMPOSITION.spreadBurstOpacity * 0.46) < 1e-6));
-  pool.setReduceFlicker(false);
-  pool.container.children.forEach((graphic) => assert.equal(graphic.alpha, BATTLE_EFFECT_COMPOSITION.spreadBurstOpacity, 'accessibility toggles preserve accent opacity'));
   pool.update(1);
   assert.equal(pool.childCount, 0, 'both layers release expired effects');
   assert.equal(JSON.stringify(plans), original, 'dispatch never mutates cue plans');

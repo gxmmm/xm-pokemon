@@ -1,4 +1,4 @@
-import { DEFAULT_VISUAL_RUNTIME_SETTINGS, type AssetKey, type SceneTransitionRequest, type VisualRuntimeSettings, type WorldCue, type WorldRenderInput, type WorldRenderer, type WorldRenderSnapshot } from '@pokemon-online/renderer';
+import { type AssetKey, type SceneTransitionRequest, type WorldCue, type WorldRenderInput, type WorldRenderer, type WorldRenderSnapshot } from '@pokemon-online/renderer';
 import { Application, Container, Graphics } from 'pixi.js';
 import { CharacterView, type CharacterAppearance, type CharacterBehavior } from './CharacterView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
@@ -93,7 +93,6 @@ export class WorldStage implements WorldRenderer {
   private activeScene: WorldStageSceneSpec | null = null;
   private elapsed = 0;
   private motionEnabled = true;
-  private visualSettings: VisualRuntimeSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS };
   private drawCallObserver: DrawCallObserver | null = null;
   private cancelTransition: (() => void) | null = null;
   private lifecycleVersion = 0;
@@ -169,13 +168,6 @@ export class WorldStage implements WorldRenderer {
 
   setMotionEnabled(enabled: boolean): void { this.motionEnabled = enabled; }
 
-  setVisualSettings(settings?: VisualRuntimeSettings): void {
-    this.visualSettings = { ...DEFAULT_VISUAL_RUNTIME_SETTINGS, ...settings };
-    if (this.visualSettings.reduceFlicker) {
-      for (const particle of this.ambientParticles) particle.graphic.position.set(0, 0);
-    }
-  }
-
   getDiagnostics(): WorldStageDiagnostics {
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
     return {
@@ -221,7 +213,7 @@ export class WorldStage implements WorldRenderer {
       const draw = (now: number): void => {
         if (finished) return;
         const progress = Math.min(1, (now - startedAt) / Math.max(1, durationMs));
-        overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: fill, alpha: Math.min(this.visualSettings.reduceFlicker ? 0.32 : peakAlpha, peakAlpha) * Math.sin(progress * Math.PI) });
+        overlay.clear().rect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT).fill({ color: fill, alpha: peakAlpha * Math.sin(progress * Math.PI) });
         if (progress < 1) frame = requestAnimationFrame(draw);
         else finish();
       };
@@ -420,7 +412,7 @@ export class WorldStage implements WorldRenderer {
   }
 
   private update(dt: number): void {
-    if (!this.motionEnabled || this.visualSettings.reduceFlicker) return;
+    if (!this.motionEnabled) return;
     this.elapsed += dt;
     for (const particle of this.ambientParticles) {
       particle.graphic.x = Math.sin(this.elapsed * particle.speed + particle.phase) * particle.drift;

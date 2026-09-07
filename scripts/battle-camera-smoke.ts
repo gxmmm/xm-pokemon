@@ -71,12 +71,7 @@ export function testBattleCamera(): void {
   points.delete('left'); tick(0.01);
   assert.equal(camera.getDiagnostics().style, 'neutral');
   points.set('left', { x: 100, y: 200 });
-  camera.reset(); camera.setIntensity('reduced'); camera.focus(plan('track')); tick(0.01);
-  assert(Math.abs(camera.getDiagnostics().targetScale - 1.045) < 1e-9);
-  assert(Math.abs(camera.getDiagnostics().targetOffset.x - 24.3) < 1e-9);
-  camera.setIntensity('off'); camera.focus(plan('finisher')); tick(0.1);
-  assert(camera.isSettled && actors.scale.x === 1 && actors.x === 0, 'off resets immediately and does not queue hidden shots');
-  camera.setIntensity('full'); tick(0.1); assert(camera.isSettled);
+  camera.reset(); tick(0.1); assert(camera.isSettled, 'reset clears pending shots and returns to the standard neutral frame');
   const sample = (hz: number) => {
     camera.reset(); camera.focus(plan('track', 'left', BATTLE_CAMERA_MOTION.maxShotMs));
     for (let index = 0; index < hz / 2; index++) tick(1 / hz);

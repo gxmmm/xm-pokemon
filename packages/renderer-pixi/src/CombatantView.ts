@@ -479,7 +479,9 @@ export class CombatantView extends Container {
     const from = this.transitionFrom;
     if (progress >= 1) this.transitionFrom = null;
     return {
-      scaleX: lerp(from.scaleX, target.scaleX, amount),
+      // Facing switches source views discretely; blending signed scales would
+      // collapse the body through zero during a turn or an immediate first cue.
+      scaleX: Math.sign(target.scaleX) * lerp(Math.abs(from.scaleX), Math.abs(target.scaleX), amount),
       scaleY: lerp(from.scaleY, target.scaleY, amount),
       x: lerp(from.x, target.x, amount),
       y: lerp(from.y, target.y, amount),
