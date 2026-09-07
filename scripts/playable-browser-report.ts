@@ -63,17 +63,11 @@ try {
     const info = await page.evaluate(() => {
       const stage = document.querySelector<HTMLElement>('.app-stage')!;
       const main = document.querySelector<HTMLElement>('main')!;
-      const smallText = [...main.querySelectorAll<HTMLElement>('.tiny, button, .sect, .apt-val, .apt-label, .stat-card, .apt-chip, .type-badge, .team-tag, .ord')]
-        .filter((el) => el.getClientRects().length && parseFloat(getComputedStyle(el).fontSize) < 12)
-        .map((el) => ({ text:el.textContent?.slice(0,30), font:getComputedStyle(el).fontSize }));
-      return { stageWidth: stage.getBoundingClientRect().width, layoutWidth: stage.offsetWidth, scrollWidth: main.scrollWidth, clientWidth: main.clientWidth, smallText };
+      return { stageWidth: stage.getBoundingClientRect().width, layoutWidth: stage.offsetWidth, scrollWidth: main.scrollWidth, clientWidth: main.clientWidth };
     });
     assert(Math.abs(info.stageWidth - page.viewportSize()!.width) < 1, `${label}: stage width ${JSON.stringify(info)}`);
     assert(info.scrollWidth <= info.clientWidth + 1, `${label}: horizontal overflow ${JSON.stringify(info)}`);
-    if (page.viewportSize()!.width === 390) {
-      assert.equal(info.layoutWidth, 390, `${label}: must reflow, not shrink`);
-      assert.deepEqual(info.smallText, [], `${label}: small text`);
-    }
+    assert.equal(info.layoutWidth, 1280, `${label}: desktop design stage retains its layout size`);
   };
   const prepare = async (outcome: 'win' | 'loss' | 'long' | 'natural', speed: number) => {
     await page.evaluate(({ outcome, speed }) => window.__PLAYABLE_FIXTURE__.prepare(outcome, speed), { outcome, speed });
@@ -154,22 +148,22 @@ try {
   await page.waitForURL('**/world');
   assert.equal((await read()).stats.battles, beforeNatural.stats.battles + 1);
   checks.push('不点击跳过的自然战斗正常演出、结算并返回');
-  console.log('playable: narrow layout and expanded result actions');
-  await page.setViewportSize({ width:390, height:844 });
+  console.log('playable: desktop-window layout and expanded result actions');
+  await page.setViewportSize({ width:1280, height:800 });
   for (const action of ['capture', 'release', 'loss'] as const) {
     await prepare(action === 'loss' ? 'loss' : 'win', 1);
     await page.getByRole('button', { name:'暂停', exact:true }).click();
-    await inspectLayout('narrow battle');
+    await inspectLayout('desktop-window battle');
     for (const button of await page.locator('.arena-controls button').all()) {
       await assertInside(button);
       assert((await button.boundingBox())!.height >= 40);
     }
     const nameFont = await page.locator('.mc-head .ell').first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
     assert(nameFont >= 12);
-    if (action === 'capture') await page.screenshot({ path:resolve(OUTPUT,'narrow-battle.png') });
+    if (action === 'capture') await page.screenshot({ path:resolve(OUTPUT,'desktop-window-battle.png') });
     await page.getByRole('button', { name:'跳过', exact:true }).click();
     await page.locator('.battle-result').waitFor();
-    assert.equal((await read()).winner, action === 'loss' ? 'enemy' : 'player', 'narrow result fixture must produce its requested outcome');
+    assert.equal((await read()).winner, action === 'loss' ? 'enemy' : 'player', 'desktop-window result fixture must produce its requested outcome');
     await page.locator('.result-log summary').click();
     await assertInside(page.locator('.battle-result'));
     assert(await page.locator('.damage-report').evaluate((el) => el.hasAttribute('open')));
@@ -183,11 +177,11 @@ try {
     const choice = page.getByRole('button', { name:action === 'loss' ? '返回' : action === 'capture' ? '捕捉' : '全部放生', exact:true }).last();
     await choice.scrollIntoViewIfNeeded();
     await assertInside(choice);
-    if (action === 'release') await page.screenshot({ path:resolve(OUTPUT,'narrow-result-actions.png') });
+    if (action === 'release') await page.screenshot({ path:resolve(OUTPUT,'desktop-window-result-actions.png') });
     await choice.click();
     await page.waitForURL('**/world');
   }
-  checks.push('390×844战斗按钮40px、姓名12px，战报及日志展开，3个捕捉选项/全部放生/失败返回真实点击可达');
+  checks.push('1280×800桌面战斗按钮40px、姓名12px，战报及日志展开，3个捕捉选项/全部放生/失败返回真实点击可达');
   const uid = await page.evaluate(() => window.__PLAYABLE_FIXTURE__.prepareCollection());
   const visit = async (path: string) => {
     await page.evaluate((p) => window.__PLAYABLE_FIXTURE__.visit(p),path);
@@ -205,7 +199,7 @@ try {
     if (path === '/team' || path === '/breed') await page.locator('.roster-cell').last().click();
     if (path === '/pokedex') await page.locator('.dex-cell').first().click();
     await inspectLayout(path);
-    await page.screenshot({ path:resolve(OUTPUT,`narrow-${path.startsWith('/pokemon/') ? 'detail' : path.slice(1)}.png`) });
+    await page.screenshot({ path:resolve(OUTPUT,`desktop-window-${path.startsWith('/pokemon/') ? 'detail' : path.slice(1)}.png`) });
   }
   await page.getByRole('button', { name:'手动保存到云端', exact:true }).click();
   await assertInside(page.getByRole('button', { name:'退出登录', exact:true }));
@@ -213,7 +207,7 @@ try {
   await page.locator('.drawer-tile').filter({ hasText:'队伍' }).click();
   await page.waitForURL('**/team');
   await visit(`/pokemon/${uid}`);
-  for (const size of [{width:390,height:844},{width:1440,height:900},{width:390,height:844}]) {
+  for (const size of [{width:1280,height:800},{width:1440,height:900},{width:1280,height:800}]) {
     await page.setViewportSize(size);
     const trigger = page.locator('.detail-skills .tip-wrap').last();
     await trigger.scrollIntoViewIfNeeded();
@@ -233,7 +227,7 @@ try {
   await page.getByRole('button', { name:'进化为 妙蛙草', exact:true }).click();
   await page.getByRole('button', { name:'确定', exact:true }).click();
   await page.getByRole('button', { name:'进化为 妙蛙花', exact:true }).waitFor();
-  checks.push('队伍/炼妖/详情/图鉴/设置无横向溢出；24被动详情、菜单、保存和进化确认可操作；窄屏/1440桌面缩放/滚动后技能说明未裁切');
+  checks.push('队伍/炼妖/详情/图鉴/设置无横向溢出；24被动详情、菜单、保存和进化确认可操作；1280/1440桌面窗口缩放/滚动后技能说明未裁切');
   assert.deepEqual(errors, []);
   await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ passed: true, checks, pageErrors: errors, renderer: 'SwiftShader functional acceptance' }, null, 2));
   console.log('✓ playable battle acceptance:', checks.join('；'));

@@ -13,6 +13,8 @@ Sprites © [PokeAPI](https://github.com/PokeAPI/sprites) — 本项目为非商�
 
 ## ✨ 特性
 
+- **平台范围**：仅桌面端，不规划手机端及手机窄屏适配。后续功能、美术与布局按桌面窗口验收；保留窗口缩放及不同桌面分辨率检查。
+
 - **当前范围**：仅保留出生城镇「雾湾镇」与五层「幻境之塔」。其他地图、剧情与专属代码已移除；战斗和 UI 品质达标后再规划扩展。
 - **开发训练塔**：雾湾镇设有「幻境之塔」沙盒设施，五层分别提供 Lv.5–10、12–18、20–28、30–40、45–55 的野生遭遇，用于快速体验战斗、捕捉与炼妖循环。
 - **实时自动战斗**：**PVE/PVP 均同时上场**（玩家 3 只 vs 野外 1~3 只 / 对手 3 只），全部由 AI 操控——玩家拼培养、拼阵容、拼理解，而非操作。
@@ -234,10 +236,10 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 | `npm run typecheck` | vue-tsc + tsc 类型检查 |
 | `npm run smoke` | 引擎、城镇／塔连通性、全图鉴遇敌与战斗配置冒烟测试 |
 | `npm run progress:browser` | 使用隔离的内存 API 验收存档读取、失败重试、新游戏与安全退出，不访问真实账号 |
-| `npm run playable:browser` | 正式页面隔离验收：倍速、暂停跳过、结算次数、展开战报操作；390px页面布局与字号、技能说明定位、菜单和进化确认 |
+| `npm run playable:browser` | 正式页面隔离验收：倍速、暂停跳过、结算次数、展开战报操作；1280×800桌面页面布局与字号、技能说明定位、菜单和进化确认 |
 | `npm run visuals:browser` | 城镇＋五层塔截图、场景生命周期和隔离的真实游戏往返验收 |
 | `npm run visuals:report` | 世界预算、配置基线与技能视觉配方检查 |
-| `npm run visuals:battle` | 无存档战斗沙盒的真实浏览器生命周期、窄屏与持续运行验收 |
+| `npm run visuals:battle` | 无存档战斗沙盒的真实浏览器生命周期、桌面窗口缩放与持续运行验收 |
 | `npm run db:apply` | 本地 D1 建表 |
 | `npm run db:apply:remote` | 远程 D1 建表 |
 | `npm run deploy` | 构建 + `wrangler deploy` |
@@ -247,7 +249,7 @@ npx wrangler d1 execute pokemon-online --remote --command "SELECT * FROM saves" 
 
 战斗专项验收会自动启动本地 Vite（端口 `41775`）和独立无头 Chrome，不启动 Worker、不登录、不读写玩家存档。默认使用 Windows 标准安装位置的 Chrome；其他位置可通过环境变量 `PO_VISUAL_BROWSER` 指定可执行文件。
 
-覆盖资源加载中退出、6 轮 3v3 进入/重开/退出、5 种环境连续切换、60 秒持续采样与 390px 窄屏布局，并采集喷射火焰、暗影球的分段动作截图。独立的确定性场景检查普通命中及致命一击的血量、存活状态和画面衔接，不接入正式页面或玩家存档。截图及 JSON 报告输出到 Git 忽略的 `doc/visual-baselines/battle/`。此项使用 SwiftShader 软件渲染，只作为功能与资源生命周期回归，不等于真实显卡性能、长时间压力测试或真实显卡性能验收。
+覆盖资源加载中退出、6 轮 3v3 进入/重开/退出、5 种环境连续切换、60 秒持续采样与 1280／1440px 桌面窗口布局，并采集喷射火焰、暗影球的分段动作截图。独立的确定性场景检查普通命中及致命一击的血量、存活状态和画面衔接，不接入正式页面或玩家存档。截图及 JSON 报告输出到 Git 忽略的 `doc/visual-baselines/battle/`。此项使用 SwiftShader 软件渲染，只作为功能与资源生命周期回归，不等于真实显卡性能、长时间压力测试或真实显卡性能验收。
 
 ---
 

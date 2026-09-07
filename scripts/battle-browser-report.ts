@@ -145,12 +145,13 @@ async function main(): Promise<void> {
       if (cycle === 0) {
         await page.getByRole('button', { name: '暂停', exact: true }).click();
         await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-desktop.png') });
-        await page.setViewportSize({ width: 390, height: 844 });
-        const narrow = await page.locator('.app-stage').evaluate((element) => ({ width: element.getBoundingClientRect().width, layoutWidth: (element as HTMLElement).offsetWidth }));
-        assert.equal(narrow.layoutWidth, narrow.width, 'responsive sandbox was scaled twice');
-        assert.equal(narrow.width, 390, 'responsive sandbox did not fill the viewport');
-        assert(await page.locator('.arena').evaluate((element) => element.getBoundingClientRect().height >= 400), 'narrow battlefield became a miniature');
-        await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-narrow.png') });
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.waitForFunction(() => Math.abs(document.querySelector('.app-stage')!.getBoundingClientRect().width - 1440) < 1);
+        const desktop = await page.locator('.app-stage').evaluate((element) => ({ width: element.getBoundingClientRect().width, layoutWidth: (element as HTMLElement).offsetWidth }));
+        assert.equal(desktop.layoutWidth, 1280, 'desktop sandbox retains the fixed design width');
+        assert(Math.abs(desktop.width - 1440) < 1, 'desktop sandbox did not scale to the viewport');
+        assert(await page.locator('.arena').evaluate((element) => element.getBoundingClientRect().height >= 400), 'desktop battlefield became a miniature');
+        await page.locator('.sandbox-battle').screenshot({ path: resolve(OUTPUT, 'battle-desktop-1440.png') });
         await page.setViewportSize({ width: 1280, height: 900 });
       }
       const active = (await report(page)).samples.at(-1)!.diagnostics;
