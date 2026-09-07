@@ -24,6 +24,7 @@ let disposed = false;
 let stopObservation: (() => void) | null = null;
 let enteredBiome: string | null = null;
 let entering: { biome: string; promise: Promise<void> } | null = null;
+let lastPlayedCues: readonly DirectedBattleCue[] | undefined;
 
 async function syncPresentation(presentation = props.presentation): Promise<void> {
   if (disposed || !mounted || !presentation) return;
@@ -35,6 +36,9 @@ async function syncPresentation(presentation = props.presentation): Promise<void
       entering = { biome, promise: stage.enterBattle({ biomeId: biome, combatants: presentation.combatants }) };
     }
     const pending = entering;
+    // enterBattle installs actors synchronously; keep rendering fresh snapshots
+    // while optional bitmap art is still in flight.
+    stage.applyBattleSnapshot(presentation);
     try {
       await pending.promise;
     } catch (error) {
@@ -53,7 +57,10 @@ async function syncPresentation(presentation = props.presentation): Promise<void
 }
 
 async function syncCues(cues = props.cues ?? []): Promise<void> {
-  if (disposed || !mounted || entering || cues.length === 0) return;
+  if (disposed || !mounted || cues.length === 0 || cues === lastPlayedCues) return;
+  // The mount continuation may see the same incremental batch already played
+  // by the watcher while art was loading. Consume that batch only once.
+  lastPlayedCues = cues;
   await stage.playBattleCues(cues.map((entry) => entry.cue));
 }
 

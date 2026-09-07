@@ -204,20 +204,25 @@ export class BattleStage implements BattleRenderer {
     const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).asset);
     const spec = battleEnvironmentFor(input.biomeId);
     const environmentEntry = spec.art ? BATTLE_ASSET_BY_ID[spec.art.backgroundAssetId] : undefined;
-    const [environmentTexture] = await Promise.all([
-      environmentEntry ? this.battleArtAssets.load(environmentEntry) : Promise.resolve(null),
-      this.battleArtAssets.preload(entries),
-    ]);
-    if (!this.app || lifecycle !== this.lifecycleVersion || battle !== this.battleVersion) return;
+    // Actors and their configured fallbacks must exist before any network wait.
+    // A slow background or sprite must not hide the whole ongoing battle.
     this.effectPool.clear();
     this.cueScheduler.clear();
     this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
     this.camera.reset();
     this.biomeId = input.biomeId;
-    this.environmentBackgroundTexture = environmentTexture;
+    this.environmentBackgroundTexture = null;
     this.drawEnvironment();
     this.applyBattleSnapshot({ time: 0, combatants: input.combatants });
+    const [environmentTexture] = await Promise.all([
+      environmentEntry ? this.battleArtAssets.load(environmentEntry) : Promise.resolve(null),
+      this.battleArtAssets.preload(entries),
+    ]);
+    if (!this.app || lifecycle !== this.lifecycleVersion || battle !== this.battleVersion) return;
+    this.environmentBackgroundTexture = environmentTexture;
+    this.drawEnvironment();
+    // Keep the latest actors, positions and cues: loading may span many frames.
   }
 
   applyBattleSnapshot(snapshot: BattleRenderSnapshot): void {
