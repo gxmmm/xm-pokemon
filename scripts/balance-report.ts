@@ -46,12 +46,12 @@ function pad(text: string, width: number): string { return text.length >= width 
 const skillTotals = new Map<string, SkillAggregate>();
 const roleTotals = new Map<SkillRole, SkillAggregate>();
 const matchupTotals = new Map<string, { label: string; firstWins: number; secondWins: number; draws: number; battles: number }>();
-const baselineTotals = new Map<Quality, { battles: number; duration: number; normalDamage: number; totalDamage: number }>();
-const qualityTotals = new Map<Quality, { battles: number; duration: number; normalDamage: number; totalDamage: number }>();
+const baselineTotals = new Map<Quality, { battles: number; duration: number; basicDamage: number; totalDamage: number }>();
+const qualityTotals = new Map<Quality, { battles: number; duration: number; basicDamage: number; totalDamage: number }>();
 const durations: number[] = [];
 let battles = 0;
 let totalDamage = 0;
-let normalDamage = 0;
+let basicDamage = 0;
 
 for (const level of LEVELS) {
   for (const profile of QUALITIES) {
@@ -63,9 +63,9 @@ for (const level of LEVELS) {
       const enemy = BASELINE_TEAM.map((id, index) => makeInstance(id, level, profile, seed + 50 + index * 7));
       const sim = new BattleSim({ mode: 'pvp', player, enemy, isWild: false, seed });
       sim.resolve(120);
-      const baseline = baselineTotals.get(profile.label) ?? { battles: 0, duration: 0, normalDamage: 0, totalDamage: 0 };
+      const baseline = baselineTotals.get(profile.label) ?? { battles: 0, duration: 0, basicDamage: 0, totalDamage: 0 };
       baseline.battles += 1; baseline.duration += sim.state.time;
-      for (const combatant of sim.state.combatants) { baseline.normalDamage += combatant.normalDamage; baseline.totalDamage += combatant.damageDealt; }
+      for (const combatant of sim.state.combatants) { baseline.basicDamage += combatant.basicDamage; baseline.totalDamage += combatant.damageDealt; }
       baselineTotals.set(profile.label, baseline);
     }
     for (let matchupIndex = 0; matchupIndex < MATCHUPS.length; matchupIndex++) {
@@ -81,11 +81,11 @@ for (const level of LEVELS) {
 
         battles += 1;
         durations.push(sim.state.time);
-        const quality = qualityTotals.get(profile.label) ?? { battles: 0, duration: 0, normalDamage: 0, totalDamage: 0 };
+        const quality = qualityTotals.get(profile.label) ?? { battles: 0, duration: 0, basicDamage: 0, totalDamage: 0 };
         quality.battles += 1; quality.duration += sim.state.time;
         for (const combatant of sim.state.combatants) {
-          totalDamage += combatant.damageDealt; normalDamage += combatant.normalDamage;
-          quality.totalDamage += combatant.damageDealt; quality.normalDamage += combatant.normalDamage;
+          totalDamage += combatant.damageDealt; basicDamage += combatant.basicDamage;
+          quality.totalDamage += combatant.damageDealt; quality.basicDamage += combatant.basicDamage;
           for (const [skillId, stats] of Object.entries(combatant.skillStats)) {
             addSkill(skillTotals, skillId, stats);
             const skill = skillId === '__normal__' ? null : SKILL_MAP[skillId];
@@ -108,13 +108,13 @@ for (const level of LEVELS) {
 }
 
 const averageDuration = durations.reduce((sum, value) => sum + value, 0) / Math.max(1, durations.length);
-const normalRatio = normalDamage / Math.max(1, totalDamage);
+const normalRatio = basicDamage / Math.max(1, totalDamage);
 const baselineDuration = [...baselineTotals.values()].reduce((sum, row) => sum + row.duration, 0) / Math.max(1, [...baselineTotals.values()].reduce((sum, row) => sum + row.battles, 0));
-const baselineNormal = [...baselineTotals.values()].reduce((sum, row) => sum + row.normalDamage, 0);
+const baselineNormal = [...baselineTotals.values()].reduce((sum, row) => sum + row.basicDamage, 0);
 const baselineTotal = [...baselineTotals.values()].reduce((sum, row) => sum + row.totalDamage, 0);
 const warnings: string[] = [];
-if (baselineNormal / Math.max(1, baselineTotal) < 0.20) warnings.push(`中性镜像普攻占比 ${percent(baselineNormal, baselineTotal)} 偏低，可能仍被技能循环压制。`);
-if (baselineNormal / Math.max(1, baselineTotal) > 0.55) warnings.push(`中性镜像普攻占比 ${percent(baselineNormal, baselineTotal)} 偏高，技能的策略价值可能不足。`);
+if (baselineNormal / Math.max(1, baselineTotal) < 0.20) warnings.push(`中性镜像基础招式占比 ${percent(baselineNormal, baselineTotal)} 偏低，可能仍被技能循环压制。`);
+if (baselineNormal / Math.max(1, baselineTotal) > 0.55) warnings.push(`中性镜像基础招式占比 ${percent(baselineNormal, baselineTotal)} 偏高，技能的策略价值可能不足。`);
 if (baselineDuration < 15) warnings.push(`中性镜像平均战斗时长 ${baselineDuration.toFixed(1)} 秒偏短，爆发或成长数值可能过高。`);
 if (baselineDuration > 75) warnings.push(`中性镜像平均战斗时长 ${baselineDuration.toFixed(1)} 秒偏长，伤害或行动节奏可能不足。`);
 
@@ -130,12 +130,12 @@ for (const row of activeSkillRows) {
 console.log('\n=== Pokémon Online 战斗平衡报告 ===');
 console.log(`样本：${battles} 场 3v3（${LEVELS.join('/')}级 × ${QUALITIES.map((p) => p.label).join('/')} × ${MATCHUPS.length}组对局 × 镜像）`);
 console.log(`属性矩阵平均时长：${averageDuration.toFixed(1)} 秒（最短 ${Math.min(...durations).toFixed(1)} / 最长 ${Math.max(...durations).toFixed(1)}）`);
-console.log(`属性矩阵总伤害：${totalDamage}；普攻占比：${percent(normalDamage, totalDamage)}；技能占比：${percent(totalDamage - normalDamage, totalDamage)}`);
-console.log(`中性镜像基线：${baselineDuration.toFixed(1)} 秒 · 普攻占比 ${percent(baselineNormal, baselineTotal)}`);
+console.log(`属性矩阵总伤害：${totalDamage}；基础招式占比：${percent(basicDamage, totalDamage)}；技能占比：${percent(totalDamage - basicDamage, totalDamage)}`);
+console.log(`中性镜像基线：${baselineDuration.toFixed(1)} 秒 · 基础招式占比 ${percent(baselineNormal, baselineTotal)}`);
 console.log('\n-- 品质档位 --');
 for (const profile of QUALITIES) {
   const row = qualityTotals.get(profile.label)!;
-  console.log(`${pad(profile.label, 8)} 平均时长 ${(row.duration / row.battles).toFixed(1)}s · 普攻占比 ${percent(row.normalDamage, row.totalDamage)}`);
+  console.log(`${pad(profile.label, 8)} 平均时长 ${(row.duration / row.battles).toFixed(1)}s · 基础招式占比 ${percent(row.basicDamage, row.totalDamage)}`);
 }
 console.log('\n-- 对局结果（前者胜率） --');
 for (const row of matchupTotals.values()) console.log(`${pad(row.label, 12)} ${row.firstWins}-${row.secondWins}-${row.draws} · 前者胜率 ${percent(row.firstWins, row.battles)}`);

@@ -374,12 +374,11 @@ if (missingCombatRoles.length) {
 }
 
 /**
- * Fixed basic-attack delivery for Pokédex and wild-battle balance. This belongs
+ * Fixed combat positioning for Pokédex and wild-battle balance. This belongs
  * to the model, not its current learned skills: capture, breeding, evolution
- * and sandbox instances of one species always retain the same basic reach.
- * Ranged models trade the normal-attack damage multiplier for safe spacing.
+ * and sandbox instances of one species always retain the same preferred combat reach.
  */
-export const RANGED_NORMAL_ATTACK_SPECIES = new Set<number>([
+export const RANGED_COMBAT_SPECIES = new Set<number>([
   // 喷射型火系以远程基础攻击维持距离，近身技能保留为反制。
   6, 126, 146,
   // Plant / spore / vine casters.
@@ -392,43 +391,13 @@ export const RANGED_NORMAL_ATTACK_SPECIES = new Set<number>([
   63, 64, 65, 79, 80, 92, 93, 94, 96, 97, 122, 124, 137, 144, 150, 151,
 ]);
 
-export const NORMAL_ATTACK_RANGED_CELLS = 6;
+export const RANGED_ENGAGEMENT_CELLS = 6;
 
 /** Baseline cadence bands before model-specific tuning. Ranged models surrender
  * some per-hit damage and therefore receive a slightly quicker default rhythm;
  * heavy frontliners swing slower but retain their full contact damage. */
-const NORMAL_ATTACK_INTERVAL_BY_ROLE: Readonly<Record<CombatRole, number>> = {
-  burst: 1.18,
-  bruiser: 1.30,
-  tank: 1.48,
-  control: 1.28,
-  support: 1.30,
-  kite: 1.12,
-  area: 1.26,
-  balanced: 1.30,
-  growth: 1.34,
-};
-
-/** Explicit cadence tuning for silhouettes whose mass, limb count, or casting
- * identity materially changes the readable basic-attack rhythm. All omitted
- * models still receive a deterministic role/delivery balance value below. */
-const NORMAL_ATTACK_INTERVAL_OVERRIDES: Readonly<Partial<Record<number, number>>> = {
-  6: 1.10, 25: 1.08, 65: 1.20, 68: 1.35, 94: 1.16,
-  130: 1.42, 143: 1.55, 149: 1.18, 150: 1.28, 151: 1.16,
-};
-
-export function normalAttackIntervalFor(speciesId: number): number {
-  const override = NORMAL_ATTACK_INTERVAL_OVERRIDES[speciesId];
-  if (override !== undefined) return override;
-  const role = SPECIES_COMBAT_ROLES[speciesId];
-  const baseline = NORMAL_ATTACK_INTERVAL_BY_ROLE[role];
-  return normalAttackDeliveryFor(speciesId) === 'ranged'
-    ? Math.max(1.05, baseline - 0.08)
-    : baseline;
-}
-
-export function normalAttackDeliveryFor(speciesId: number): NormalAttackDelivery {
-  return RANGED_NORMAL_ATTACK_SPECIES.has(speciesId) ? 'ranged' : 'melee';
+export function combatDeliveryFor(speciesId: number): NormalAttackDelivery {
+  return RANGED_COMBAT_SPECIES.has(speciesId) ? 'ranged' : 'melee';
 }
 
 /**
@@ -546,6 +515,17 @@ function buildIntrinsicPassives(pool: string[], id: number): string[] {
   return pool.slice(0, count);
 }
 
+const BASIC_RANGED: Record<TypeName, string> = {
+  normal: 'swift', fire: 'ember', water: 'water-gun', grass: 'razor-leaf', electric: 'thunder-shock', ice: 'powder-snow',
+  fighting: 'karate-chop', poison: 'poison-sting', ground: 'mud-slap', flying: 'wing-attack', psychic: 'confusion',
+  bug: 'pin-missile', rock: 'rock-throw', ghost: 'shadow-ball', dragon: 'dragon-rage', dark: 'dark-pulse', steel: 'metal-claw', fairy: 'fairy-wind',
+};
+const BASIC_MELEE: Partial<Record<TypeName, string>> = { fire: 'bite', water: 'tackle', grass: 'vine-whip', fighting: 'karate-chop', bug: 'bug-bite', flying: 'wing-attack', ghost: 'lick', dragon: 'bite', steel: 'metal-claw' };
+const BASIC_OVERRIDES: Record<number, string> = { 35: 'heal-pulse', 36: 'heal-pulse', 39: 'heal-pulse', 40: 'heal-pulse', 113: 'heal-pulse', 131: 'heal-pulse', 134: 'heal-pulse', 151: 'heal-pulse', 6: 'ember', 25: 'thunder-shock', 65: 'confusion', 68: 'karate-chop', 143: 'tackle' };
+function basicSkillFor(id: number, primary: TypeName): string {
+  return BASIC_OVERRIDES[id] ?? (combatDeliveryFor(id) === 'ranged' ? BASIC_RANGED[primary] : BASIC_MELEE[primary] ?? 'tackle');
+}
+
 export const SPECIES_LIST: Species[] = RAW.map((row) => {
   const [id, name, enName, types, rawStats, growthRate, rarity, height, weight, dex] = row;
   const base = unifyStats(rawStats);
@@ -585,9 +565,10 @@ export const SPECIES_LIST: Species[] = RAW.map((row) => {
     hiddenAbility,
     learnset: buildLearnset(primary, id, combatRole, intrinsic),
     signatureSkill: SIGNATURE_SKILLS[id]?.skill,
+    basicSkillId: basicSkillFor(id, primary),
+    basicSkillCooldown: basicSkillFor(id, primary) === 'heal-pulse' ? 2.8 : Math.max(2, Math.min(3.2, SKILL_MAP[basicSkillFor(id, primary)]!.cooldown)),
     combatRole,
-    normalAttackDelivery: normalAttackDeliveryFor(id),
-    normalAttackInterval: normalAttackIntervalFor(id),
+    combatDelivery: combatDeliveryFor(id),
     intrinsic,
     passivePool,
     intrinsicPassives: buildIntrinsicPassives(passivePool, id),

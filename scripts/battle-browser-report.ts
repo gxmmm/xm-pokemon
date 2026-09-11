@@ -1,3 +1,4 @@
+import { checkBattleTempo } from './battle-tempo-browser-checks.ts';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -102,6 +103,14 @@ async function main(): Promise<void> {
       const size = process.argv.find(arg => arg.startsWith('--relief-size='))?.split('=')[1];
       await checkRelief(page, OUTPUT, size ? Number(size) : undefined);
       assert.deepEqual(errors, []);
+      return;
+    }
+    if (process.argv.includes('--tempo-only')) {
+      await page.clock.install({ time: new Date('2026-09-11T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-11T01:00:00Z'));
+      await checkBattleTempo(page, OUTPUT);
+      assert.deepEqual(errors, []);
+      console.log('✓ 5 个代表角色基础/战术招式动态衔接与 HUD');
       return;
     }
     if (process.argv.includes('--spacing-only')) {

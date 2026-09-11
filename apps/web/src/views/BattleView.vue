@@ -98,8 +98,8 @@ interface SideDamageSummary {
     uid: string; name: string; role: string; roleLabel: string; contribution: string;
     damage: number; dps: number; share: number;
     damageTaken: number; healing: number; shield: number; control: number;
-    interrupts: number; knockouts: number; normalDamage: number; skillDamage: number;
-    casts: number; normalAttacks: number; hits: number; misses: number;
+    interrupts: number; knockouts: number; basicDamage: number; skillDamage: number;
+    casts: number; basicCasts: number; hits: number; misses: number;
     topSkills: { id: string; name: string; damage: number; casts: number; hits: number; misses: number }[];
   }[];
 }
@@ -117,8 +117,8 @@ const damageSummary = computed<SideDamageSummary[]>(() => {
         damage: c.damageDealt, dps: c.damageDealt / duration, share: 0,
         damageTaken: c.damageTaken, healing: c.healingDone, shield: c.shieldAbsorbed,
         control: c.controlSeconds, interrupts: c.interrupts, knockouts: c.knockouts,
-      normalDamage: c.normalDamage, skillDamage: c.skillDamage,
-      casts: c.skillCasts, normalAttacks: c.normalAttacks, hits: c.hits, misses: c.misses,
+      basicDamage: c.basicDamage, skillDamage: c.skillDamage,
+      casts: c.skillCasts, basicCasts: c.basicCasts, hits: c.hits, misses: c.misses,
       topSkills: Object.entries(c.skillStats).map(([id, stat]) => ({ id, name: id === '__normal__' ? '普通攻击' : (SKILL_MAP[id]?.name ?? id), ...stat }))
           .filter((skill) => skill.casts > 0 || skill.damage > 0).sort((a, b) => b.damage - a.damage || b.casts - a.casts).slice(0, 2),
       };
@@ -382,7 +382,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
                 <div class="contribution-line"><span class="role-pill">{{ member.roleLabel }}</span><span>{{ member.contribution }}</span></div>
                 <div class="damage-bar"><span :style="{ width: `${Math.round(member.share * 100)}%` }"></span></div>
                 <div class="recap-metrics">
-                  <span>普 {{ member.normalDamage }}</span><span>技 {{ member.skillDamage }}</span>
+                  <span>基础 {{ member.basicDamage }}</span><span>技 {{ member.skillDamage }}</span>
                   <span>承 {{ member.damageTaken }}</span><span>疗 {{ member.healing }}</span>
                   <span v-if="member.shield">盾 {{ member.shield }}</span><span v-if="member.control">控 {{ member.control.toFixed(1) }}s</span>
                   <span v-if="member.interrupts">断 {{ member.interrupts }}</span><span v-if="member.knockouts">击倒 {{ member.knockouts }}</span>

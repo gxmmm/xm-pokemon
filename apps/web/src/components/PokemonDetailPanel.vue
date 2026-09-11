@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { rangeInCells } from '@pokemon-online/engine';
+import { rangeInCells, tacticalSkillsForInstance } from '@pokemon-online/engine';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
@@ -53,7 +53,7 @@ function statTip(key: StatKey): string {
   if (b.key === 'hp') mults.push(`×血量${HP_MULTIPLIER}`);
   if (b.passiveMult !== 1) mults.push(`×被动${b.passiveMult}`);
   if (b.abilityMult !== 1) mults.push(`×特性${b.abilityMult}`);
-  return `${STAT_FULL[b.key]} ${b.final}\n${inner}\n${mults.join(' ')}`;
+  return `${STAT_FULL[b.key]} ${b.final}\n${inner}\n${mults.join(' ')}${key === 'spd' ? '\n速度提高移动和招式频率；基础招式冷却收益较强，其它招式较温和，均有递减上限。蓄力和完整出招不压缩。' : ''}`;
 }
 const statRows = computed(() => {
   if (!inst.value || !stats.value) return [];
@@ -66,11 +66,11 @@ const TIER_COLOR: Record<number, string> = { 1: '#6b7280', 2: '#3b4cca', 3: '#b8
 // active skill pool: intrinsic (天生必带) first, then full learnset; known first, unlearned dim
 const activeDisplay = computed(() => {
   if (!inst.value || !species.value) return [];
-  const known = new Set(inst.value.activeSkills);
+  const known = new Set(tacticalSkillsForInstance(inst.value));
   const items: { id: string; owned: boolean; char: string; color: string; level: number; tip: string }[] = [];
   const seen = new Set<string>();
   const push = (sid: string, level: number) => {
-    if (seen.has(sid)) return;
+    if (sid === species.value?.basicSkillId || seen.has(sid)) return;
     seen.add(sid);
     const sk = SKILL_MAP[sid];
     items.push({
@@ -188,7 +188,8 @@ function skillTip(s: Skill | undefined): string {
     </div>
 
     <!-- 主动技能池（图标网格，已学优先，未学置灰） -->
-    <div class="sect">主动技能 <span class="muted" style="font-weight:400">（已学优先·未学置灰·hover看效果）</span></div>
+    <p class="muted">基础招式：{{ SKILL_MAP[species.basicSkillId]?.name }} · {{ species.basicSkillCooldown.toFixed(1) }} 秒基础冷却（受速度影响，不占配招名额）</p>
+          <div class="sect">主动技能 <span class="muted" style="font-weight:400">（已学优先·未学置灰·hover看效果）</span></div>
     <div class="skill-icon-grid">
       <Tip v-for="s in activeDisplay" :key="s.id" :text="s.tip">
         <div class="skill-ic" :class="{ dim: !s.owned }" :style="{ background: s.color }"><span>{{ s.char }}</span></div>

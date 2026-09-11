@@ -1,5 +1,5 @@
 import type { BattleCombatant, BattleState, Skill, CombatRole } from '@pokemon-online/shared';
-import { PERSONALITY_MAP, SKILL_MAP, NORMAL_ATTACK, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT } from '@pokemon-online/config';
+import { PERSONALITY_MAP, SKILL_MAP, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT } from '@pokemon-online/config';
 import { skillVictims } from './skill-space.ts';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
@@ -11,7 +11,8 @@ export interface AiPlan {
   targetUid: string;
   /** Desired engagement distance in grid-cell units. */
   desiredRangeCells: number;
-  preferredSkillId: string | null; // null => use normal attack / reposition
+  supportTargetUid?: string;
+  preferredSkillId: string | null; // null => 等待或调整站位
   /** 稳定的前排/后排定位；性格影响区间内的压力选择。 */
   positioning: PositioningIntent;
   /** A nearby enemy that should drive retreat distance even when action target differs. */
@@ -32,29 +33,25 @@ function dist(a: BattleCombatant, b: BattleCombatant): number {
 function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, skill: Skill): number {
   const t = skill.type;
   // effectiveness + defender typeResist passives + thick-fat
-  let eff = skill.id === NORMAL_ATTACK.id ? 1 : typeMultiplier(t, defender.types);
+  let eff = typeMultiplier(t, defender.types);
   if (eff === 0) return 0;
   for (const pid of defender.passiveSkills) {
     const p = PASSIVE_MAP[pid];
-    if (skill.id !== NORMAL_ATTACK.id && p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
+    if (p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
   }
-  if (skill.id !== NORMAL_ATTACK.id && defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
+  if (defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
   // type-immunity abilities (water/volt absorb, flash fire, levitate, lightning-rod)
   const dab = ABILITY_MAP[defender.ability];
-  if (skill.id !== NORMAL_ATTACK.id && dab?.effect.kind === 'typeImmunity' && dab.effect.type === t) return 0;
+  if (dab?.effect.kind === 'typeImmunity' && dab.effect.type === t) return 0;
   if (eff === 0) return 0;
 
   // Base damage (mirrors computeDamage; deterministic - no random/crit-roll).
-  // Normal attacks have their own stable formula and intentionally skip all
-  // type/STAB-related bonus layers.
+  // 基础与战术招式采用同一套伤害收益计算。
   const atk = effectiveStat(attacker, 'atk');
   const def = Math.max(1, effectiveStat(defender, 'def'));
-  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
-  let dmg = isNormalAttack
-    ? Math.max(1, atk * 0.38 - def * 0.22 + 4 + attacker.level * 0.16)
-    : Math.max(1, atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + attacker.level * 0.16);
+  let dmg = Math.max(1, atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + attacker.level * 0.16);
   dmg = Math.max(atk * .12, dmg);
-  if (!isNormalAttack) {
+  {
     // STAB (+ adaptability stronger STAB)
     const stab = attacker.types?.includes(t) ?? false;
     if (stab) dmg *= 1.5;
@@ -82,7 +79,7 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
   // multiscale (defender at full HP halves damage)
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg *= 0.5;
   // Type effectiveness is an active-skill-only modifier.
-  if (!isNormalAttack) dmg *= dmgTypeMult(eff);
+  dmg *= dmgTypeMult(eff);
   // accuracy / evasion: expected hit chance (noGuard bypasses evasion)
   const noGuard = ABILITY_MAP[attacker.ability]?.effect.kind === 'custom' && attacker.ability === 'no-guard';
   const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
@@ -176,7 +173,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   const strongest = Math.max(...enemies.map(enemy => effectiveStat(enemy, 'atk')), 1);
   const targetScores = enemies.map(enemy => {
     const distance = dist(c, enemy), hp = enemy.currentHp / enemy.maxHp;
-    let score = -Math.max(0, distance - (c.normalRangeCells ?? 2.5)) * (1.6 - p.riskTolerance);
+    let score = -Math.max(0, distance - (c.engagementRangeCells ?? 2.5)) * (1.6 - p.riskTolerance);
     if (p.targetPriority === 'nearest') score -= distance * 1.4;
     if (p.targetPriority === 'weakest') score += (1 - hp) * 9;
     if (p.targetPriority === 'threat') score += effectiveStat(enemy, 'atk') / strongest * 6;
@@ -201,7 +198,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   if (interruptTarget) target = interruptTarget;
   // A short shared intent coordinates ordinary decisions without overruling
   // interrupts, personal execute logic, or a stubborn combatant's commitment.
-  else if (tacticTarget && dist(c, tacticTarget) <= (c.normalRangeCells ?? 2.5) + 2 && (teamTactic?.kind === 'finish' || teamTactic?.kind === 'protect' || teamTactic?.kind === 'pressure')) target = tacticTarget;
+  else if (tacticTarget && dist(c, tacticTarget) <= (c.engagementRangeCells ?? 2.5) + 2 && (teamTactic?.kind === 'finish' || teamTactic?.kind === 'protect' || teamTactic?.kind === 'pressure')) target = tacticTarget;
   // Controllers also reserve a ready hard disable for an opponent whose major
   // skill is nearly ready, rather than waiting until the cast animation begins.
   else {
@@ -274,15 +271,21 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
 
   // ── skill scoring ──
   const candidates: { skill: Skill; score: number }[] = [];
-  const offCd = c.activeSkills.filter((id) => (c.cooldowns[id] ?? 0) <= 0).map((id) => SKILL_MAP[id]).filter(Boolean);
+  const basicId = c.basicSkillId ?? getSpecies(c.speciesId).basicSkillId;
+  const healingTargets = new Map<string, BattleCombatant>();
+  const offCd = [...new Set([basicId, ...c.activeSkills])].filter((id) => (c.cooldowns[id] ?? 0) <= 0).map((id) => SKILL_MAP[id]).filter(Boolean);
 
   for (const skill of offCd) {
     let score: number;
     if (isUtility(skill)) {
       score = 30; // baseline utility
       const e = skill.effect;
-      if (e?.kind === 'heal' && e.target === 'self') {
-        score = lowHp ? 120 * missingHp : (threatened && missingHp > 0.3 ? 70 * missingHp + 20 : 10);
+      if (e?.kind === 'heal' && e.target === 'ally') {
+        const patient = state.combatants.filter(a => a.alive && a.side === c.side && a.currentHp < a.maxHp * .97 && dist(c, a) <= rangeInCells(skill) + 3).sort((a, b) => (a.currentHp / a.maxHp + Math.max(0, dist(c,a) - rangeInCells(skill)) * .08) - (b.currentHp / b.maxHp + Math.max(0, dist(c,b) - rangeInCells(skill)) * .08))[0];
+        if (patient) healingTargets.set(skill.id, patient);
+        score = patient ? 40 + (1 - patient.currentHp / patient.maxHp) * 200 : -1;
+      } else if (e?.kind === 'heal' && e.target === 'self') {
+        score = missingHp < .05 ? -1 : lowHp ? 120 * missingHp : (threatened && missingHp > 0.3 ? 70 * missingHp + 20 : 10);
       } else if (e?.kind === 'shield' && e.target === 'self') {
         score = lowHp ? 80 : (threatened ? 90 : 15);
       } else if (e?.kind === 'ramp' && e.target === 'self') {
@@ -330,7 +333,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
             if (stage <= -2) score *= 0.3; // diminishing value after meaningful weakening
             else if (e.stat === 'atk') score += Math.min(55, effectiveStat(target, 'atk') * 0.22) + (targetKeyWindow ? 28 : 0);
             else if (e.stat === 'def') score += Math.min(36, (assignments(target) + 1) * 12);
-            else if (e.stat === 'spd' && (!target.normalIsRanged || getSpecies(target.speciesId).combatRole === 'bruiser')) score += 24;
+            else if (e.stat === 'spd' && (!target.rangedRole || getSpecies(target.speciesId).combatRole === 'bruiser')) score += 24;
           }
           // F: deliberately sleep to set up a dream-eater follow-up. dream-eater
           // must be ready so the combo lands before the target wakes; setup
@@ -382,10 +385,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       if (p.skillBias === 'power') score *= 1.3;
       else if (p.skillBias === 'speed') score *= skill.cooldown <= 2 ? 1.3 : 0.8;
       else if (p.skillBias === 'utility') score *= 0.85;
-      // risk tolerance: low risk slightly hoards high-cd skills (prefers cheaper
-      // moves / normal attack) but the factor is small enough that a ready skill
-      // still beats the normal attack -- otherwise cautious personalities would
-      // never cast and fights degrade to normal-attack-only.
+      // Low-risk personalities slightly prefer shorter-cooldown damage moves.
       const cdPenalty = skill.cooldown * (1 - p.riskTolerance) * 2;
       score -= cdPenalty;
       // aggression boosts damage scoring vs alternatives
@@ -399,7 +399,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     if (hostile) {
       const travel = Math.max(0, dist(c, target) - rangeInCells(skill));
       score /= 1 + travel * (1.1 - p.riskTolerance * .5);
-      if (c.normalIsRanged && skill.range === 'melee' && dist(c, target) > rangeInCells(skill)) score = -1;
+      if (c.rangedRole && skill.range === 'melee' && dist(c, target) > rangeInCells(skill)) score = -1;
       if (skill.effect?.kind === 'status' && ((skill.effect.status === 'paralyze' && target.ability === 'limber') || (skill.effect.status === 'poison' && target.ability === 'immunity'))) {
         if (!skill.power) score = -1;
       }
@@ -411,12 +411,9 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     candidates.push({ skill, score });
   }
 
-  // normal attack baseline
-  const normalScore = expectedDamage(c, target, NORMAL_ATTACK) * (0.5 + p.aggression * 0.7) * (targetExec ? 1.5 : 1) * focusBoost;
-
   let preferredSkillId: string | null = null;
   let preferredSkill: Skill | null = null;
-  let bestScore = normalScore;
+  let bestScore = 0;
   for (const cand of candidates) {
     if (cand.score > bestScore) {
       bestScore = cand.score;
@@ -426,35 +423,36 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   }
 
   // 定位保持稳定；技能、性格与优势仅在自身作战区间内改变压力。
-  const maxRangedRangeCells = c.normalRangeCells ?? 2.5;
+  const maxRangedRangeCells = c.engagementRangeCells ?? 2.5;
   const enemyTargetSkill = preferredSkill && (preferredSkill.power > 0 || preferredSkill.effect?.target === 'enemy') ? preferredSkill : null;
   const targetHpRatio = target.currentHp / target.maxHp;
   const myHpRatio = c.currentHp / c.maxHp;
   const pressing = targetHpRatio < .4 || myHpRatio - targetHpRatio > .2;
-  let desiredRangeCells = c.normalIsRanged
+  let desiredRangeCells = c.rangedRole
     ? BATTLE_MOVEMENT.rangedHold + (p.rangePreference === 'ranged' ? .4 : 0) - p.aggression * .4 - (pressing ? .4 : 0)
     : MELEE_DESIRED_CELLS;
-  if (c.normalIsRanged && enemyTargetSkill?.range === 'ranged') desiredRangeCells = Math.min(desiredRangeCells, rangeInCells(enemyTargetSkill) - .5);
-  if (c.normalIsRanged) desiredRangeCells = Math.max(3.5, Math.min(maxRangedRangeCells - .5, desiredRangeCells));
-  if (!c.normalIsRanged && enemyTargetSkill?.range === 'melee') desiredRangeCells = rangeInCells(enemyTargetSkill) - .5;
+  if (c.rangedRole && enemyTargetSkill?.range === 'ranged') desiredRangeCells = Math.min(desiredRangeCells, rangeInCells(enemyTargetSkill) - .5);
+  if (c.rangedRole) desiredRangeCells = Math.max(3.5, Math.min(maxRangedRangeCells - .5, desiredRangeCells));
+  if (!c.rangedRole && enemyTargetSkill?.range === 'melee') desiredRangeCells = rangeInCells(enemyTargetSkill) - .5;
 
   // 近处突入者决定撤步方向，持续进攻的目标可继续保持。
-  const positioning: PositioningIntent = !c.normalIsRanged
+  const positioning: PositioningIntent = !c.rangedRole
     ? 'frontline'
     : 'backline';
   const meleeThreat = enemies
     .filter((enemy) => {
       const enemyRole = getSpecies(enemy.speciesId).combatRole;
-      return !enemy.normalIsRanged || enemyRole === 'tank' || enemyRole === 'bruiser';
+      return !enemy.rangedRole || enemyRole === 'tank' || enemyRole === 'bruiser';
     })
     .reduce<BattleCombatant | null>((best, enemy) => !best || dist(c, enemy) < dist(c, best) ? enemy : best, null);
   let movementTargetUid: string | undefined;
-  if (c.normalIsRanged && meleeThreat && dist(c, meleeThreat) < 3) movementTargetUid = meleeThreat.uid;
+  if (c.rangedRole && meleeThreat && dist(c, meleeThreat) < 3) movementTargetUid = meleeThreat.uid;
 
   return {
     targetUid: target.uid,
     desiredRangeCells,
     preferredSkillId,
+    supportTargetUid: preferredSkillId ? healingTargets.get(preferredSkillId)?.uid : undefined,
     positioning,
     movementTargetUid,
   };
@@ -479,9 +477,9 @@ declare module '@pokemon-online/shared' {
     strafeDir?: number;
     strafeCount?: number;
     /** Normal-attack reach in cells (ranged-type pokemon attack from range). */
-    normalRangeCells?: number;
-    /** Whether this combatant's normal attack is ranged (no contact). */
-    normalIsRanged?: boolean;
+    engagementRangeCells?: number;
+    /** Whether this combatant holds a ranged combat position. */
+    rangedRole?: boolean;
     /** Time until which an ally has already committed hard-CC on this combatant
      *  (team CC coordination): others avoid double-CCing in this window. */
     ccIncomingUntil?: number;

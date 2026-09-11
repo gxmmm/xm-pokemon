@@ -25,7 +25,7 @@ for (const setup of formations) for (const seed of [11, 22, 33]) {
   let rangedSamples = 0, rangedCrowded = 0, distanceSum = 0, meleeDamage = 0;
   while (!sim.isOver && sim.state.time < 120) {
     sim.tick(.05);
-    for (const c of sim.state.combatants.filter(c => c.alive && c.normalIsRanged)) {
+    for (const c of sim.state.combatants.filter(c => c.alive && c.rangedRole)) {
       const target = sim.state.combatants.find(t => t.uid === c.currentTargetUid && t.alive);
       if (!target || sim.state.time < 2) continue;
       const d = distCells(c.pixel, target.pixel);
@@ -34,7 +34,7 @@ for (const setup of formations) for (const seed of [11, 22, 33]) {
     }
   }
   assert(sim.isOver && sim.state.winner !== 'draw', `${setup.id}/${seed} must resolve`);
-  meleeDamage = sim.state.combatants.filter(c => !c.normalIsRanged).reduce((sum, c) => sum + c.damageDealt, 0);
+  meleeDamage = sim.state.combatants.filter(c => !c.rangedRole).reduce((sum, c) => sum + c.damageDealt, 0);
   if (setup.id === 'melee' || setup.id === 'surround') assert(sim.state.combatants.filter(c => c.side === 'player').every(c => c.damageDealt > 0), `${setup.id}/${seed} 每个围攻者都能输出: ${JSON.stringify(sim.state.combatants.map(c => ({uid:c.uid, damage:c.damageDealt, pos:c.position, hp:c.currentHp})))}`);
   if (rangedSamples) assert(rangedCrowded / rangedSamples < .4, `${setup.id} long-term crowding: ${rangedCrowded / rangedSamples}`);
   const repeat = simulate(); while (!repeat.isOver && repeat.state.time < 120) repeat.tick(.05);

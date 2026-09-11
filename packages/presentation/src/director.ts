@@ -1,4 +1,4 @@
-import { BEAM_CONTACT_DELAY_MS, DEFAULT_SKILL_CAST_PRESENTATION, projectileTimingFor, SKILL_CAST_PRESENTATION_BY_SKILL_ID, SKILL_VISUAL_RECIPE_MAP } from '@pokemon-online/config';
+import { BEAM_CONTACT_DELAY_MS, DEFAULT_SKILL_CAST_PRESENTATION, projectileTimingFor, SKILL_CAST_PRESENTATION_BY_SKILL_ID, SKILL_VISUAL_RECIPE_MAP, battleActionTiming } from '@pokemon-online/config';
 import type { TypeName } from '@pokemon-online/shared';
 import {
   type BattleCue,
@@ -92,7 +92,8 @@ export class BattleDirector {
       const cast = castPresentationFor(event.skillId);
       const needsVisualWindup = event.type === 'move' || !cast.charge;
       const actorChoreography = recipe.actorChoreography;
-      const actionDurationMs = actionPlaybackDurationMs(animation, cast, needsVisualWindup, actorChoreography);
+      const timing = battleActionTiming(event.type === 'move' ? undefined : event.skillId, recipe.delivery !== 'melee');
+      const actionDurationMs = timing.totalMs;
       const releaseDelayMs = needsVisualWindup ? cast.visualWindupMs : 0;
       output.push(
         ...(needsVisualWindup ? [{ type: 'animation' as const, subjectId: event.actorId ?? '', animation: 'windup' as const, skillId: event.skillId, targetIds: targets, delivery: recipe.delivery, durationMs: cast.visualWindupMs }] : []),
@@ -100,7 +101,7 @@ export class BattleDirector {
           type: 'animation', subjectId: event.actorId ?? '', animation, skillId: event.skillId,
           targetIds: targets, delivery: recipe.delivery, actorChoreography, element: recipe.element,
           schedule: needsVisualWindup ? 'after-current-motion' : undefined,
-          durationMs: actorChoreography?.durationMs ?? (cast.channel ? cast.channelMs : undefined),
+          durationMs: timing.mainMs,
         },
         // Target impact belongs to the authoritative damage event below. A dive
         // action itself only drives its actor-side contour/traversal, preventing
@@ -193,10 +194,6 @@ function cameraPlanFor(style: RecipeLike['camera'], focusIds: readonly string[])
 }
 function castPresentationFor(skillId?: string) {
   return skillId ? SKILL_CAST_PRESENTATION_BY_SKILL_ID[skillId] ?? DEFAULT_SKILL_CAST_PRESENTATION : DEFAULT_SKILL_CAST_PRESENTATION;
-}
-function actionPlaybackDurationMs(animation: CombatantAnimation, cast: ReturnType<typeof castPresentationFor>, hasVisualWindup: boolean, choreography?: import('@pokemon-online/shared').BattleActorChoreography): number {
-  const mainMs = choreography?.durationMs ?? (animation === 'melee' ? 360 : animation === 'beam' ? cast.channelMs : 460);
-  return (hasVisualWindup ? cast.visualWindupMs : 0) + mainMs + cast.recoveryMs;
 }
 function animationFor(recipe: RecipeLike): CombatantAnimation {
   if (recipe.actorChoreography?.kind === 'target-dive') return 'dive';

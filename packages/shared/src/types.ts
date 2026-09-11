@@ -68,12 +68,13 @@ export interface Species {
   learnset: LearnsetEntry[]; // active skills learned by level
   /** Optional species-exclusive active skill, learned through the normal level path. */
   signatureSkill?: string;
+  /** 物种固有基础招式，不占配招名额。 */
+  basicSkillId: string;
+  basicSkillCooldown: number;
   /** Broad battlefield identity; purely static species configuration. */
   combatRole?: CombatRole;
   /** Fixed basic-attack delivery shown in the Pokédex and used by every instance. */
-  normalAttackDelivery: NormalAttackDelivery;
-  /** Model-owned base seconds between normal attacks before temporary attack-speed effects. */
-  normalAttackInterval: number;
+  combatDelivery: NormalAttackDelivery;
   intrinsic: string[];
   passivePool: string[]; // passives this species may roll (梦幻式 pool)
   intrinsicPassives: string[]; // 天生必带 passives (always held by wild / 100% retained when bred, 1~2)
@@ -92,7 +93,7 @@ export type CombatRole = 'burst' | 'bruiser' | 'tank' | 'control' | 'support' | 
 
 export interface SkillEffect {
   kind: 'dot' | 'heal' | 'buff' | 'debuff' | 'stun' | 'lifesteal' | 'shield' | 'status' | 'ramp';
-  target?: 'self' | 'enemy';
+  target?: 'self' | 'enemy' | 'ally';
   stat?: StatKey;
   stages?: number; // -6..6
   chance?: number; // 0..1
@@ -101,12 +102,13 @@ export interface SkillEffect {
   interval?: number;
   magnitude?: number; // heal / dot dmg / shield hp
   status?: StatusKind;
+  /** 治疗量 = 施法者有效攻击 × 强度 / 100。 */
+  healingPower?: number;
 }
 
 /**
  * Skill - an active move. Per frozen design: independent cooldown, NO MP/PP.
- * A normal attack (id 'struggle'/'tackle-ish') is always available so output
- * never stops when every skill is on cooldown.
+ * Species basic moves and tactical moves use this same definition.
  */
 /** Target pattern for an active move. `all-enemies` is a 3v3 spread attack:
  * opponents inside the configured spatial footprint are hit, with `areaMultiplier`
@@ -475,12 +477,12 @@ export interface BattleCombatant {
   sturdyUsed?: boolean;
   /** Timestamp for the next active skill empowered by Counter Instinct. */
   counterInstinctUntil?: number;
-  normalAttackCd: number;
-  /** Immutable per-species base interval; gameplay effects multiply its rate. */
-  normalAttackInterval: number;
-  /** Runtime attack-speed factor. Defaults to 1 and is reserved for future buffs/debuffs. */
-  normalAttackSpeedMultiplier: number;
-  /** Fractional passive regeneration accumulates until it resolves as whole HP. */
+  /** 完整出招占用及出招后休止（秒）；引擎权威，速度仅影响休止。 */
+  actionLockRemaining?: number;
+  actionReadyRemaining?: number;
+  basicSkillId?: string;
+  castSupportUid?: string;
+  cooldownRates?: Record<string, number>;
   regenAccumulator: number;
   /** Absolute simulator time at which a brief stun/flinch ends. */
   flinchUntil?: number;
@@ -494,7 +496,7 @@ export interface BattleCombatant {
    * never persisted in a PokemonInstance save. */
   damageDealt: number;
   damageTaken: number;
-  normalDamage: number;
+  basicDamage: number;
   skillDamage: number;
   healingDone: number;
   shieldAbsorbed: number;
@@ -502,7 +504,7 @@ export interface BattleCombatant {
   interrupts: number;
   knockouts: number;
   skillCasts: number;
-  normalAttacks: number;
+  basicCasts: number;
   hits: number;
   misses: number;
   /** Per-skill recap keyed by skill id (includes __normal__). */

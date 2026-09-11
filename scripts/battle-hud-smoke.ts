@@ -23,7 +23,7 @@ export function testBattleHud(): void {
   c.activeSkills = ['recover', 'swords-dance', 'rest', 'surf', 'close-combat', 'silver-wind'];
   const targets = combatHud(c, 3).skills;
   assert(targets.slice(0, 3).every((s) => s.detail.includes(' · 自身 · ')));
-  assert(targets[3]!.detail.includes('敌方全体'));
+  assert(targets[3]!.detail.includes('覆盖区内敌人'));
   assert(targets.slice(4).every((s) => s.detail.includes('敌方单体')), 'damaging moves with a self effect still attack enemies');
   c.alive = false;
   const fainted = combatHud(c, 2, true);

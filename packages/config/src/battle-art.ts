@@ -2,7 +2,7 @@ import type { Ability, PassiveSkill, Skill, Species, StatusKind, TypeName } from
 import { ABILITIES } from './abilities.ts';
 import { PASSIVE_SKILLS } from './passive-skills.ts';
 import { SPECIES_LIST } from './pokemon.ts';
-import { NORMAL_ATTACK, SKILLS } from './skills.ts';
+import { SKILL_MAP, SKILLS } from './skills.ts';
 import { SKILL_VISUAL_RECIPE_MAP } from './skill-visuals.ts';
 import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
 import { PMD_ASSETS, PMD_SOURCE, PMD_IMPORT_CONTRACTS } from './battle-pmd.ts';
@@ -426,7 +426,7 @@ export const SKILL_CAST_PRESENTATIONS: readonly SkillCastPresentationSpec[] = SK
 export const SKILL_CAST_PRESENTATION_BY_SKILL_ID: Readonly<Record<string, SkillCastPresentationSpec>> = Object.fromEntries(
   SKILL_CAST_PRESENTATIONS.map((presentation) => [presentation.skillId, presentation]),
 );
-export const DEFAULT_SKILL_CAST_PRESENTATION: SkillCastPresentationSpec = castPresentationFor(NORMAL_ATTACK, undefined);
+export const DEFAULT_SKILL_CAST_PRESENTATION: SkillCastPresentationSpec = castPresentationFor(SKILL_MAP['tackle']!, undefined);
 
 /** Legacy/presentation animation labels map to the configuration-owned motion
  * vocabulary here. Renderers never need to know whether a label originated

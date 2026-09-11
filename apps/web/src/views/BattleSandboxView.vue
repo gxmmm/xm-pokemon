@@ -113,7 +113,6 @@ function castPercent(combatant: BattleCombatant): number {
 function skillChips(combatant: BattleCombatant): { id: string; label: string; cd: number; color: string }[] {
   return [
     ...combatant.activeSkills.map((id) => ({ id, label: skillName(id).slice(0, 1), cd: combatant.cooldowns[id] ?? 0, color: TYPE_COLORS[SKILL_MAP[id]?.type ?? 'normal'] ?? '#8fa3b8' })),
-    { id: '__normal__', label: '普', cd: combatant.normalAttackCd, color: '#79879a' },
   ];
 }
 function rememberAction(next: BattleSim, frame: { cues: readonly DirectedBattleCue[] }): void {

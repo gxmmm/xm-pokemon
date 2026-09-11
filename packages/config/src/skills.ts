@@ -3,13 +3,15 @@ import type { Skill } from '@pokemon-online/shared';
 /**
  * Active skills (moves). Per frozen design:
  *  - Independent cooldowns (no shared MP/PP resource).
- *  - A built-in normal attack (see engine) guarantees continuous output when
- *    every learned skill is on cooldown.
+ *  - Each species has one basic move alongside up to four tactical moves.
+ *    Both share targeting, effects and action timing.
  *
  * `range`/`rangeTiles` drive the distance-based AI and movement. `castTime` is
  * an optional windup. Status/utility moves have power 0.
  */
 export const SKILLS: Skill[] = [
+  { id: 'tackle', name: '撞击', type: 'normal', category: 'physical', power: 40, accuracy: 100, cooldown: 2.4, range: 'melee', rangeTiles: 60, description: '用身体撞击对手。' },
+  { id: 'heal-pulse', name: '治愈波动', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 2.8, range: 'ranged', rangeTiles: 320, space: { shape: 'single', reach: 6 }, effect: { kind: 'heal', target: 'ally', healingPower: 60 }, description: '' },
   // ── Normal ──
   { id: 'body-slam', name: '泰山压顶', type: 'normal', category: 'physical', power: 65, accuracy: 100, cooldown: 3, range: 'melee', rangeTiles: 60, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 0.3 }, description: '可能使对手麻痹。' },
   { id: 'take-down', name: '舍身冲撞', type: 'normal', category: 'physical', power: 90, accuracy: 95, cooldown: 5, range: 'melee', rangeTiles: 70, description: '强力冲撞，有反作用力。' },
@@ -122,9 +124,9 @@ export const SKILLS: Skill[] = [
   { id: 'withdraw', name: '缩入壳中', type: 'water', category: 'status', power: 0, accuracy: 0, cooldown: 6, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'def', stages: 2, chance: 1 }, description: '大幅提升防御。' },
   { id: 'agility', name: '高速移动', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 7, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 2, chance: 1 }, description: '大幅提升速度。' },
   { id: 'growth', name: '生长', type: 'normal', category: 'status', power: 0, accuracy: 0, cooldown: 7, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'atk', stages: 1, chance: 1 }, description: '提升攻击。' },
-  { id: 'recover', name: '自我再生', type: 'normal', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.5 }, description: '回复一半HP。' },
-  { id: 'synthesis', name: '合成', type: 'grass', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.4 }, description: '回复HP。' },
-  { id: 'rest', name: '睡觉', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 12, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 1, status: 'sleep', duration: 2 }, description: '回满HP但陷入睡眠。' },
+  { id: 'recover', name: '自我再生', type: 'normal', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 200 }, description: '' },
+  { id: 'synthesis', name: '合成', type: 'grass', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 160 }, description: '' },
+  { id: 'rest', name: '睡觉', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 12, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 400, status: 'sleep', duration: 2 }, description: '' },
   { id: 'sleep-powder', name: '催眠粉', type: 'grass', category: 'status', power: 0, accuracy: 75, cooldown: 6, range: 'ranged', rangeTiles: 300, effect: { kind: 'status', target: 'enemy', status: 'sleep', chance: 1, duration: 2 }, description: '使对手睡眠。' },
   { id: 'stun-spore', name: '麻痹粉', type: 'grass', category: 'status', power: 0, accuracy: 75, cooldown: 6, range: 'ranged', rangeTiles: 300, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 1 }, description: '使对手麻痹。' },
   { id: 'poison-powder', name: '毒粉', type: 'poison', category: 'status', power: 0, accuracy: 75, cooldown: 6, range: 'ranged', rangeTiles: 300, effect: { kind: 'status', target: 'enemy', status: 'poison', chance: 1 }, description: '使对手中毒。' },
@@ -144,7 +146,7 @@ export const SKILLS: Skill[] = [
   { id: 'relentless-strike', name: '连战猛攻', type: 'normal', category: 'physical', power: 72, accuracy: 100, cooldown: 5, range: 'melee', rangeTiles: 75, effect: { kind: 'buff', target: 'self', stat: 'atk', stages: 1 }, description: '贴身猛攻并提高自身攻击，适合持续推进。' },
   { id: 'iron-stance', name: '坚壁架势', type: 'steel', category: 'status', power: 0, accuracy: 0, cooldown: 8, range: 'ranged', rangeTiles: 0, effect: { kind: 'shield', target: 'self', magnitude: 220, duration: 4 }, description: '稳住阵脚，获得可持续的护盾。' },
   { id: 'binding-gaze', name: '束缚凝视', type: 'psychic', category: 'status', power: 0, accuracy: 90, cooldown: 7, range: 'ranged', rangeTiles: 340, effect: { kind: 'stun', target: 'enemy', duration: 0.9 }, description: '以压迫感打断目标行动。' },
-  { id: 'restoring-light', name: '复苏之光', type: 'fairy', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.28 }, description: '平复伤势，回复自身生命。' },
+  { id: 'restoring-light', name: '复苏之光', type: 'fairy', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 112 }, description: '' },
   { id: 'tailwind', name: '顺风', type: 'flying', category: 'status', power: 0, accuracy: 0, cooldown: 8, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 2 }, description: '借助风势大幅提升自身速度，拉开战斗距离。' },
   { id: 'resonance-wave', name: '共振冲击', type: 'normal', category: 'special', power: 72, accuracy: 100, cooldown: 6, range: 'ranged', rangeTiles: 360, targetMode: 'all-enemies', areaMultiplier: 0.58, description: '震荡波同时冲击敌方全体；每个目标承受58%伤害。' },
   { id: 'adaptive-guard', name: '应变守势', type: 'normal', category: 'status', power: 0, accuracy: 0, cooldown: 7, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'def', stages: 1 }, description: '根据局势调整姿态，提高自身防御。' },
@@ -158,7 +160,7 @@ export const SKILLS: Skill[] = [
   { id: 'chilling-snare', name: '寒意束缚', type: 'ice', category: 'special', power: 45, accuracy: 100, cooldown: 5, range: 'ranged', rangeTiles: 330, effect: { kind: 'debuff', target: 'enemy', stat: 'spd', stages: -2, chance: 1 }, description: '寒气缠住目标，显著降低其速度。' },
   { id: 'toxic-bind', name: '毒缚', type: 'poison', category: 'status', power: 0, accuracy: 90, cooldown: 7, range: 'ranged', rangeTiles: 320, effect: { kind: 'dot', target: 'enemy', status: 'poison', duration: 7, magnitude: 0.05 }, description: '以毒性束缚目标，持续造成伤害。' },
   { id: 'tide-ward', name: '潮汐守护', type: 'water', category: 'status', power: 0, accuracy: 0, cooldown: 8, range: 'ranged', rangeTiles: 0, effect: { kind: 'shield', target: 'self', magnitude: 180, duration: 5 }, description: '召来柔韧水幕，获得持续护盾。' },
-  { id: 'renewal-chant', name: '新生咏唱', type: 'fairy', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.34 }, description: '吟唱新生之歌，显著回复自身生命。' },
+  { id: 'renewal-chant', name: '新生咏唱', type: 'fairy', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 136 }, description: '' },
   { id: 'feint-star', name: '虚星弹', type: 'normal', category: 'special', power: 58, accuracy: 0, cooldown: 3, range: 'ranged', rangeTiles: 420, priority: 1, description: '发射难以捕捉的星光弹，从远距离抢占先机。' },
   { id: 'slipstream-dart', name: '流风飞矢', type: 'flying', category: 'special', power: 66, accuracy: 100, cooldown: 4, range: 'ranged', rangeTiles: 410, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 1 }, description: '借风势射出疾风飞矢，并提升自身速度。' },
   { id: 'ember-ring', name: '焰环震荡', type: 'fire', category: 'special', power: 70, accuracy: 100, cooldown: 6, range: 'ranged', rangeTiles: 350, targetMode: 'all-enemies', areaMultiplier: 0.6, effect: { kind: 'status', target: 'enemy', status: 'burn', chance: 0.15 }, description: '扩散火焰震荡敌方全体，每个目标承受60%伤害。' },
@@ -180,14 +182,14 @@ export const SKILLS: Skill[] = [
   { id: 'heavy-slam', name: '巨躯压制', type: 'normal', category: 'physical', power: 95, accuracy: 95, cooldown: 6, range: 'melee', rangeTiles: 75, effect: { kind: 'stun', target: 'enemy', duration: 0.8, chance: 0.35 }, description: '卡比兽以沉重身躯压制敌人，造成伤害并有概率使其畏缩。' },
   { id: 'dragon-surge', name: '龙舞突袭', type: 'dragon', category: 'physical', power: 105, accuracy: 90, cooldown: 8, range: 'melee', rangeTiles: 90, castTime: 0.45, effect: { kind: 'buff', target: 'self', stat: 'atk', stages: 1, chance: 1 }, description: '快龙凝聚龙之力突进，造成高额伤害并提升自身攻击。' },
   { id: 'psyonic-annihilation', name: '精神湮灭', type: 'psychic', category: 'special', power: 125, accuracy: 90, cooldown: 10, range: 'ranged', rangeTiles: 430, castTime: 0.7, targetMode: 'all-enemies', areaMultiplier: 0.56, description: '超梦蓄力释放毁灭性精神波，攻击敌方全体。' },
-  { id: 'genesis-pulse', name: '创生脉冲', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.38 }, description: '梦幻释放创生能量，大幅回复自身生命。' },
+  { id: 'genesis-pulse', name: '创生脉冲', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 152 }, description: '' },
   { id: 'gale-commander', name: '风场统御', type: 'flying', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 2 }, description: '大比鸟卷起顺风，显著提升自身速度，以风场持续拉扯战局。' },
   { id: 'thunder-crown', name: '雷冠轰临', type: 'electric', category: 'special', power: 82, accuracy: 95, cooldown: 8, range: 'ranged', rangeTiles: 390, targetMode: 'all-enemies', areaMultiplier: 0.6, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 0.25 }, description: '雷丘释放环形雷冠冲击敌方全体，每个目标承受60%伤害并可能麻痹。' },
   { id: 'moonlit-ward', name: '月辉守望', type: 'fairy', category: 'status', power: 0, accuracy: 0, cooldown: 10, range: 'ranged', rangeTiles: 0, effect: { kind: 'shield', target: 'self', magnitude: 250, duration: 5 }, description: '皮可西凝聚月辉护盾，稳住自身以持续支援战斗。' },
   { id: 'sunfire-pursuit', name: '日炎追猎', type: 'fire', category: 'physical', power: 116, accuracy: 90, cooldown: 8, range: 'melee', rangeTiles: 95, castTime: 0.4, effect: { kind: 'status', target: 'enemy', status: 'burn', chance: 0.45 }, description: '风速狗裹挟日炎猛扑残敌，造成高额伤害并可能灼伤。' },
   { id: 'fourfold-guard', name: '四臂连进', type: 'fighting', category: 'physical', power: 92, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 75, effect: { kind: 'buff', target: 'self', stat: 'atk', stages: 1 }, description: '怪力以四臂连续压进，重击目标后提升自身攻击。' },
   { id: 'tempest-breaker', name: '暴潮破城', type: 'water', category: 'physical', power: 122, accuracy: 88, cooldown: 9, range: 'melee', rangeTiles: 95, castTime: 0.5, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 0.3 }, description: '暴鲤龙以狂暴水潮冲垮目标，造成毁灭伤害并可能令其麻痹。' },
-  { id: 'aqua-recovery', name: '水愈回环', type: 'water', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', magnitude: 0.34 }, description: '水伊布让水流回环滋养身体，回复自身生命以维持战线。' },
+  { id: 'aqua-recovery', name: '水愈回环', type: 'water', category: 'status', power: 0, accuracy: 0, cooldown: 9, range: 'ranged', rangeTiles: 0, effect: { kind: 'heal', target: 'self', healingPower: 136 }, description: '' },
   { id: 'potential-surge', name: '可能性跃迁', type: 'normal', category: 'special', power: 68, accuracy: 100, cooldown: 6, range: 'ranged', rangeTiles: 350, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 1 }, description: '伊布释放尚未定型的可能性脉冲，造成伤害后提升自身速度，为后续蜕变创造节奏。' },
   { id: 'lightning-feint', name: '闪电佯攻', type: 'electric', category: 'special', power: 78, accuracy: 100, cooldown: 5, range: 'ranged', rangeTiles: 430, priority: 1, effect: { kind: 'buff', target: 'self', stat: 'spd', stages: 1 }, description: '雷伊布以电光突袭远处目标，并在出手后进一步提升速度。' },
   { id: 'blaze-retaliation', name: '焰心反攻', type: 'fire', category: 'physical', power: 105, accuracy: 95, cooldown: 7, range: 'melee', rangeTiles: 80, effect: { kind: 'buff', target: 'self', stat: 'atk', stages: 1 }, description: '火伊布以炽热反攻撞向目标，造成重击并提升自身攻击。' },
@@ -209,6 +211,9 @@ const SPACE_OVERRIDES: Record<string, NonNullable<Skill['space']>> = {
   'aqua-tail': { shape: 'single', reach: 3 },
 };
 for (const skill of SKILLS) {
+  if (skill.effect?.kind === 'heal') {
+    skill.description = `回复${skill.effect.target === 'ally' ? '射程内一名友方（包括自身）' : '自身'}相当于施法者攻击${skill.effect.healingPower}%的生命。${skill.effect.status === 'sleep' ? '施放后睡眠2秒。' : ''}${skill.effect.target === 'ally' ? '优先照顾受伤队友，满血时不施放。' : ''}`;
+  }
   const override = SPACE_OVERRIDES[skill.id];
   if (override) skill.space = override;
   else if (skill.targetMode === 'all-enemies') skill.space = { shape: 'burst', reach: 7, radius: 3 };
@@ -224,20 +229,6 @@ for (const skill of SKILLS) {
 export const SKILL_MAP: Record<string, Skill> = Object.fromEntries(
   SKILLS.map((s) => [s.id, s]),
 );
-
-/** A safe weak normal attack guaranteed available to every combatant. */
-export const NORMAL_ATTACK: Skill = {
-  id: '__normal__',
-  name: '普通攻击',
-  type: 'normal',
-  category: 'physical',
-  power: 28,
-  accuracy: 100,
-  cooldown: 1.35,
-  range: 'melee',
-  rangeTiles: 70,
-  description: '快速稳定的基础攻击，不受属性克制影响，保证技能空档仍有可靠输出。',
-};
 
 /** Moves a species of a given primary type tends to learn (for learnset gen). */
 export const TYPE_LEARNSET: Record<string, string[]> = {

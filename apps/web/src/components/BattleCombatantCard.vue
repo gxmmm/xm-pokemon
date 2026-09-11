@@ -29,7 +29,7 @@ const hud = computed(() => combatHud(props.combatant, props.time, props.interrup
       <span v-if="!hud.statuses.length" class="mc-no-status">{{ combatant.alive ? '无异常状态' : '已退出战斗' }}</span>
     </div>
     <div class="mc-skills">
-      <span v-for="skill in hud.skills" :key="skill.id" class="mc-skill" :class="{ normal: skill.normal, ready: skill.ready, active: skill.casting }" :style="{ '--skill-color': skill.color }" :title="skill.detail" tabindex="0" :aria-label="skill.detail">
+      <span v-for="skill in hud.skills" :key="skill.id" class="mc-skill" :class="{ basic: skill.basic, ready: skill.ready, active: skill.casting }" :style="{ '--skill-color': skill.color }" :title="skill.detail" tabindex="0" :aria-label="skill.detail">
         <span class="ell">{{ skill.name }}</span><span class="mc-skill-state">{{ skill.state }}</span>
       </span>
     </div>
@@ -52,6 +52,6 @@ const hud = computed(() => combatHud(props.combatant, props.time, props.interrup
 .mc-skills { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(3,23px); gap:3px 6px; }
 .mc-skill { min-width:0; display:flex; align-items:center; gap:4px; padding:0 5px; border-left:2px solid var(--skill-color); border-radius:3px; background:#ffffff09; cursor:help; }
 .mc-skill > .ell { flex:1; }.mc-skill-state { flex:none; font-size:11px; color:#bdceda; font-variant-numeric:tabular-nums; }.mc-skill.ready .mc-skill-state { color:#9bdfc3; }.mc-skill.active { background:#edc57418; }.mc-skill.active .mc-skill-state { color:#ffe1a0; }
-.mc-skill.normal { grid-row:3; grid-column:1 / -1; border-left-color:#9baebc; }.mc-skill:focus-visible { outline:1px solid #b9dfff; outline-offset:1px; }
+.mc-skill.basic { grid-row:3; grid-column:1 / -1; border-left-color:#9baebc; }.mc-skill:focus-visible { outline:1px solid #b9dfff; outline-offset:1px; }
 .fainted .mc-skill { border-left-color:#77848b; color:#a9b5bf; }.fainted .mc-hp-number { color:#a9b5bf; }
 </style>

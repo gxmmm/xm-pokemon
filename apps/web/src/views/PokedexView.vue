@@ -29,13 +29,6 @@ const RARITY_LABEL: Record<Rarity, string> = {
   common: '常见', uncommon: '少见', rare: '稀有', legendary: '传说', mythical: '幻兽',
 };
 
-const NORMAL_ATTACK_DELIVERY_LABEL = { melee: '近战普攻', ranged: '远程普攻' } as const;
-const NORMAL_ATTACK_DELIVERY_TIP = {
-  melee: '普通攻击：近战\n在2.5格接敌范围内输出；视为接触攻击。',
-  ranged: '普通攻击：远程\n可在固定射程内攻击；不视为接触攻击，伤害为近战普攻的 80%。',
-} as const;
-const normalAttackIntervalLabel = (seconds: number): string => `${seconds.toFixed(2)} 秒 / 次`;
-
 function entryOf(id: number) { return game.save?.pokedex[id]; }
 function select(id: number): void { selectedId.value = id; }
 const isRevealed = (id: number) => DEX_REVEAL_ALL || !!entryOf(id)?.seen;
@@ -134,7 +127,7 @@ function skillTip(s: Skill | undefined): string {
             <div class="row" style="gap:6px;margin:4px 0;flex-wrap:wrap">
               <TypeBadge v-for="t in species.types" :key="t" :type="t" />
               <span class="chip">{{ RARITY_LABEL[species.rarity] }}</span>
-              <Tip :text="`${NORMAL_ATTACK_DELIVERY_TIP[species.normalAttackDelivery]}\n\n基础攻击间隔：${normalAttackIntervalLabel(species.normalAttackInterval)}\n未来攻速效果会按倍率缩短实际间隔。`" :clickable="false"><span class="chip delivery-chip">{{ NORMAL_ATTACK_DELIVERY_LABEL[species.normalAttackDelivery] }}</span></Tip>
+              <Tip :text="`${SKILL_MAP[species.basicSkillId]?.description}\n基础冷却：${species.basicSkillCooldown.toFixed(1)}秒，速度影响较强；不占配招名额。`" :clickable="false"><span class="chip delivery-chip">基础 · {{ SKILL_MAP[species.basicSkillId]?.name }}</span></Tip>
               <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
             </div>
             <div class="tiny muted">{{ species.dex }}</div>

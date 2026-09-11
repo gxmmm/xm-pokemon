@@ -80,14 +80,30 @@ export function rollGrowth(rarity: string, rng: RNG = Math.random): number {
 
 /** Active skills a species has learned at or below `level` (up to ACTIVE_SKILL_MAX).
  *  Intrinsic (天生必带) skills are always known and take priority. */
+/** Resolve tactical slots without letting the fixed basic move consume one.
+ * Keep chosen moves; replace only a duplicate basic slot with an unlocked move.
+ * This is a read-only projection shared by combat and detail views. */
+export function tacticalSkillsForInstance(instance: Pick<PokemonInstance, 'speciesId' | 'level' | 'activeSkills'>): string[] {
+  const basic = getSpecies(instance.speciesId).basicSkillId;
+  const skills = [...new Set(instance.activeSkills.filter(id => id !== basic))].slice(0, ACTIVE_SKILL_MAX);
+  if (instance.activeSkills.includes(basic)) {
+    const count = Math.min(ACTIVE_SKILL_MAX, new Set(instance.activeSkills).size);
+    for (const id of activeSkillsForLevel(instance.speciesId, instance.level)) {
+      if (skills.length >= count) break;
+      if (!skills.includes(id)) skills.push(id);
+    }
+  }
+  return skills;
+}
+
 export function activeSkillsForLevel(speciesId: number, level: number): string[] {
   const species = getSpecies(speciesId);
   const skills: string[] = [];
   // intrinsic (天生必带) skills are always known, regardless of level
   for (const s of species.intrinsic ?? []) {
-    if (!skills.includes(s)) skills.push(s);
+    if (s !== species.basicSkillId && !skills.includes(s)) skills.push(s);
   }
-  const learned = species.learnset.filter((e) => e.level <= level).sort((a, b) => b.level - a.level);
+  const learned = species.learnset.filter((e) => e.level <= level && e.skill !== species.basicSkillId).sort((a, b) => b.level - a.level);
   // Signature and role techniques are the identity-bearing part of a kit. Pick
   // them before ordinary progression so high-level Pokémon do not silently
   // lose their defining sustain/control/growth move to the four-skill limit.
@@ -103,8 +119,7 @@ export function activeSkillsForLevel(speciesId: number, level: number): string[]
     if (skills.length >= ACTIVE_SKILL_MAX) skills.pop();
     skills.push(species.signatureSkill);
   }
-  // intrinsic guarantees at least one move; the normal attack is always
-  // available regardless, so no tackle/struggle fallback is needed.
+  // 基础招式由物种提供，不占四个战术招式名额。
   return skills;
 }
 
@@ -192,7 +207,7 @@ export function applyExp(instance: PokemonInstance, amount: number): LevelUpResu
     const hpRatio = instance.currentHp / Math.max(1, maxHp(instance));
     for (let lvl = instance.level + 1; lvl <= newLevel; lvl++) {
       // learn new skills at this level
-      const newlyLearned = species.learnset.filter((e) => e.level === lvl);
+      const newlyLearned = species.learnset.filter((e) => e.level === lvl && e.skill !== species.basicSkillId);
       for (const entry of newlyLearned) {
         if (!instance.activeSkills.includes(entry.skill)) {
           if (instance.activeSkills.length < ACTIVE_SKILL_MAX) {

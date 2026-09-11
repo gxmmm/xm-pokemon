@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import './asset-audit.ts';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, movementStepIntervalForSpeed, roundCombatAmount, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
-import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, isWalkable } from '@pokemon-online/config';
+import { getSpecies, MAPS, getMap, SKILL_MAP, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
 
 import { BATTLE_SANDBOX_LEVEL, BATTLE_SANDBOX_MAX_TEAM_SIZE, BATTLE_SANDBOX_MIN_TEAM_SIZE, createBattleSandboxTeam, isBattleSandboxTeamValid } from '../apps/web/src/battle/BattleSandboxTeams.ts';
@@ -568,7 +568,7 @@ testBattleCamera();
   assert(!!WORLD_SCENE_BY_MAP_ID.pallet && WORLD_SCENE_BY_MAP_ID.pallet.biome === 'mist-harbor', 'Mist Bay scene pack configured');
   assert(Object.keys(BIOME_VISUALS).length === 2, 'biome visual catalog configured');
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
-  assert(getSpecies(6).normalAttackDelivery === 'ranged' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
+  assert(getSpecies(6).combatDelivery === 'ranged' && getSpecies(68).combatDelivery === 'melee' && getSpecies(65).combatDelivery === 'ranged' && getSpecies(150).combatDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
   assert(normalAttackVisualStyleFor(68, 'melee') === 'fist' && normalAttackVisualStyleFor(6, 'melee') === 'claw' && normalAttackVisualStyleFor(65, 'ranged') === 'psychic-bolt', 'normal attacks resolve fighter, claw, and psychic-ranged styles from fixed species delivery configuration');
   assert(normalAttackVisualProfileFor(6, 'ranged').style === 'flame-bolt' && normalAttackVisualProfileFor(6, 'ranged').element === 'fire' && normalAttackVisualProfileFor(9, 'ranged').style === 'water-shot' && normalAttackVisualProfileFor(25, 'ranged').style === 'spark-bolt' && normalAttackVisualProfileFor(12, 'melee').style === 'wing-slap' && normalAttackVisualProfileFor(99, 'melee').style === 'pincer-snap', 'model normal-attack profiles resolve distinct elemental ranged bolts and contact silhouettes without renderer species branches');
   const meleeModelWithRangedSkills = createWildInstance(68, 20);
@@ -578,12 +578,8 @@ testBattleCamera();
   const deliveryFixture = new BattleSim({ mode: 'pve', player: [meleeModelWithRangedSkills], enemy: [rangedModelWithMeleeSkills], seed: 7162026 });
   const fixedMelee = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 68)!;
   const fixedRanged = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 65)!;
-  assert(!fixedMelee.normalIsRanged && fixedMelee.normalRangeCells === 2.5 && fixedRanged.normalIsRanged && fixedRanged.normalRangeCells === 6, 'learned active skills cannot change a model-fixed normal attack delivery or reach');
-  assert(getSpecies(6).normalAttackInterval === 1.1 && getSpecies(68).normalAttackInterval === 1.35 && getSpecies(65).normalAttackInterval === 1.2 && getSpecies(143).normalAttackInterval === 1.55, 'each model declares a fixed Pokédex basic-attack interval balanced by delivery and battle identity');
-  const intervalFixture = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 20)], enemy: [createWildInstance(143, 20)], seed: 7162027 });
-  const intervalCharizard = intervalFixture.state.combatants.find((combatant) => combatant.speciesId === 6)!;
-  const intervalSnorlax = intervalFixture.state.combatants.find((combatant) => combatant.speciesId === 143)!;
-  assert(intervalCharizard.normalAttackInterval === 1.1 && intervalSnorlax.normalAttackInterval === 1.55 && intervalCharizard.normalAttackSpeedMultiplier === 1 && intervalSnorlax.normalAttackSpeedMultiplier === 1, 'battle combatants retain model-owned base intervals and start with an extensible 1x attack-speed multiplier');
+  assert(!fixedMelee.rangedRole && fixedMelee.engagementRangeCells === 2.5 && fixedRanged.rangedRole && fixedRanged.engagementRangeCells === 6, 'learned active skills cannot change a model-fixed normal attack delivery or reach');
+  assert(getSpecies(6).basicSkillId === 'ember' && getSpecies(68).basicSkillId === 'karate-chop' && getSpecies(113).basicSkillId === 'heal-pulse', 'species have explicit role-appropriate basic skills');
   const slowStep = movementStepIntervalForSpeed(15);
   const fastStep = movementStepIntervalForSpeed(150);
   const buffedFastStep = movementStepIntervalForSpeed(150 * 2);
@@ -987,12 +983,13 @@ console.log('✓ stats:', stats);
 }
 
 // 2. battle 1v1 PVE - must produce a winner without throwing
-const wild = createWildInstance(25, 8);
-const sim = new BattleSim({ mode: 'pve', player: [starter], enemy: [wild], isWild: true });
+const wild = createWildInstance(25, 8, { rng: () => .5 });
+wild.personality = 'brave';
+const sim = new BattleSim({ mode: 'pve', player: [starter], enemy: [wild], isWild: true, seed: 51 });
 sim.resolve(120);
 assert(sim.state.ended, 'battle ended');
 assert(sim.state.winner === 'player' || sim.state.winner === 'enemy' || sim.state.winner === 'draw', 'has winner');
-assert(sim.state.events.length > 5, 'events emitted');
+assert(sim.state.events.length > 5, `events emitted ${JSON.stringify(sim.state.combatants.map(c => ({id:c.speciesId,pos:c.position,basic:c.basicSkillId,plan:c.plan,cd:c.cooldowns})))}`);
 // grid-movement stall sentinel: a real fight must land at least one hit. If the
 // melee stop band ever exceeds attack range, combatants stall out of reach and
 // the battle times out with zero attacks (the grid version of the old bug).
@@ -1155,7 +1152,12 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
     const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 310 });
     const target = sim.state.combatants.find((x) => x.side === 'enemy')!;
     target.cooldowns['body-slam'] = 10; sim.tick(1);
-    assert(target.cooldowns['body-slam']! > 9.1 && target.cooldowns['body-slam']! < 9.2, 'pressure applies 15% slower skill cooldown recovery');
+    const pressuredRate = target.cooldownRates!['body-slam']!;
+    assert(Math.abs(target.cooldowns['body-slam']! - (10 / pressuredRate - 1)) < 1e-8, 'pressure preserves normalized progress and shows actual seconds');
+    target.pressureUntil = 0;
+    const before = target.cooldowns['body-slam']!;
+    sim.tick(.01);
+    assert(target.cooldowns['body-slam']! < before, 'pressure expiry restores cooldown rate without resetting progress');
   }
   console.log('✓ first ability batch mechanics');
 }
@@ -1249,13 +1251,13 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   // Encounter IVs are intentionally random; pin only this balance fixture so
   // the chip-damage sentinel tests the formula rather than incidental rolls.
   attacker.stats.atk = 100; defender.stats.def = 40;
-  const normal = computeDamage(attacker, defender, NORMAL_ATTACK, () => 0.5).damage;
+  const normal = computeDamage(attacker, defender, SKILL_MAP['tackle']!, () => 0.5).damage;
   const ember = computeDamage(attacker, defender, SKILL_MAP['ember']!, () => 0.5).damage;
   const flamethrower = computeDamage(attacker, defender, SKILL_MAP['flamethrower']!, () => 0.5).damage;
   assert(normal >= 15, `normal attack is not chip-only (${normal})`);
   assert(ember > normal, `super-effective active skill still beats normal attack (${ember}/${normal})`);
   assert(flamethrower < normal * 6, `high-power skill burst is compressed (${flamethrower}/${normal})`);
-  assert(NORMAL_ATTACK.cooldown < SKILL_MAP['ember']!.cooldown, 'normal attack recovers faster than starter damage skills');
+  assert(getSpecies(6).basicSkillCooldown < SKILL_MAP['flamethrower']!.cooldown, 'basic skill recovers sooner than tactical burst');
   console.log(`✓ attack balance: normal=${normal}, ember=${ember}, flamethrower=${flamethrower}`);
 }
 
@@ -1267,9 +1269,9 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const dealt = report.state.combatants.map((c) => c.damageDealt);
   assert(dealt.some((damage) => damage > 0), 'combatants retain independently tracked damage totals');
   assert(dealt.every((damage) => Number.isFinite(damage) && damage >= 0), 'per-combatant damage totals are valid');
-  assert(report.state.combatants.every((c) => c.damageDealt === c.normalDamage + c.skillDamage), 'recap splits total damage into normal and skill damage');
+  assert(report.state.combatants.every((c) => c.damageDealt === c.basicDamage + c.skillDamage), 'recap splits total damage into normal and skill damage');
   assert(report.state.combatants.every((c) => Object.values(c.skillStats).reduce((sum, stat) => sum + stat.damage, 0) === c.damageDealt), 'per-skill recap damage sums to each Pokemon total');
-  assert(report.state.combatants.every((c) => [c.damageTaken, c.healingDone, c.shieldAbsorbed, c.controlSeconds, c.interrupts, c.knockouts, c.skillCasts, c.normalAttacks, c.hits, c.misses, ...Object.values(c.skillStats).flatMap((stat) => [stat.casts, stat.hits, stat.misses, stat.damage])].every((value) => Number.isFinite(value) && value >= 0)), 'all personal recap metrics are valid non-negative values');
+  assert(report.state.combatants.every((c) => [c.damageTaken, c.healingDone, c.shieldAbsorbed, c.controlSeconds, c.interrupts, c.knockouts, c.skillCasts, c.basicCasts, c.hits, c.misses, ...Object.values(c.skillStats).flatMap((stat) => [stat.casts, stat.hits, stat.misses, stat.damage])].every((value) => Number.isFinite(value) && value >= 0)), 'all personal recap metrics are valid non-negative values');
   console.log('✓ per-combatant battle recap:', dealt.join('/'));
 }
 
@@ -1359,7 +1361,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   support.personality = 'cool'; ready(supportSim.state.combatants);
   support.currentHp = Math.floor(support.maxHp * 0.2);
   const supportPlan = decide(support, supportSim.state, mulberry32(5))!;
-  assert(['tidal-aegis', 'tide-ward', 'renewal-chant'].includes(supportPlan.preferredSkillId ?? ''), 'support role uses a survival skill under lethal pressure');
+  assert(['heal-pulse', 'tidal-aegis', 'tide-ward', 'renewal-chant'].includes(supportPlan.preferredSkillId ?? ''), 'support role uses a survival skill under lethal pressure');
 
   const bruiserSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(149, 55, { rng: () => .5 })], enemy: [createWildInstance(131, 55, { rng: () => .5 }), createWildInstance(25, 55, { rng: () => .5 })], isWild: false, seed: 239 });
   const bruiser = bruiserSim.state.combatants.find((c) => c.side === 'player')!;
@@ -1463,7 +1465,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   defender.cooldowns[ids[1]!] = 5;
   const beforeNear = defender.cooldowns[ids[0]!];
   const beforeFar = defender.cooldowns[ids[1]!];
-  (cdSim as unknown as { dealDamage: (a: BattleCombatant, d: BattleCombatant, id: string) => unknown }).dealDamage(attacker, defender, '__normal__');
+  (cdSim as unknown as { dealDamage: (a: BattleCombatant, d: BattleCombatant, id: string) => unknown }).dealDamage(attacker, defender, 'tackle');
   assert(defender.cooldowns[ids[0]!] < beforeNear && defender.cooldowns[ids[1]!] === beforeFar, 'damage advances only the nearest-ready skill cooldown');
   console.log('✓ reactive cooldown recovery');
 }

@@ -1,5 +1,5 @@
 import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
-import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, NORMAL_ATTACK, dmgTypeMult } from '@pokemon-online/config';
+import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, dmgTypeMult } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
 import { roundCombatAmount } from './combat-numbers.ts';
@@ -48,10 +48,9 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 
   // type-immunity abilities
   const t = skill.type;
-  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
   const immuneAbility = (() => {
     const ab = ABILITY_MAP[defender.ability];
-    if (!ab || isNormalAttack) return null;
+    if (!ab) return null;
     if (ab.effect.kind === 'typeImmunity' && ab.effect.type === t) return ab;
     return null;
   })();
@@ -69,14 +68,14 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   }
 
   // effectiveness
-  let eff = isNormalAttack ? 1 : typeMultiplier(t, defender.types as TypeName[]);
+  let eff = typeMultiplier(t, defender.types as TypeName[]);
   // passives: typeResist on defender
   for (const pid of defender.passiveSkills) {
     const p = PASSIVE_MAP[pid];
-    if (!isNormalAttack && p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
+    if (p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
   }
   // ability: thick-fat halves fire/ice
-  if (!isNormalAttack && defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
+  if (defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
   result.effectiveness = eff;
   if (eff === 0) {
     result.immune = true;
@@ -84,24 +83,16 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     return result;
   }
 
-  // Base damage. Normal attacks deliberately use a separate, dependable
-  // attack-vs-defense formula. Active skills add their configured power to the
-  // user's attack instead of multiplying it, which compresses high-power burst.
+  // 基础与战术招式使用同一属性、威力、攻击/防御公式。
   const level = attacker.level;
   const atk = effectiveStat(attacker, 'atk');
   const def = Math.max(1, effectiveStat(defender, 'def'));
-  let dmg = isNormalAttack
-    ? Math.round(atk * 0.38 - def * 0.22 + 4 + level * 0.16)
-    // Active skills build on the same attack-defense core as a normal attack;
-    // configured power is a modest additive premium, not an attack multiplier.
-    : Math.round(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
+  let dmg = Math.round(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
   dmg = Math.max(Math.round(atk * 0.12), 1, dmg);
 
-  // Normal attacks are universal baseline damage: they do not receive STAB,
-  // type advantage, or type-specific passive/ability bonuses.
-  if (!isNormalAttack && attacker.types?.includes(t)) dmg = Math.round(dmg * 1.5);
+  if (attacker.types?.includes(t)) dmg = Math.round(dmg * 1.5);
 
-  if (!isNormalAttack) {
+  {
     // passive typeBoost on attacker
     let typeBoost = 1;
     for (const pid of attacker.passiveSkills) {
@@ -146,12 +137,11 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   // defender damage reduction: multiscale at full hp
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.round(dmg * 0.5);
 
-  // Type effectiveness applies only to active skills. It is damped via
-  // dmgTypeMult so super-effective hits do not become overly swingy.
-  if (!isNormalAttack) dmg = Math.round(dmg * dmgTypeMult(eff));
+  // 属性克制按统一曲线缩放，基础招式同样参与克制与免疫。
+  dmg = Math.round(dmg * dmgTypeMult(eff));
   // Counter Instinct empowers only the next damaging active skill. The simulator
   // consumes the flag after a successful hit, keeping this function pure.
-  if (!isNormalAttack && (attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.round(dmg * 1.15);
+  if ((attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.round(dmg * 1.15);
 
   result.damage = Math.max(1, dmg);
   if (eff > 1) log.push(`效果绝佳！`);
@@ -161,5 +151,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 }
 
 export function getSkill(id: string): Skill {
-  return SKILL_MAP[id] ?? NORMAL_ATTACK;
+  const skill = SKILL_MAP[id];
+  if (!skill) throw new Error(`未知招式：${id}`);
+  return skill;
 }

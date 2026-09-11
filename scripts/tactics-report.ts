@@ -27,8 +27,8 @@ function makeInstance(speciesId: number, seed: number): PokemonInstance {
   instance.iv = fixedIv(24); instance.growth = 1.08; instance.currentHp = maxHp(instance); return instance;
 }
 function roleOf(speciesId: number): Role { return getSpecies(speciesId).combatRole ?? 'unassigned'; }
-function isBackline(c: { speciesId: number; normalIsRanged?: boolean }): boolean { const role = roleOf(c.speciesId); return role === 'support' || role === 'control' || role === 'kite' || !!c.normalIsRanged; }
-function isMeleeThreat(c: { speciesId: number; normalIsRanged?: boolean }): boolean { const role = roleOf(c.speciesId); return !c.normalIsRanged || role === 'tank' || role === 'bruiser'; }
+function isBackline(c: { speciesId: number; rangedRole?: boolean }): boolean { const role = roleOf(c.speciesId); return role === 'support' || role === 'control' || role === 'kite' || !!c.rangedRole; }
+function isMeleeThreat(c: { speciesId: number; rangedRole?: boolean }): boolean { const role = roleOf(c.speciesId); return !c.rangedRole || role === 'tank' || role === 'bruiser'; }
 function addRole(map: Map<Role, RoleMetrics>, role: Role, value: Partial<RoleMetrics>): void {
   const current = map.get(role) ?? { samples: 0, depth: 0, enemyDistance: 0, breachSeconds: 0, damage: 0, taken: 0, healing: 0, shields: 0, control: 0, knockouts: 0 };
   current.samples += value.samples ?? 0; current.depth += value.depth ?? 0; current.enemyDistance += value.enemyDistance ?? 0; current.breachSeconds += value.breachSeconds ?? 0;

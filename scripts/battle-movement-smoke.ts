@@ -96,7 +96,7 @@ export function testBattleMovement(): void {
     if (formation) assert.deepEqual(players.map((c) => c.position), formation, 'custom formation is not silently rewritten');
     while (!melee.isOver && melee.state.time < 60) melee.tick(dt);
     assert(melee.isOver, 'pure melee focus finishes without ranged-skill assistance');
-    assert(players.every((c) => c.normalAttacks > 0), `every melee attacker gets through, formation=${JSON.stringify(formation)}, dt=${dt}`);
+    assert(players.every((c) => c.basicCasts > 0), `every melee attacker gets through, formation=${JSON.stringify(formation)}, dt=${dt}`);
     assert(players.every((c, i) => players.slice(i + 1).every((other) =>
       distCells(c.position, other.position) >= BATTLE_MOVEMENT.allyDestinationClearance)), 'crowded starts recover allied spacing');
   }

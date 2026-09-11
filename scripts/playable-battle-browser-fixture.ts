@@ -69,7 +69,7 @@ export function pinHud(cleared = false): void {
     c.name = i === 0 ? '训练家的喷火龙超长昵称' : c.name;
     c.activeSkills = ['hyper-beam', 'fire-blast', 'thunderbolt', 'hydro-pump'];
     c.cooldowns = { 'hyper-beam': 0, 'fire-blast': 4.2, thunderbolt: 0.3, 'hydro-pump': 0 };
-    c.normalAttackCd = 0.7;
+    if (c.basicSkillId) c.cooldowns[c.basicSkillId] = .7;
     c.alive = i !== 5;
     c.castProgress = i === 0 || i === 5 ? { skillId: 'hyper-beam', remaining: 0.3 } : null;
     c.status = (['burn', 'burn', 'sleep', 'freeze', 'paralyze', 'confuse'] as const)[i]!;

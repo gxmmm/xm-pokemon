@@ -1,8 +1,9 @@
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
-import { SKILL_MAP, NORMAL_ATTACK, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, normalAttackVisualProfileFor, NORMAL_ATTACK_RANGED_CELLS, BATTLE_MOVEMENT } from '@pokemon-online/config';
+import { SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, RANGED_ENGAGEMENT_CELLS, BATTLE_MOVEMENT, battleActionTiming, actionGapForSpeed, skillCooldownRate } from '@pokemon-online/config';
 import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
+import { tacticalSkillsForInstance } from './instance.ts';
 import { computeDamage } from './damage.ts';
 import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
 import { skillVictims } from './skill-space.ts';
@@ -58,19 +59,19 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * BATTLE_MOVEMENT.allyDestinationClearance), 1, rows - 2);
   }
   // Active skills start partway through a longer presentation-paced cooldown.
-  // The opening still uses normal attacks, then skills arrive as readable beats.
-  // Normal attack stays ready. "处于CD中" (countdown shows) is preserved.
+  // The basic move starts ready; tactical moves arrive as readable beats.
   const cooldowns: Record<string, number> = {};
-  const activeSkills = [...inst.activeSkills];
+  const activeSkills = [...new Set([species.basicSkillId, ...tacticalSkillsForInstance(inst)])];
   for (const sid of activeSkills) {
     const sk = SKILL_MAP[sid];
     if (sk) cooldowns[sid] = sk.cooldown * SKILL_COOLDOWN_SCALE * OPENING_SKILL_COOLDOWN_FRACTION;
   }
-  // Basic-attack delivery is fixed on the Species record. A newly caught or
+  cooldowns[species.basicSkillId] = 0;
+  // Combat delivery is fixed on the Species record. A newly caught or
   // bred model keeps its own reach even when its temporary active skill loadout
   // changes; active skills retain their independently configured ranges.
-  const normalIsRanged = species.normalAttackDelivery === 'ranged';
-  const normalRangeCells = normalIsRanged ? NORMAL_ATTACK_RANGED_CELLS : MELEE_RANGE_CELLS;
+  const rangedRole = species.combatDelivery === 'ranged' || SKILL_MAP[species.basicSkillId]!.effect?.target === 'ally';
+  const engagementRangeCells = rangedRole ? RANGED_ENGAGEMENT_CELLS : MELEE_RANGE_CELLS;
   return {
     uid: inst.uid,
     side,
@@ -81,6 +82,8 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     personality: inst.personality,
     ability: inst.ability,
     activeSkills,
+    basicSkillId: species.basicSkillId,
+    cooldownRates: {},
     passiveSkills: [...inst.passiveSkills],
     stats,
     maxHp: stats.hp,
@@ -92,19 +95,16 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     abilityCooldowns: {},
     pressureUntil: 0,
     sturdyUsed: false,
-    normalAttackCd: 0,
-    normalAttackInterval: species.normalAttackInterval,
-    normalAttackSpeedMultiplier: 1,
     regenAccumulator: 0,
-    normalRangeCells,
-    normalIsRanged,
+    engagementRangeCells,
+    rangedRole,
     status: inst.status ?? null,
     statusTimer: 0,
     statStages: { atk: 0, def: 0, spd: 0 },
     shields: 0,
     damageDealt: 0,
     damageTaken: 0,
-    normalDamage: 0,
+    basicDamage: 0,
     skillDamage: 0,
     healingDone: 0,
     shieldAbsorbed: 0,
@@ -112,7 +112,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     interrupts: 0,
     knockouts: 0,
     skillCasts: 0,
-    normalAttacks: 0,
+    basicCasts: 0,
     hits: 0,
     misses: 0,
     skillStats: {},
@@ -336,12 +336,13 @@ export class BattleSim {
     const ab = ABILITY_MAP[c.ability];
     if (ab?.effect.kind === 'hpRegen' && ab.effect.magnitude) frac += ab.effect.magnitude;
     if (frac > 0 && c.alive && c.currentHp > 0) {
-      c.regenAccumulator += c.maxHp * frac * dt;
+      if (c.currentHp >= c.maxHp) { c.regenAccumulator = 0; return; }
+      c.regenAccumulator += effectiveStat(c, 'atk') * 4 * frac * dt;
       const heal = Math.min(Math.max(0, Math.floor(c.regenAccumulator)), Math.max(0, c.maxHp - c.currentHp));
       if (heal > 0) {
         c.currentHp += heal;
         c.healingDone += heal;
-        c.regenAccumulator -= heal;
+        c.regenAccumulator = c.currentHp >= c.maxHp ? 0 : c.regenAccumulator - heal;
       }
     }
   }
@@ -412,7 +413,7 @@ export class BattleSim {
       if (crowdedAlly) this.tryStepToward(c, crowdedAlly.position, true);
       return;
     }
-    if (tooFar && !c.normalIsRanged && desiredRangeCells < 3) {
+    if (tooFar && !c.rangedRole && desiredRangeCells < 3) {
       const reach = desiredRangeCells + MOVE_BUFFER;
       const reserved = c.attackSlot;
       const valid = (point: { x: number; y: number }) => isCellInArena(point.x, point.y)
@@ -478,7 +479,8 @@ export class BattleSim {
 
   private startCast(c: BattleCombatant, skillId: string): boolean {
     const skill = SKILL_MAP[skillId];
-    if (!skill || distCells(c.pixel, c.position) > .05) return false;
+    if (!skill || (c.actionReadyRemaining ?? 0) > 0 || distCells(c.pixel, c.position) > .05) return false;
+    c.castSupportUid = skill.effect?.target === 'ally' ? c.plan?.supportTargetUid : undefined;
     c.castAim = this.find(c.currentTargetUid) ? { ...this.find(c.currentTargetUid)!.pixel } : undefined;
     const cast = skill.castTime ?? 0;
     if (cast > 0) {
@@ -503,6 +505,7 @@ export class BattleSim {
     const skill = SKILL_MAP[skillId];
     c.castProgress = null;
     c.castAim = undefined;
+    c.castSupportUid = undefined;
     c.plan = null;
     c.nextDecisionAt = this.state.time + 0.3;
     this.emit('info', c.uid, undefined, skillId, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`, { kind: 'interrupt' });
@@ -549,11 +552,11 @@ export class BattleSim {
     switch (e.kind) {
       case 'heal':
         if (self) {
-          const requested = roundCombatAmount(self.maxHp * (e.magnitude ?? 0.5));
+          const requested = roundCombatAmount(effectiveStat(caster, 'atk') * (e.healingPower ?? 100) / 100);
           const amt = clampCombatAmount(requested, self.maxHp - self.currentHp);
           self.currentHp += amt;
           caster.healingDone += amt;
-          this.emit('heal', caster.uid, self.uid, undefined, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
+          this.emit('heal', caster.uid, self.uid, skillId, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
           if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2, caster, skillId);
         }
         break;
@@ -663,7 +666,8 @@ export class BattleSim {
     areaMultiplier = 1,
     spread?: { targetUids: string[]; hitIndex: number },
   ): { dealt: number; immune: boolean; missed?: boolean } {
-    const skill = SKILL_MAP[skillId] ?? NORMAL_ATTACK;
+    const skill = SKILL_MAP[skillId];
+    if (!skill) throw new Error(`未知招式：${skillId}`);
     const res = computeDamage(attacker, defender, skill, this.rng);
     for (const m of res.log) this.emit('info', attacker.uid, defender.uid, skillId, undefined, m);
     if (res.missed) {
@@ -696,12 +700,6 @@ export class BattleSim {
     // formation. The multiplier is applied before shields, so protection still
     // absorbs the actual incoming hit correctly.
     if (areaMultiplier !== 1) dmg = roundCombatAmount(dmg * areaMultiplier);
-    // Ranged normal attacks fire from a safe distance, so they hit softer than
-    // melee normal attacks -- a balance lever so kiting isn't free DPS. Skills
-    // (the ranged type's real weapons, with CDs) are unaffected.
-    if (skillId === NORMAL_ATTACK.id && attacker.normalIsRanged) {
-      dmg = roundCombatAmount(dmg * 0.8);
-    }
     // shield absorb
     const shieldBefore = defender.shields;
     if (defender.shields > 0) {
@@ -750,7 +748,7 @@ export class BattleSim {
     attacker.damageDealt += dmg;
     this.skillRecap(attacker, skillId).damage += dmg;
     defender.damageTaken += dmg;
-    if (skillId === NORMAL_ATTACK.id) attacker.normalDamage += dmg;
+    if (skillId === attacker.basicSkillId) attacker.basicDamage += dmg;
     else attacker.skillDamage += dmg;
     const ko = defender.currentHp <= 0;
     if (!ko && dmg > 0) this.recoverCooldownFromHit(defender, dmg);
@@ -764,7 +762,7 @@ export class BattleSim {
       impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
     });
     const attackerAbility = ABILITY_MAP[attacker.ability];
-    if (skillId !== NORMAL_ATTACK.id && skill.range === 'melee' && attackerAbility?.effect.kind === 'contactShield' && dmg > 0) {
+    if (skill.range === 'melee' && attackerAbility?.effect.kind === 'contactShield' && dmg > 0) {
       const cds = attacker.abilityCooldowns ??= {};
       if ((cds['rock-head'] ?? 0) <= 0) {
         const shield = roundCombatAmount(attacker.maxHp * (attackerAbility.effect.magnitude ?? 0.04));
@@ -775,7 +773,7 @@ export class BattleSim {
       }
     }
     const attackerAbilityForRhythm = ABILITY_MAP[attacker.ability];
-    if (skillId !== NORMAL_ATTACK.id && dmg > 0 && attackerAbilityForRhythm?.effect.kind === 'cooldownRhythm') {
+    if (dmg > 0 && attackerAbilityForRhythm?.effect.kind === 'cooldownRhythm') {
       const cds = attacker.abilityCooldowns ??= {};
       if ((cds['cooldown-rhythm'] ?? 0) <= 0) {
         const next = Object.entries(attacker.cooldowns)
@@ -788,7 +786,7 @@ export class BattleSim {
         cds['cooldown-rhythm'] = attackerAbilityForRhythm.effect.cooldown ?? 3;
       }
     }
-    if (skillId !== NORMAL_ATTACK.id && (attacker.counterInstinctUntil ?? 0) > this.state.time && dmg > 0) {
+    if ((attacker.counterInstinctUntil ?? 0) > this.state.time && dmg > 0) {
       attacker.counterInstinctUntil = 0;
       this.emit('info', attacker.uid, undefined, skillId, undefined, `${attacker.name} 释放了反制本能！`);
     }
@@ -798,8 +796,8 @@ export class BattleSim {
       // moxie
       if (attacker.ability === 'moxie' && attacker.alive) this.addStatStage(attacker, 'atk', 1);
     } else {
-      // contact on-hit abilities (a ranged normal attack does not make contact)
-      const contact = skillId === NORMAL_ATTACK.id ? !attacker.normalIsRanged : skill.range === 'melee';
+      // Contact on-hit abilities apply only to melee skill delivery.
+      const contact = skill.range === 'melee';
       this.applyOnHitAbilities(attacker, defender, contact);
     }
     return { dealt: dmg, immune: false };
@@ -817,9 +815,14 @@ export class BattleSim {
   private resolveSkill(c: BattleCombatant, skillId: string): void {
     const skill = SKILL_MAP[skillId];
     if (!skill) return;
+    this.occupyAction(c, skillId);
     c.skillCasts += 1;
     this.skillRecap(c, skillId).casts += 1;
-    c.cooldowns[skillId] = skill.cooldown * SKILL_COOLDOWN_SCALE;
+    const basic = skillId === c.basicSkillId;
+    if (basic) c.basicCasts++;
+    const rate = this.cooldownRate(c, basic);
+    (c.cooldownRates ??= {})[skillId] = rate;
+    c.cooldowns[skillId] = (basic ? getSpecies(c.speciesId).basicSkillCooldown : skill.cooldown * SKILL_COOLDOWN_SCALE) / rate;
     const target = this.find(c.currentTargetUid);
     const aim = c.castAim ?? target?.pixel;
     const targets = skillVictims(skill, c, target, this.state.combatants.filter(x => x.side !== c.side), aim);
@@ -865,9 +868,11 @@ export class BattleSim {
       if (landed && c.alive && skill.effect?.target === 'self' && this.rng() < (skill.effect.chance ?? 1)) this.applyEffect(c, c, skillId, totalDealt);
     } else {
       // Status / utility skills remain single-target or self-target.
-      this.emit('skill', c.uid, target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       const e = skill.effect;
-      const tgt = e?.target === 'enemy' ? targets[0] : c;
+      const patient = this.find(c.castSupportUid);
+      const tgt = e?.target === 'ally' ? patient && patient.alive && patient.side === c.side && distCells(c.pixel, patient.pixel) <= rangeInCells(skill) ? patient : undefined : e?.target === 'enemy' ? targets[0] : c;
+      c.castSupportUid = undefined;
+      this.emit('skill', c.uid, tgt?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       if (e?.target === 'enemy' && tgt) {
         const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
         if (this.rng() > acc) {
@@ -885,14 +890,20 @@ export class BattleSim {
     }
   }
 
-  private normalAttack(c: BattleCombatant, target: BattleCombatant): void {
-    c.normalAttacks += 1;
-    this.skillRecap(c, NORMAL_ATTACK.id).casts += 1;
-    c.normalAttackCd = c.normalAttackInterval / Math.max(0.1, c.normalAttackSpeedMultiplier);
-    const ranged = !!c.normalIsRanged;
-    const normalAttackProfile = normalAttackVisualProfileFor(c.speciesId, ranged ? 'ranged' : 'melee');
-    this.emit('attack', c.uid, target.uid, NORMAL_ATTACK.id, undefined, `${c.name} 使用了普通攻击！`, { kind: ranged ? 'projectile' : 'melee', type: normalAttackProfile.element, normalAttackStyle: normalAttackProfile.style });
-    this.dealDamage(c, target, NORMAL_ATTACK.id);
+  private occupyAction(c: BattleCombatant, skillId?: string): void {
+    const timing = battleActionTiming(skillId, !!c.rangedRole);
+    c.actionLockRemaining = timing.totalMs / 1000;
+    c.actionReadyRemaining = c.actionLockRemaining + actionGapForSpeed(effectiveStat(c, 'spd'));
+    c.plan = null;
+  }
+
+  private cooldownRate(c: BattleCombatant, basic: boolean): number {
+    let passive = 1;
+    for (const id of c.passiveSkills) {
+      const effect = PASSIVE_MAP[id]?.effect;
+      if (effect?.kind === 'cdReduction' && effect.mult) passive *= effect.mult;
+    }
+    return Math.min(2.5, skillCooldownRate(effectiveStat(c, 'spd'), basic) * (2 - passive)) * ((c.pressureUntil ?? 0) > this.state.time ? .85 : 1);
   }
 
   private checkWin(): void {
@@ -966,16 +977,15 @@ export class BattleSim {
     // global cooldown speed-up from passives (灵巧)
     for (const c of this.state.combatants) {
       if (!c.alive) continue;
-      let cdr = 1;
-      for (const pid of c.passiveSkills) {
-        const p = PASSIVE_MAP[pid];
-        if (p?.effect.kind === 'cdReduction' && p.effect.mult) cdr *= p.effect.mult;
+      for (const id of Object.keys(c.cooldowns)) {
+        const rate = this.cooldownRate(c, id === c.basicSkillId);
+        const rates = c.cooldownRates ??= {};
+        c.cooldowns[id] = Math.max(0, c.cooldowns[id]! * (rates[id] ?? 1) / rate - dt);
+        rates[id] = rate;
       }
-      const pressured = (c.pressureUntil ?? 0) > this.state.time;
-      const pressureMult = pressured ? 0.85 : 1;
-      for (const id of Object.keys(c.cooldowns)) c.cooldowns[id] = Math.max(0, c.cooldowns[id]! - dt * (2 - cdr) * pressureMult);
       for (const id of Object.keys(c.abilityCooldowns ?? {})) c.abilityCooldowns![id] = Math.max(0, c.abilityCooldowns![id]! - dt);
-      c.normalAttackCd = Math.max(0, c.normalAttackCd - dt);
+      c.actionLockRemaining = Math.max(0, (c.actionLockRemaining ?? 0) - dt);
+      c.actionReadyRemaining = Math.max(0, (c.actionReadyRemaining ?? 0) - dt);
       c.moveCd = Math.max(0, (c.moveCd ?? 0) - dt);
       this.statusTick(c, dt);
       if ((c.counterInstinctUntil ?? 0) <= this.state.time) c.counterInstinctUntil = 0;
@@ -1006,7 +1016,7 @@ export class BattleSim {
         continue;
       }
       // status that fully blocks action (no roll, just skip every frame)
-      if (c.status === 'sleep' || c.status === 'freeze') continue;
+      if (c.status === 'sleep' || c.status === 'freeze' || (c.actionLockRemaining ?? 0) > 0) continue;
       // decision refresh - paralyze/confuse only roll on a decision tick.
       // (Gating here is critical: rolling every frame at 60fps made confuse
       // self-hit ~20x/sec ~= 160% maxHp/sec -> instant suicide. Now ~once per
@@ -1039,28 +1049,26 @@ export class BattleSim {
       if (!target || !target.alive) { c.plan = null; continue; }
       // movement (grid step)
       const readySkill = c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0 ? SKILL_MAP[c.plan.preferredSkillId] : undefined;
-      const preparing = readySkill && (readySkill.power === 0 && readySkill.effect?.target !== 'enemy' || distCells(c.pixel, target.pixel) <= rangeInCells(readySkill));
-      const needsSpace = c.normalIsRanged && distCells(c.position, target.position) < c.plan.desiredRangeCells - 1
+      const preparing = (c.actionReadyRemaining ?? 0) <= 0 && readySkill && (readySkill.power === 0 && readySkill.effect?.target !== 'enemy' || distCells(c.pixel, target.pixel) <= rangeInCells(readySkill));
+      const needsSpace = c.rangedRole && distCells(c.position, target.position) < c.plan.desiredRangeCells - 1
         || this.state.combatants.some(ally => ally.alive && ally.uid !== c.uid && ally.side === c.side && distCells(c.position, ally.position) < BATTLE_MOVEMENT.allyDestinationClearance);
-      if (!preparing || needsSpace) this.stepMove(c, target, c.plan.desiredRangeCells);
+      const supportTarget = c.plan.supportTargetUid ? this.find(c.plan.supportTargetUid) : undefined;
+      if (supportTarget && readySkill && distCells(c.pixel, supportTarget.pixel) > rangeInCells(readySkill)) {
+        if ((c.moveCd ?? 0) <= 0) this.tryStepToward(c, supportTarget.position, false, rangeInCells(readySkill) - .5);
+      } else if (!preparing || needsSpace) this.stepMove(c, target, c.plan.desiredRangeCells);
       // action
       if (c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0) {
         const skill = SKILL_MAP[c.plan.preferredSkillId];
         if (skill) {
           const selfCast = skill.power === 0 && skill.effect?.target !== 'enemy';
-          if ((selfCast || distCells(c.pixel, target.pixel) <= rangeInCells(skill)) && this.startCast(c, c.plan.preferredSkillId)) {
+          const allyReady = skill.effect?.target !== 'ally' || supportTarget?.alive && distCells(c.pixel, supportTarget.pixel) <= rangeInCells(skill);
+          if (allyReady && (selfCast || distCells(c.pixel, target.pixel) <= rangeInCells(skill)) && this.startCast(c, c.plan.preferredSkillId)) {
             c.plan = null;
             continue;
           }
         }
       }
-      // normal attack fallback. A ranged-type pokemon fires from range, so it
-      // keeps dealing damage while kiting (advancing or backing off) between
-      // skill CDs; the range is per-combatant (normalRangeCells). Direction of
-      // the preceding stepMove is irrelevant -- in-range => can fire.
-      if (distCells(c.pixel, target.pixel) <= (c.normalRangeCells ?? MELEE_RANGE_CELLS) && c.normalAttackCd <= 0) {
-        this.normalAttack(c, target);
-      }
+
     }
     this.handleBenches();
     this.checkWin();
