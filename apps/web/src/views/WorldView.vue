@@ -94,6 +94,7 @@ let last = 0;
 let raf = 0;
 let lastEncounter = 0;
 let leaving = false; // true once we navigate away to battle: stops world side-effects during the route fade
+watch(() => battle.sim, sim => { if (!sim) { leaving = false; heldDir = null; moveAnim = null; } });
 
 function syncViewFromSave(): void {
   if (!game.save) return;

@@ -37,6 +37,7 @@ let raf = 0;
 
 const sim = computed<BattleSim | null>(() => battle.sim);
 function onPixiReady(): void {
+  if (battle.phase === 'loading') battle.assetsReady = true;
   gpuUnavailable.value = null;
   pixiStatus.value = 'GPU 标准品质 renderer';
 }
@@ -178,7 +179,7 @@ function frame(now: number): void {
   const realDt = Math.min(0.05, (now - (frame as unknown as { last?: number }).last!) / 1000);
   (frame as unknown as { last?: number }).last = now;
   const s = sim.value;
-  if (s && !ended.value) {
+  if (s && battle.phase === 'fighting' && !ended.value) {
     const dtScaled = running.value ? realDt * speed.value : 0;
     // Authoritative simulation is intentionally never slowed for spectacle.
     if (!s.isOver && running.value) {
@@ -201,7 +202,7 @@ function frame(now: number): void {
   // Do not cover the canvas the instant the simulator decides a winner. The
   // final delayed event (especially a KO burst/faint) must finish its local VFX
   // before the result modal becomes visible.
-  if (s && s.isOver && !ended.value && presentationCaughtUp && activeRendererSettled()) onEnd();
+  if (s && battle.phase === 'fighting' && s.isOver && !ended.value && presentationCaughtUp && activeRendererSettled()) onEnd();
   if (!ended.value) raf = requestAnimationFrame(frame);
 }
 function onEnd(): void {
@@ -305,7 +306,7 @@ async function leave(): Promise<void> {
 
 function skip(): void {
   const s = sim.value;
-  if (!s || ended.value) return;
+  if (!s || ended.value || battle.phase !== 'fighting') return;
   if (!s.isOver) s.resolve(180);
   // Skip omits remaining choreography, including while paused. Publish the
   // authoritative final snapshot and dispose the visual work being skipped.
@@ -330,7 +331,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
 <template>
   <div class="battle" v-if="sim">
-    <div class="battle-toolbar">
+    <div class="battle-toolbar" v-if="battle.phase === 'fighting'">
       <span class="bold tiny">{{ running ? '自动战斗中' : ended ? '战斗结束' : '战斗已暂停' }}</span>
       <div class="arena-controls">
         <button class="sm ghost" :disabled="ended" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
@@ -347,7 +348,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
-        <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" :intro-transition="!!enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId)" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
+        <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" require-assets @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>

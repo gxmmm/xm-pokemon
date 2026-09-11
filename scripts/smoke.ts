@@ -34,6 +34,7 @@ import { runVisualRuntimeFixture, VISUAL_RUNTIME_BATTLE_FIXTURES } from './visua
 import { testCombatantSprite } from './combatant-sprite-smoke.ts';
 import { testBattleStageLifecycle } from './battle-stage-lifecycle-smoke.ts';
 import { testCombatantMotion } from './combatant-motion-smoke.ts';
+import { testBattleEntry } from './battle-entry-smoke.ts';
 import { testSkillVfx } from './skill-vfx-smoke.ts';
 import { testBattleAnchors } from './battle-anchor-smoke.ts';
 import { testBattleCueTiming } from './battle-cue-timing-smoke.ts';
@@ -52,6 +53,7 @@ await testProgress();
 await testCombatantSprite();
 await testBattleStageLifecycle();
 testCombatantMotion();
+testBattleEntry();
 testBattleMovement();
 testSkillVfx();
 testBattleAnchors();

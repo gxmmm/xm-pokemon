@@ -12,114 +12,127 @@ let serverLog = '';
 server.stdout.on('data', (data) => { serverLog += data; });
 server.stderr.on('data', (data) => { serverLog += data; });
 let browser: Browser | undefined;
-let releaseSprites = () => {};
 try {
   await mkdir(OUTPUT, { recursive: true });
   let ready = false;
   for (let attempt = 0; attempt < 150; attempt++) {
     assert(server.exitCode === null, serverLog);
-    try { ready = (await fetch(BASE)).ok; } catch { /* preview startup */ }
+    try { ready = (await fetch(BASE)).ok; } catch { /* 等待预览 */ }
     if (ready) break;
-    await new Promise((done) => setTimeout(done, 200));
+    await new Promise(done => setTimeout(done, 200));
   }
   assert(ready, serverLog);
   browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.stack ?? error.message));
-  await page.addInitScript(() => localStorage.setItem('po_token', 'isolated-battle-loading'));
-  let save: unknown = null;
-  await page.route(`${BASE}/api/**`, async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    const ok = (data: unknown) => route.fulfill({ json: { ok: true, data } });
-    if (path === '/api/me') return ok({ playerId: 'isolated', username: '加载验收', createdAt: 0 });
-    if (path === '/api/save') {
-      if (route.request().method() === 'PUT') { save = route.request().postDataJSON().save; return ok({ savedAt: Date.now() }); }
-      return ok({ save });
-    }
-    return route.fulfill({ status: 500, json: { ok: false, error: 'Unexpected isolated API' } });
-  });
-  await page.goto(`${BASE}/new?renderer-observation=1`);
-  await page.locator('.starter').nth(1).click();
-  await page.getByRole('button', { name: /就决定是你了/ }).click();
-  await page.waitForURL('**/world');
-  await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.has('battle'));
-  console.log('loading: isolated world ready');
-  await page.clock.install({ time: new Date('2026-09-11T00:00:00Z') });
-  await page.clock.pauseAt(new Date('2026-09-11T00:01:00Z'));
-  const spriteGate = new Promise<void>((done) => { releaseSprites = done; });
-  let spriteRequested = false;
-  // 保留慢资源加载回归，只拦截当前 PMD 图集。像素场景不依赖网络图片。
-  await page.route(/\/sprites\/pmd-v1\/.*\.png$/, async route => {
-    spriteRequested = true;
-    await spriteGate;
-    await route.continue();
-  });
-  await page.evaluate(async () => {
-    // Production Vue retains its app globals. Only this fresh, mocked session is used.
-    const globals = (document.querySelector('#app') as any).__vue_app__.config.globalProperties;
-    const game = globals.$pinia._s.get('game');
-    const battle = globals.$pinia._s.get('battle');
-    const enemies = [18, 6, 16].map((speciesId, index) => ({ ...JSON.parse(JSON.stringify(game.rosterInstances[0])), uid: `loading-enemy-${index}`, speciesId, level: 7 }));
-    assertStarted(battle.startWild(enemies, 'illusion-tower-1'));
-    await globals.$router.push('/battle');
-    function assertStarted(started: boolean) { if (!started) throw new Error('No battle created'); }
-  });
-  const viewport = page.locator('.pixi-battle-viewport');
-  for (let attempt = 0; attempt < 100 && !await viewport.locator('canvas').count(); attempt++) {
-    await page.clock.runFor(20);
-    await page.waitForTimeout(50);
+  const reports: unknown[] = [];
+  for (const kind of ['fast', 'slow', 'timeout', 'failure', 'pvp-timeout'] as const) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    let release = () => {};
+    try {
+      let save: unknown = null;
+      await page.addInitScript(() => localStorage.setItem('po_token', 'isolated-battle-entry'));
+      await page.route(`${BASE}/api/**`, async route => {
+        const path = new URL(route.request().url()).pathname;
+        const ok = (data: unknown) => route.fulfill({ json: { ok: true, data } });
+        if (path === '/api/friends') return ok({ friends: [] });
+        if (path === '/api/me') return ok({ playerId: 'isolated', username: '入口验收', createdAt: 0 });
+        if (path === '/api/save') {
+          if (route.request().method() === 'PUT') { save = route.request().postDataJSON().save; return ok({ savedAt: Date.now() }); }
+          return ok({ save });
+        }
+        return route.fulfill({ status: 500, json: { ok: false, error: 'Unexpected isolated API' } });
+      });
+      await page.goto(`${BASE}/new?renderer-observation=1`);
+      await page.locator('.starter').nth(1).click();
+      await page.getByRole('button', { name: /就决定是你了/ }).click();
+      await page.waitForURL('**/world');
+      await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.has('battle'));
+      const origin = kind === 'pvp-timeout' ? '/pvp' : '/world';
+      if (origin === '/pvp') await page.evaluate(async () => {
+        const globals = (document.querySelector('#app') as any).__vue_app__.config.globalProperties;
+        const game = globals.$pinia._s.get('game');
+        game.save.pvpTeam = [game.rosterInstances[0].uid];
+        await globals.$router.push('/pvp');
+      });
+      await page.clock.install({ time: new Date('2026-09-11T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-11T00:01:00Z'));
+      const read = () => page.evaluate(() => {
+        const stores = (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s;
+        const battle = stores.get('battle');
+        return { now: performance.now(), time: battle.sim?.state.time ?? null, phase: battle.phase, ready: battle.assetsReady,
+          save: JSON.stringify(stores.get('game').save), path: location.pathname };
+      });
+      const before = await read();
+      let requested = false;
+      const gate = new Promise<void>(done => { release = done; });
+      await page.route(/\/sprites\/pmd-v1\/.*\.(png|json)$/, async route => {
+        requested = true;
+        if (kind === 'failure') {
+          // 未显示方向也必须就绪，不能把 Promise 完成当成素材成功。
+          if (route.request().url().endsWith('/0018/back.json')) return route.fulfill({ status: 404, body: 'missing' });
+        } else await gate;
+        await route.continue();
+      });
+      await page.evaluate(async (pvp) => {
+        const globals = (document.querySelector('#app') as any).__vue_app__.config.globalProperties;
+        const game = globals.$pinia._s.get('game');
+        const battle = globals.$pinia._s.get('battle');
+        const enemies = [18, 6, 16].map((speciesId, i) => ({ ...JSON.parse(JSON.stringify(game.rosterInstances[0])), uid: `entry-enemy-${i}`, speciesId, level: 7 }));
+        if (!(pvp ? battle.startPvp(enemies, '入口验收') : battle.startWild(enemies, 'illusion-tower-1'))) throw new Error('No battle created');
+        await globals.$router.push('/battle');
+      }, kind === 'pvp-timeout');
+      await page.locator('.battle-entry').waitFor();
+      assert.equal((await read()).save, before.save, '进入等待不能写入发现记录或其他存档字段');
+      for (let attempt = 0; attempt < 100 && !requested; attempt++) {
+        await page.clock.runFor(20); await page.waitForTimeout(50);
+      }
+      assert(requested);
+      assert.equal((await read()).time, 0, '等待时战斗模拟完全停止');
+      assert.equal(await page.locator('.battle-toolbar').count(), 0, '过场无跳过、倍速和暂停操作');
+      assert(await page.locator('main').evaluate(element => element.hasAttribute('inert')));
+      await page.keyboard.press('Space');
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('ArrowRight');
+      assert.equal((await read()).time, 0);
+      assert.equal((await read()).save, before.save);
+      await page.screenshot({ path: resolve(OUTPUT, `${kind}-transition.png`), animations: 'disabled' });
+      if (kind === 'fast' || kind === 'slow') {
+        if (kind === 'slow') await page.clock.runFor(Math.max(0, 2000 - ((await read()).now - before.now)));
+        release();
+        await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.get('battle').assetsReady, undefined, { polling: 50 });
+        const prepared = await read();
+        if (prepared.now - before.now < 1000) {
+          assert.equal(prepared.phase, 'loading'); assert.equal(prepared.time, 0);
+          await page.clock.runFor(1001 - (prepared.now - before.now));
+        }
+        assert.equal((await read()).phase, 'fighting');
+        await page.clock.runFor(100);
+        assert((await read()).time! > 0, '就绪后才开始模拟');
+        assert.equal(await page.locator('.battle-entry').count(), 0);
+        await page.screenshot({ path: resolve(OUTPUT, `${kind}-started.png`), animations: 'disabled' });
+      } else {
+        await page.clock.runFor(Math.max(0, 9999 - ((await read()).now - before.now)));
+        assert.equal((await read()).time, 0);
+        await page.clock.runFor(2);
+        await page.waitForURL(`**${origin}`);
+        await page.clock.runFor(300);
+        const cancelled = await read();
+        assert.equal(cancelled.time, null);
+        assert.equal(cancelled.save, before.save, '超时不得产生奖励、图鉴、治疗、捕获、战绩或位置变化');
+        assert(await page.getByText('网络异常，战斗资源未能加载，已返回原场景。', { exact: true }).count());
+        release(); await page.waitForTimeout(200); await page.clock.runFor(300);
+        assert.equal((await read()).path, origin, '迟到资源不能重新进入战斗');
+        assert.equal(await page.locator('.pixi-battle-viewport').count(), 0);
+        await page.screenshot({ path: resolve(OUTPUT, `${kind}-returned.png`), animations: 'disabled' });
+      }
+      assert.deepEqual(errors, []);
+      reports.push({ kind, passed: true });
+      console.log(`✓ 战斗过场 ${kind}`);
+    } finally { release(); await page.close(); }
   }
-  await viewport.locator('canvas').waitFor();
-  console.log('loading: battle canvas mounted');
-  for (let attempt = 0; attempt < 100 && !spriteRequested; attempt++) await page.waitForTimeout(50);
-  assert(spriteRequested, 'PMD sprite request not intercepted: ' + JSON.stringify({ errors, body: await page.locator('body').innerText() }));
-  // 固定玩法时钟，资源等待使用真实时间，不与自然结算争抢暂停按钮。
-  await page.clock.runFor(50);
-  const diagnostics = () => page.evaluate(() => {
-    function find(vnode: any): any {
-      if (!vnode) return null;
-      const exposed = vnode.component?.exposed;
-      if (exposed?.getDiagnostics) {
-        const result = exposed.getDiagnostics();
-        if ('combatantCount' in result) return result;
-      }
-      const subtree = find(vnode.component?.subTree);
-      if (subtree) return subtree;
-      for (const child of Array.isArray(vnode.children) ? vnode.children : []) {
-        const result = find(child);
-        if (result) return result;
-      }
-      return null;
-    }
-    const result = find((document.querySelector('#app') as any)._vnode);
-    if (!result) throw new Error('Missing exposed battle diagnostics');
-    return result;
-  });
-  assert.equal((await diagnostics()).combatantCount, 4, 'pending assets must not prevent actor creation');
-  console.log('loading: four actors exist with art pending');
-  await page.clock.runFor(50);
-  assert.equal(await page.evaluate(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle ?? 0), 0, 'test must still be waiting for art');
-  assert((await diagnostics()).drawCallTotal > 0);
-  await viewport.screenshot({ path: resolve(OUTPUT, 'pmd-pending.png') });
-  releaseSprites();
-  await page.waitForTimeout(1500);
-  await page.clock.runFor(50);
-  assert.equal((await diagnostics()).combatantCount, 4);
-  assert.equal(await page.locator('.gpu-unavailable').count(), 0);
-  await page.waitForFunction(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle === 1);
-  assert.equal((await diagnostics()).combatantCount, 4, '迟到的PMD加载不能替换正在运行的角色');
-  await viewport.screenshot({ path: resolve(OUTPUT, 'loaded.png') });
-  await page.evaluate(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$router.push('/world'));
-  await page.waitForURL('**/world');
-  await page.clock.runFor(500);
-  assert.equal(await page.locator('.pixi-battle-viewport').count(), 0);
-  assert.deepEqual(errors, []);
-  await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true,
-    checks: ['pmd-pending-actors', 'pixel-environment-ready', 'late-sprites-preserve-count', 'exit-clean'], errors }, null, 2));
-  console.log('✓ 发布产物：PMD等待期间4名角色和像素场景已显示，迟到加载保留角色，退出正常');
+  await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, reports }, null, 2));
 } finally {
-  releaseSprites();
   await browser?.close();
   server.kill();
 }

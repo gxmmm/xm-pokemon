@@ -1,5 +1,5 @@
 import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
-import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, PIXEL_ART_STYLE } from '@pokemon-online/config';
+import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, battleUiAssetsFor, PIXEL_ART_STYLE } from '@pokemon-online/config';
 import { Application, Container, Graphics } from 'pixi.js';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -39,6 +39,8 @@ export class BattleStage implements BattleRenderer {
   private readonly effectPool = new BattleEffectPool();
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
   private readonly battleArtAssets = new BattleArtAssetLoader();
+  private requiredArt: ReturnType<typeof resolveBattleArtPresentation>[] = [];
+  private requiredIcons: ReturnType<typeof battleUiAssetsFor> = [];
   private readonly combatants = new BattleCombatantLayer(this.battleArtAssets, this.terrainContacts);
   private readonly vfx = new BattleVfxExecutor(this.effectPool,
     (uid) => this.combatants.getPosition(uid),
@@ -192,7 +194,10 @@ export class BattleStage implements BattleRenderer {
     if (!this.app) return;
     const lifecycle = this.lifecycleVersion;
     const battle = ++this.battleVersion;
-    const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).asset);
+    this.requiredArt = input.combatants.flatMap(combatant => ([1, -1] as const).map(facing =>
+      resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing })));
+    this.requiredIcons = input.combatants.flatMap(combatant => battleUiAssetsFor(combatant.speciesId));
+    const entries = [...this.requiredArt.map(art => art.asset), ...this.requiredIcons];
     // Actors and their configured fallbacks must exist before any network wait.
     // 角色图片加载期间也必须显示像素场景与角色兜底。
     this.effectPool.clear();
@@ -211,6 +216,12 @@ export class BattleStage implements BattleRenderer {
   applyBattleSnapshot(snapshot: BattleRenderSnapshot): void {
     if (!this.app) return;
     this.combatants.applySnapshot(snapshot, this.biomeId);
+  }
+
+  areAssetsReady(): boolean {
+    return !!this.app && this.requiredArt.length > 0 && this.requiredIcons.every(asset => this.battleArtAssets.isTextureReady(asset)) && this.requiredArt.every(({ asset, profile }) =>
+      !!this.battleArtAssets.getLoadedMetadata(asset) && Object.values(profile.motions).every(motion =>
+        !!this.battleArtAssets.getLoadedClip(asset, motion.id)?.length));
   }
 
   async playBattleCues(cues: readonly BattleCue[]): Promise<void> {

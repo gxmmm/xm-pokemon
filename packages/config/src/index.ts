@@ -17,3 +17,4 @@ export * from './battle-art.ts';
 export * from './battle-pmd.ts';
 export * from './battle-movement.ts';
 export * from './battle-hud.ts';
+export * from './battle-entry.ts';

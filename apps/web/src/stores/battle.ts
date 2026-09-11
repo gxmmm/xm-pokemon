@@ -4,7 +4,7 @@ import type { PokemonInstance } from '@pokemon-online/shared';
 import { BattleSim, createPvpBattle } from '@pokemon-online/engine';
 import { useGameStore, type ExpGainResult } from './game.ts';
 
-export type BattlePhase = 'fighting' | 'result';
+export type BattlePhase = 'loading' | 'fighting' | 'result';
 
 export const useBattleStore = defineStore('battle', () => {
   const sim = shallowRef<BattleSim | null>(null);
@@ -14,6 +14,7 @@ export const useBattleStore = defineStore('battle', () => {
   const mapId = ref<string | undefined>(undefined);
   const opponentName = ref<string | undefined>(undefined);
   const phase = ref<BattlePhase>('fighting');
+  const assetsReady = ref(false);
   let rewardsGranted = false;
 
   /**
@@ -25,12 +26,12 @@ export const useBattleStore = defineStore('battle', () => {
     const team = game.pveTeamInstances.filter((p) => p.currentHp > 0);
     const playerTeam = team.length ? team : game.rosterInstances.filter((p) => p.currentHp > 0).slice(0, 3);
     if (playerTeam.length === 0) return false;
-    for (const inst of insts) game.see(inst.speciesId);
     wild.value = insts;
     mapId.value = mId;
     mode.value = 'pve';
     opponentName.value = undefined;
-    phase.value = 'fighting';
+    phase.value = 'loading';
+    assetsReady.value = false;
     rewardsGranted = false;
     sim.value = BattleSim.fromInstances({
       mode: 'pve',
@@ -53,7 +54,8 @@ export const useBattleStore = defineStore('battle', () => {
     mapId.value = undefined;
     mode.value = 'pvp';
     opponentName.value = name;
-    phase.value = 'fighting';
+    phase.value = 'loading';
+    assetsReady.value = false;
     rewardsGranted = false;
     sim.value = createPvpBattle(team, opponentTeam, game.save?.settings.battleSpeed ?? 1, game.save?.formation);
     return true;
@@ -70,11 +72,18 @@ export const useBattleStore = defineStore('battle', () => {
   }
 
   function clear(): void {
+    assetsReady.value = false;
     sim.value = null;
     wild.value = [];
     phase.value = 'fighting';
     rewardsGranted = false;
   }
 
-  return { sim, mode, wild, mapId, opponentName, phase, startWild, startPvp, grantVictoryExp, clear };
+  function begin(): void {
+    if (!sim.value || phase.value !== 'loading' || !assetsReady.value) return;
+    phase.value = 'fighting';
+    if (mode.value === 'pve') for (const instance of wild.value) useGameStore().see(instance.speciesId);
+  }
+
+  return { sim, mode, wild, mapId, opponentName, phase, assetsReady, begin, startWild, startPvp, grantVictoryExp, clear };
 });

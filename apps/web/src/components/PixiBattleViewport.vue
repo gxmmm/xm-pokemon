@@ -10,6 +10,7 @@ const props = defineProps<{
   cues?: readonly DirectedBattleCue[];
   biome: string;
   introTransition?: boolean;
+  requireAssets?: boolean;
 }>();
 const emit = defineEmits<{
   ready: [];
@@ -74,6 +75,7 @@ onMounted(async () => {
     while (!disposed && props.presentation && (entering || enteredBiome !== props.biome)) await syncPresentation();
     if (disposed) return;
     await syncCues();
+    if (props.requireAssets && !stage.areAssetsReady()) throw new Error('战斗资源未完整加载');
     if (disposed) return;
     if (props.introTransition) await stage.transition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
     if (disposed) return;

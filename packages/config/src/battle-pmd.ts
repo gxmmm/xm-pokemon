@@ -35,3 +35,7 @@ export const PMD_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = SPECIES_
 export function pokemonIconUrl(speciesId: number, back = false): string {
   return PMD_ASSETS.find((asset) => asset.id === `pmd:${speciesId}:${back ? 'back' : 'front'}:icon`)?.url ?? '';
 }
+
+export function battleUiAssetsFor(speciesId: number): readonly BattleAssetManifestEntry[] {
+  return PMD_ASSETS.filter(asset => asset.id === `pmd:${speciesId}:front:icon` || asset.id === `pmd:${speciesId}:back:icon`);
+}

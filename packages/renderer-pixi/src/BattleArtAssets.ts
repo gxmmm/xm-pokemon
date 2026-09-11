@@ -10,6 +10,8 @@ export class BattleArtAssetLoader {
   private readonly readyClips = new Map<string, readonly Texture[]>();
   private readonly readyMetadata = new Map<string, BattleArtSpriteSheetMetadata>();
   private generation = 0;
+  private readonly loadedTextures = new Set<string>();
+  isTextureReady(entry: BattleAssetManifestEntry) { return this.loadedTextures.has(entry.id); }
 
   getLoadedClip(entry: BattleAssetManifestEntry, motion: BattleArtMotionId) { return this.readyClips.get(`${entry.id}:${motion}`); }
   getLoadedMetadata(entry: BattleAssetManifestEntry) { return this.readyMetadata.get(entry.id); }
@@ -18,10 +20,12 @@ export class BattleArtAssetLoader {
     if (!isSpriteAsset(entry.kind) || !entry.url) return Promise.resolve(null);
     const cached = this.textureRequests.get(entry.id);
     if (cached) return cached;
+    const generation = this.generation;
     const request = Assets.load(entry.url)
       .then((asset) => {
         if (!(asset instanceof Texture)) return null;
         asset.source.scaleMode = 'nearest';
+        if (generation === this.generation) this.loadedTextures.add(entry.id);
         return asset;
       })
       .catch(() => null);
@@ -98,6 +102,7 @@ export class BattleArtAssetLoader {
 
   clear(): void {
     this.generation++;
+    this.loadedTextures.clear();
     this.readyClips.clear();
     this.readyMetadata.clear();
     this.textureRequests.clear();
