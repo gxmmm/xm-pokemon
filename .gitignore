@@ -14,3 +14,8 @@ doc/visual-baselines
 .hermes
 .codex*
 .agents
+# 本地素材下载缓存、调研样图与弃用草稿；正式素材仍由 Git 跟踪。
+/art-source/pmd-source-v1/
+/art-source/resource-audit/
+/art-source/emberwing-v1/
+/art-source/flame-wing-v6/
