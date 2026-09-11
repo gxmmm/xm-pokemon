@@ -186,6 +186,16 @@ export async function testCombatantSprite(): Promise<void> {
   sprite.scale.x *= -1;
 
   const afterUnmount = deferred<Texture | null>();
+  const cachedSprite = new CombatantSprite({ ...assets,
+    getLoadedClip: (_asset, motion) => motion === 'cast' ? [nativeFrames[1]!] : [nativeFrames[0]!],
+    getLoadedMetadata: () => nativeMetadata,
+  }, { visible: true }, () => false);
+  await cachedSprite.setAsset(sheet, 'charge');
+  const switching = cachedSprite.setMotion(sheet, 'cast');
+  assert.equal(cachedSprite.texture, nativeFrames[1], '已加载动作在同一调用栈内显示释放帧');
+  assert.deepEqual(cachedSprite.getFrameAnchor('muzzle'), { x: 20, y: -30 }, 'VFX 紧接动作 cue 时读到新姿态出口');
+  await switching;
+  cachedSprite.destroy();
   staticRequests.set(staticAsset.id, afterUnmount.promise);
   const unmountedLoad = sprite.setAsset(staticAsset, 'idle');
   const beforeUnmount = sprite.texture;

@@ -88,5 +88,23 @@ export function testBattleAnchors(): void {
   assert(Math.abs(orb.getLocalBounds().x - firstBounds.x) < 10, 'released projectile does not jump back to the moved caster');
   pool.clear();
   pool.container.destroy();
+  const electricPool = new BattleEffectPool();
+  const electric = new BattleVfxExecutor(electricPool, uid => uid === 'caster' ? actor : target,
+    (uid, anchor) => anchor === 'body' ? { x: uid === 'caster' ? 400 : 800, y: 100 } : undefined);
+  for (const skill of ['thunder-shock', 'thunderbolt', 'volt-chain']) {
+    const plans = makePlans(skill);
+    assert(plans.every(plan => plan.actorAnchor === 'body'), '放电配方使用身体挂点');
+  }
+  assert.equal(electric.spawnPlans(makePlans('volt-chain'), BATTLE_ENVIRONMENTS.grass), 1);
+  electricPool.update(0.1);
+  const bounds = electricPool.container.children[0]!.getBounds();
+  assert(bounds.y + bounds.height < 200, '连锁闪电连接身体高度，而不是双方地面根坐标');
+  electricPool.clear();
+  const absent = new BattleVfxExecutor(electricPool, () => actor, () => undefined);
+  assert.equal(absent.spawnPlans(makePlans('volt-chain'), BATTLE_ENVIRONMENTS.grass), 0, '缺失身体挂点时不生成悬空电链');
+  const noTarget = new BattleVfxExecutor(electricPool, () => actor,
+    uid => uid === 'caster' ? { x: 400, y: 100 } : undefined);
+  assert.equal(noTarget.spawnPlans(makePlans('volt-chain'), BATTLE_ENVIRONMENTS.grass), 0, '目标身体挂点缺失时不回退到地面根坐标');
+  electricPool.container.destroy();
   console.log('✓ configured VFX anchors, facing/pose/projection, live beam attachment and detached projectiles');
 }

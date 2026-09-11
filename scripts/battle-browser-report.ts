@@ -112,12 +112,12 @@ async function main(): Promise<void> {
       console.log('✓ deterministic 3v3 camera spacing samples');
       return;
     }
-    if (process.argv.includes('--skills-only')) {
+    if (process.argv.includes('--skills-only') || process.argv.includes('--anchors-only')) {
       await page.clock.install({ time: new Date('2026-09-07T00:00:00Z') });
       await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));
-      await checkSkillShowcases(page, OUTPUT, process.argv.includes('--before'));
+      await checkSkillShowcases(page, OUTPUT, process.argv.includes('--before'), process.argv.includes('--anchors-only'));
       assert.deepEqual(errors, []);
-      console.log('✓ six skill families and four PMD casting/size variants in both directions');
+      console.log('✓ 双向技能/释放挂点专项通过');
       return;
     }
     if (process.argv.includes('--natural-only')) {

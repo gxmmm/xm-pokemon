@@ -2,7 +2,7 @@ import type { BattleArtAnchorId, BattleArtMotionId, BattleArtSpriteSheetMetadata
 import { Sprite, Texture } from 'pixi.js';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
 
-type SpriteAssets = Pick<BattleArtAssetLoader, 'load' | 'loadClip' | 'loadMetadata'>;
+type SpriteAssets = Pick<BattleArtAssetLoader, 'load' | 'loadClip' | 'loadMetadata'> & Partial<Pick<BattleArtAssetLoader, 'getLoadedClip' | 'getLoadedMetadata'>>;
 export const BATTLE_SPRITE_DISPLAY_HEIGHT = 106;
 interface OpaqueFrame { left: number; top: number; right: number; bottom: number; }
 const opaqueFrames = new WeakMap<Texture, OpaqueFrame>();
@@ -138,6 +138,17 @@ export class CombatantSprite extends Sprite {
   }
 
   private async loadClip(asset: BattleAssetManifestEntry, motion: BattleArtMotionId, token: number): Promise<void> {
+    const ready = this.assets.getLoadedClip?.(asset, motion);
+    const readyMetadata = this.assets.getLoadedMetadata?.(asset);
+    // 同一 cue 批次内先切释放帧，再让 VFX 读取该帧的出口，不能等待微任务。
+    if (ready?.length && readyMetadata && this.isCurrent(token)) {
+      this.metadata = readyMetadata;
+      this.holdLastFrame = readyMetadata.clips[motion]?.holdLastFrame ?? false;
+      this.frames = ready;
+      this.fps = readyMetadata.fps;
+      this.updateFrame();
+      return;
+    }
     const framesForMotion = this.assets.loadClip(asset, motion).then((frames) => {
       // Missing recover/action clips reuse declared idle frames. Check the
       // token before issuing the fallback so obsolete work stops here too.

@@ -461,7 +461,10 @@ testBattleCamera();
     ['target-a', { x: 780, y: 350 }],
     ['target-b', { x: 920, y: 430 }],
   ]);
-  const executor = new BattleVfxExecutor(runtime, (uid) => positions.get(uid));
+  const executor = new BattleVfxExecutor(runtime, (uid) => positions.get(uid), uid => {
+    const root = positions.get(uid);
+    return root ? { x: root.x, y: root.y - 30 } : undefined;
+  });
   const environment = BATTLE_ENVIRONMENTS.grass;
   const plans: readonly BattleStageVfxPlan[] = [
     { primitive: 'projectile', element: 'fire', intensity: 0.8, actorId: 'actor', targetIds: ['target-a'] },

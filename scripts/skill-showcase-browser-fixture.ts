@@ -24,8 +24,8 @@ export async function createSkillShowcaseFixture() {
   const stage = new BattleStage(); await stage.mount(host);
 
   return {
-    async play(index: number, reverse: boolean) {
-      const entry = SKILL_SHOWCASES[index]!;
+    async play(index: number, reverse: boolean, species?: number) {
+      const entry = { ...SKILL_SHOWCASES[index]!, ...(species ? { species } : {}) };
       const melee = SKILL_MAP[entry.id]!.range === 'melee';
       const sim = new BattleSim({ mode: 'pvp', player: [createWildInstance(entry.species, 100, { rng: () => 0.5 })],
         enemy: [createWildInstance(143, 100, { rng: () => 0.5 })], seed: 904 });
@@ -40,7 +40,7 @@ export async function createSkillShowcaseFixture() {
       const release = cues.find(({ cue }) => cue.type === 'vfx' && cue.eventType === 'skill')!.cue;
       const hit = cues.find(({ cue }) => cue.type === 'vfx' && cue.eventType === 'damage')!.cue;
       await stage.playBattleCues(cues.map(({ cue }) => cue).filter((cue) => cue.type !== 'camera'));
-      return { id: entry.id, releaseMs: release.delayMs ?? 0, contactMs: hit.delayMs ?? 0 };
+      return { id: entry.id, species: entry.species, releaseMs: release.delayMs ?? 0, contactMs: hit.delayMs ?? 0 };
     },
     read: () => ({ ...stage.getDiagnostics(), settled: stage.isSettled(),
       bodyScaleRatios: [...(stage as unknown as { combatants: { views: Map<string, CombatantView> } }).combatants.views.values()]

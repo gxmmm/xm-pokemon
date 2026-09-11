@@ -4,24 +4,27 @@ import { resolve } from 'node:path';
 import type { Page } from 'playwright-core';
 declare global { interface Window { __SKILL_SHOWCASE__: Awaited<ReturnType<typeof import('./skill-showcase-browser-fixture.ts').createSkillShowcaseFixture>>; } }
 
-export async function checkSkillShowcases(page: Page, root: string, baseline: boolean) {
-  const output = resolve(root, baseline ? 'skills-before' : 'skills-after'); await mkdir(output, { recursive: true });
+export async function checkSkillShowcases(page: Page, root: string, baseline: boolean, anchorsOnly = false) {
+  const output = resolve(root, anchorsOnly ? 'anchors-after' : baseline ? 'skills-before' : 'skills-after'); await mkdir(output, { recursive: true });
   await page.evaluate(async (url) => { window.__SKILL_SHOWCASE__ = await (await import(/* @vite-ignore */ url)).createSkillShowcaseFixture(); },
     `/@fs/${resolve('scripts/skill-showcase-browser-fixture.ts').replaceAll('\\', '/')}`);
   const samples: unknown[] = [];
   try {
-    for (let index = 0; index < (baseline ? 6 : 10); index++) for (const mode of baseline ? ['forward'] : ['forward', 'reverse']) {
+    const cases = anchorsOnly ? [{ index: 0 }, { index: 1 }, { index: 2 }, { index: 3 }, { index: 1, species: 131 }, { index: 4 }]
+      : Array.from({ length: baseline ? 6 : 10 }, (_, index) => ({ index, species: undefined as number | undefined }));
+    for (const { index, species } of cases) for (const mode of baseline ? ['forward'] : ['forward', 'reverse']) {
       const reverse = mode === 'reverse';
-      const timing = await page.evaluate(({ index, reverse }) => window.__SKILL_SHOWCASE__.play(index, reverse), { index, reverse });
+      const timing = await page.evaluate(({ index, reverse, species }) => window.__SKILL_SHOWCASE__.play(index, reverse, species), { index, reverse, species });
       let previous = 0;
-      const phases = baseline ? [['flight', Math.max(timing.releaseMs + 60, timing.contactMs - 50)]] as const
+      const phases = anchorsOnly ? [['prepare', Math.max(1, timing.releaseMs - 20)], ['release', timing.releaseMs + 20], ['flight', Math.max(timing.releaseMs + 60, timing.contactMs - 50)]] as const
+        : baseline ? [['flight', Math.max(timing.releaseMs + 60, timing.contactMs - 50)]] as const
         : [['flight', Math.max(timing.releaseMs + 60, timing.contactMs - 50)], ['contact', timing.contactMs + 80]] as const;
       for (const [phase, at] of phases) {
         await page.clock.runFor(Math.max(1, at - previous)); previous = at;
         const state = await page.evaluate(() => window.__SKILL_SHOWCASE__.read());
-        assert.equal(state.combatantCount, 2); assert(state.activeEffectCount > 0);
+        assert.equal(state.combatantCount, 2); if (phase !== 'prepare') assert(state.activeEffectCount > 0);
         assert(state.bodyScaleRatios.every((ratio) => ratio > 0.6), 'both bodies stay visible while turning or blending actions');
-        await page.screenshot({ path: resolve(output, `${timing.id}-${mode}-${phase}.png`) });
+        await page.screenshot({ path: resolve(output, `${timing.id}${anchorsOnly ? `-${timing.species}` : ''}-${mode}-${phase}.png`) });
         samples.push({ ...timing, reverse, phase, effects: state.activeEffectCount, bodyScaleRatios: state.bodyScaleRatios });
       }
       await page.clock.runFor(2200);
@@ -29,7 +32,7 @@ export async function checkSkillShowcases(page: Page, root: string, baseline: bo
       assert(state.settled && state.activeEffectCount === 0, 'skill actions and feedback must finish');
     }
     await writeFile(resolve(output, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, samples }, null, 2));
-    if (!baseline) {
+    if (!baseline && !anchorsOnly) {
       const cards = await Promise.all(['flamethrower', 'water-gun', 'thunderbolt', 'shadow-ball', 'hyper-beam', 'karate-chop'].map(async (id) => ({
         id, image: `data:image/png;base64,${(await readFile(resolve(output, `${id}-forward-flight.png`))).toString('base64')}`,
       })));

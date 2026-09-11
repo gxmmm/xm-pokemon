@@ -14,6 +14,8 @@ REVISION = '1f201ba3f969dd0eb4447744dffaeaaef26f5ae7'
 BASE = f'https://raw.githubusercontent.com/PMDCollab/SpriteCollab/{REVISION}/'
 CACHE = ROOT / 'art-source' / 'pmd-source-v1'
 OUT = ROOT / 'apps/web/public/sprites/pmd-v1'
+CALIBRATION = json.loads((ROOT / 'scripts/pmd-anchor-calibration.json').read_text(encoding='utf-8'))
+assert CALIBRATION['revision'] == REVISION
 
 
 def download(path):
@@ -41,7 +43,7 @@ def marker(im, target):
     return None
 
 
-def convert(species):
+def convert(species, anchors_only=False):
     key = f'{species:04d}'
     xml_path = download(f'sprite/{key}/AnimData.xml')
     animations = {a.findtext('Name'): a for a in ET.parse(xml_path).getroot().findall('./Anims/Anim')}
@@ -62,11 +64,15 @@ def convert(species):
     credits = download(f'sprite/{key}/credits.txt').read_text(encoding='utf-8')
     target = OUT / key
     target.mkdir(parents=True, exist_ok=True)
-    (target/'credits.txt').write_text(credits, encoding='utf-8')
+    if not anchors_only:
+        (target/'credits.txt').write_text(credits, encoding='utf-8')
     source_record = {'revision':REVISION,'species':species,'url':BASE+f'sprite/{key}/',
                      'castingSource':casting_name,'faintFallback':'Faint' not in animations,
                      'changes':'裁切方向、按源影子中心对齐画布、拆分施法阶段；保留像素与1/60秒帧时长',
                      'xmlSha256':hashlib.sha256(xml_path.read_bytes()).hexdigest()}
+    calibration = CALIBRATION['species'].get(str(species), {})
+    if calibration:
+        source_record['anchorCalibration'] = calibration
     (target/'source.json').write_text(json.dumps(source_record,ensure_ascii=False,indent=2),encoding='utf-8')
     for side, direction, facing in [('front',7,-1),('back',3,1)]:
         cells = []
@@ -95,6 +101,9 @@ def convert(species):
                 head=marker(offsets,(0,0,0)) or body
                 # 黑色标记是头部；在头朝向的一侧取嘴部近似点，供逐类验收校准。
                 muzzle=(head[0]+facing*3,head[1]+2)
+                calibrated = calibration.get(name, {}).get(side)
+                if calibrated:
+                    muzzle=(head[0]+calibrated[0],head[1]+calibrated[1])
                 # 舞动施法使用源手部标记；选择朝向目标的一只手。
                 if name == 'Dance':
                     hands=[point for color in [(255,0,0),(0,0,255)] if (point:=marker(offsets,color))]
@@ -151,35 +160,42 @@ def convert(species):
         metadata={'schemaVersion':1,'frameWidth':width,'frameHeight':height,'columns':columns,'fps':60,
                   'pixelScale':2.5,'pivot':{'x':pivot[0]/width,'y':pivot[1]/height},
                   'frameAnchors':frame_anchors,'clips':clips,'transitions':[]}
-        atlas.save(target/f'{side}.png',optimize=True)
+        if anchors_only:
+            previous=json.loads((target/f'{side}.json').read_text(encoding='utf-8'))
+            assert {k:v for k,v in previous.items() if k!='frameAnchors'} == {k:v for k,v in metadata.items() if k!='frameAnchors'}, '仅挂点校准不得改变动作或尺寸'
+        else:
+            atlas.save(target/f'{side}.png',optimize=True)
         (target/f'{side}.json').write_text(json.dumps(metadata,separators=(',',':')),encoding='utf-8')
         icon=cells[source_indices[idle][0]][0]
         icon=icon.crop(icon.getbbox())
-        icon.save(target/f'{side}-idle.png')
+        if not anchors_only:
+            icon.save(target/f'{side}-idle.png')
     return {'id':species, 'castingSource':casting_name,'faintFallback':'Faint' not in animations}
 
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--species',default=','.join(str(i) for i in range(1,152)))
+    parser.add_argument('--anchors-only',action='store_true',help='仅更新挂点元数据和校准来源，不改 PNG 或动作片段')
     args=parser.parse_args()
     ids=[int(i) for i in args.species.split(',')]
     OUT.mkdir(parents=True,exist_ok=True)
-    for filename in ['LICENSE.md','credit_names.txt','README.md']:
+    for filename in ([] if args.anchors_only else ['LICENSE.md','credit_names.txt','README.md']):
         (OUT/('UPSTREAM-'+filename)).write_bytes(download(filename).read_bytes())
     report_path=OUT/'import-report.json'
     results={row['id']:row for row in json.loads(report_path.read_text(encoding='utf-8'))['species']} if report_path.exists() else {}
     completed=0
     with ThreadPoolExecutor(max_workers=2) as pool:
-        pending={pool.submit(convert,i):i for i in ids}
+        pending={pool.submit(convert,i,args.anchors_only):i for i in ids}
         for future in as_completed(pending):
             result=future.result()
             results[result['id']]=result
             completed+=1
             if completed%10==0 or completed==len(ids):
                 print(f'转换 {completed}/{len(ids)}',flush=True)
-    report_path.write_text(json.dumps({'revision':REVISION,'species':sorted(results.values(),key=lambda r:r['id'])},ensure_ascii=False,indent=2),encoding='utf-8')
-    write_config()
+    if not args.anchors_only:
+        report_path.write_text(json.dumps({'revision':REVISION,'species':sorted(results.values(),key=lambda r:r['id'])},ensure_ascii=False,indent=2),encoding='utf-8')
+        write_config()
 
 
 def write_config():

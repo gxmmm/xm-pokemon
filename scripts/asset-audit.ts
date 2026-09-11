@@ -33,5 +33,20 @@ for (const file of expected) {
   if (file.endsWith('.png')) assert.equal(readFileSync(path).subarray(0, 8).toString('hex'), '89504e470d0a1a0a', `${file} 必须是 PNG`);
 }
 assert.equal(BATTLE_ART_PROFILES.length, 151);
+const calibration = JSON.parse(readFileSync('scripts/pmd-anchor-calibration.json', 'utf8'));
+for (const [species, sources] of Object.entries(calibration.species) as [string, Record<string, Record<string, [number, number]>>][]) {
+  const dir = resolve(root, `sprites/pmd-v1/${species.padStart(4, '0')}`);
+  const provenance = JSON.parse(readFileSync(resolve(dir, 'source.json'), 'utf8'));
+  assert.equal(provenance.revision, calibration.revision);
+  assert.deepEqual(provenance.anchorCalibration, sources, '发布来源保留挂点校准记录');
+  for (const side of ['front', 'back']) {
+    const metadata = JSON.parse(readFileSync(resolve(dir, `${side}.json`), 'utf8'));
+    const offset = sources.Shoot![side]!;
+    for (const motion of ['charge', 'cast', 'channel', 'recover']) for (const frame of metadata.clips[motion].frames) {
+      const anchors = metadata.frameAnchors[frame];
+      assert.deepEqual(anchors.muzzle, { x: anchors.head.x + offset[0], y: anchors.head.y + offset[1] }, '施法各阶段沿逐帧头点使用校准出口');
+    }
+  }
+}
 for (const issues of Object.values(validateBattleArtConfiguration())) assert.equal(issues.length, 0, '美术配置引用有效');
 console.log(`✓ 当前资产：${actual.length} 文件、${BATTLE_ASSET_MANIFEST.length} manifest 条目、151 只 PMD 角色，署名完整，无多余发布文件`);

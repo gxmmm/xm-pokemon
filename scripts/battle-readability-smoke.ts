@@ -9,7 +9,10 @@ import { Graphics } from 'pixi.js';
 export function testBattleReadability(): void {
   const pool = new BattleEffectPool();
   const positions = new Map([['actor', { x: 300, y: 440 }], ['a', { x: 680, y: 430 }], ['b', { x: 750, y: 440 }], ['c', { x: 820, y: 430 }]]);
-  const executor = new BattleVfxExecutor(pool, (uid) => positions.get(uid));
+  const executor = new BattleVfxExecutor(pool, (uid) => positions.get(uid), uid => {
+    const root = positions.get(uid);
+    return root ? { x: root.x, y: root.y - 30 } : undefined;
+  });
   const plans = planBattleCue({ type: 'vfx', recipe: { id: 'spread', delivery: 'area', element: 'water' },
     anchors: { actorId: 'actor', targetIds: ['a', 'b', 'a', 'missing', 'c'] }, intensity: 0.8 });
   const original = JSON.stringify(plans);

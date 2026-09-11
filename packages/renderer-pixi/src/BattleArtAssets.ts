@@ -7,6 +7,12 @@ export class BattleArtAssetLoader {
   private readonly textureRequests = new Map<string, Promise<Texture | null>>();
   private readonly metadataRequests = new Map<string, Promise<BattleArtSpriteSheetMetadata | null>>();
   private readonly clipTextureRequests = new Map<string, Promise<readonly Texture[] | null>>();
+  private readonly readyClips = new Map<string, readonly Texture[]>();
+  private readonly readyMetadata = new Map<string, BattleArtSpriteSheetMetadata>();
+  private generation = 0;
+
+  getLoadedClip(entry: BattleAssetManifestEntry, motion: BattleArtMotionId) { return this.readyClips.get(`${entry.id}:${motion}`); }
+  getLoadedMetadata(entry: BattleAssetManifestEntry) { return this.readyMetadata.get(entry.id); }
 
   load(entry: BattleAssetManifestEntry): Promise<Texture | null> {
     if (!isSpriteAsset(entry.kind) || !entry.url) return Promise.resolve(null);
@@ -27,9 +33,14 @@ export class BattleArtAssetLoader {
     if (entry.kind !== 'sprite-sheet' || !entry.metadataUrl) return Promise.resolve(null);
     const cached = this.metadataRequests.get(entry.id);
     if (cached) return cached;
+    const generation = this.generation;
     const request = fetch(entry.metadataUrl)
       .then(async (response) => response.ok ? response.json() as Promise<unknown> : null)
-      .then((metadata) => isSpriteSheetMetadata(metadata) ? metadata : null)
+      .then((metadata) => {
+        if (!isSpriteSheetMetadata(metadata)) return null;
+        if (generation === this.generation) this.readyMetadata.set(entry.id, metadata);
+        return metadata;
+      })
       .catch(() => null);
     this.metadataRequests.set(entry.id, request);
     return request;
@@ -40,6 +51,7 @@ export class BattleArtAssetLoader {
     const key = `${entry.id}:${motion}`;
     const cached = this.clipTextureRequests.get(key);
     if (cached) return cached;
+    const generation = this.generation;
     const request = Promise.all([this.load(entry), this.loadMetadata(entry)])
       .then(([texture, metadata]) => {
         const clip = metadata?.clips[motion];
@@ -64,16 +76,30 @@ export class BattleArtAssetLoader {
           return sliced;
         });
       })
+      .then(frames => {
+        if (frames && generation === this.generation) this.readyClips.set(key, frames);
+        return frames;
+      })
       .catch(() => null);
     this.clipTextureRequests.set(key, request);
     return request;
   }
 
   preload(entries: readonly BattleAssetManifestEntry[]): Promise<void> {
-    return Promise.all(entries.map((entry) => this.load(entry))).then(() => undefined);
+    const generation = this.generation;
+    return Promise.all(entries.map(async entry => {
+      await this.load(entry);
+      if (generation !== this.generation) return;
+      const metadata = await this.loadMetadata(entry);
+      if (generation !== this.generation) return;
+      if (metadata) await Promise.all((Object.keys(metadata.clips) as BattleArtMotionId[]).map(motion => this.loadClip(entry, motion)));
+    })).then(() => undefined);
   }
 
   clear(): void {
+    this.generation++;
+    this.readyClips.clear();
+    this.readyMetadata.clear();
     this.textureRequests.clear();
     this.metadataRequests.clear();
     this.clipTextureRequests.clear();

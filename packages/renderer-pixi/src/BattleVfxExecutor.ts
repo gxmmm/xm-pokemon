@@ -53,9 +53,18 @@ export class BattleVfxExecutor {
       case 'sky-strike':
         spawnSkyStrike(this.effects, target, plan.intensity);
         return true;
-      case 'chain':
-        spawnChainLightning(this.effects, actor ?? target, targets.length > 0 ? targets : [target], plan.intensity);
+      case 'chain': {
+        const source = resolveSource();
+        if (!actor || !source) return false;
+        const contacts = plan.targetIds.flatMap(uid => {
+          const root = this.resolvePosition(uid);
+          const body = this.resolveAnchor?.(uid, 'body');
+          return root && body ? [{ ...body }] : [];
+        });
+        if (!contacts.length) return false;
+        spawnChainLightning(this.effects, { ...source }, contacts, plan.intensity);
         return true;
+      }
       case 'dive':
         if (!actor) return false;
         spawnDive(this.effects, actor, target, color, plan.intensity);

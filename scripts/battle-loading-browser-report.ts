@@ -45,6 +45,8 @@ try {
   await page.waitForURL('**/world');
   await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.has('battle'));
   console.log('loading: isolated world ready');
+  await page.clock.install({ time: new Date('2026-09-11T00:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-09-11T00:01:00Z'));
   const spriteGate = new Promise<void>((done) => { releaseSprites = done; });
   let spriteRequested = false;
   // 保留慢资源加载回归，只拦截当前 PMD 图集。像素场景不依赖网络图片。
@@ -64,12 +66,16 @@ try {
     function assertStarted(started: boolean) { if (!started) throw new Error('No battle created'); }
   });
   const viewport = page.locator('.pixi-battle-viewport');
+  for (let attempt = 0; attempt < 100 && !await viewport.locator('canvas').count(); attempt++) {
+    await page.clock.runFor(20);
+    await page.waitForTimeout(50);
+  }
   await viewport.locator('canvas').waitFor();
   console.log('loading: battle canvas mounted');
   for (let attempt = 0; attempt < 100 && !spriteRequested; attempt++) await page.waitForTimeout(50);
   assert(spriteRequested, 'PMD sprite request not intercepted: ' + JSON.stringify({ errors, body: await page.locator('body').innerText() }));
-  // 在截图和资源等待前暂停玩法，避免低负载机器上战斗先结束。
-  await page.getByRole('button', { name: '暂停', exact: true }).click();
+  // 固定玩法时钟，资源等待使用真实时间，不与自然结算争抢暂停按钮。
+  await page.clock.runFor(50);
   const diagnostics = () => page.evaluate(() => {
     function find(vnode: any): any {
       if (!vnode) return null;
@@ -92,12 +98,13 @@ try {
   });
   assert.equal((await diagnostics()).combatantCount, 4, 'pending assets must not prevent actor creation');
   console.log('loading: four actors exist with art pending');
-  await page.waitForTimeout(1000);
+  await page.clock.runFor(50);
   assert.equal(await page.evaluate(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle ?? 0), 0, 'test must still be waiting for art');
   assert((await diagnostics()).drawCallTotal > 0);
   await viewport.screenshot({ path: resolve(OUTPUT, 'pmd-pending.png') });
   releaseSprites();
   await page.waitForTimeout(1500);
+  await page.clock.runFor(50);
   assert.equal((await diagnostics()).combatantCount, 4);
   assert.equal(await page.locator('.gpu-unavailable').count(), 0);
   await page.waitForFunction(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle === 1);
@@ -105,7 +112,7 @@ try {
   await viewport.screenshot({ path: resolve(OUTPUT, 'loaded.png') });
   await page.evaluate(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$router.push('/world'));
   await page.waitForURL('**/world');
-  await page.waitForTimeout(500);
+  await page.clock.runFor(500);
   assert.equal(await page.locator('.pixi-battle-viewport').count(), 0);
   assert.deepEqual(errors, []);
   await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true,

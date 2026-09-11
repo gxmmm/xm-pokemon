@@ -418,7 +418,7 @@ function castPresentationFor(skill: Skill, recipe: SkillVisualRecipe | undefined
     channelMs: channel ? 520 : 0,
     recoveryMs: delivery === 'melee' ? 180 : channel ? 240 : 160,
     actorMotion: delivery === 'melee' ? 'attack' : 'cast',
-    projectileAnchor: delivery === 'melee' ? 'body' : 'muzzle',
+    projectileAnchor: delivery === 'melee' || ['spark-bolt', 'arc-bolt', 'chain'].includes(recipe?.variant ?? '') ? 'body' : 'muzzle',
   };
 }
 

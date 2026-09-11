@@ -1,0 +1,9 @@
+{
+  "revision": "1f201ba3f969dd0eb4447744dffaeaaef26f5ae7",
+  "description": "对照 Shoot 源帧校准嘴部出口，单位为源像素，相对逐帧 head；不改变原图、脚点和动作时长。",
+  "species": {
+    "6": { "Shoot": { "front": [-1, 0], "back": [1, 0] } },
+    "131": { "Shoot": { "front": [-1, 1], "back": [1, 1] } },
+    "149": { "Shoot": { "front": [-1, 0], "back": [1, 0] } }
+  }
+}
