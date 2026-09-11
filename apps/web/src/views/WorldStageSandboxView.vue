@@ -17,7 +17,6 @@ const stage = new WorldStage();
 let raf = 0;
 let last = 0;
 
-const landmarks = computed(() => scene.value.landmarks ?? []);
 function snapshot(at: number): readonly WorldEntityRenderSnapshot[] {
   return [{ id: 'player', kind: 'player', position: { x: 8 + Math.sin(at * 0.56), y: 10.6 }, facing: 'up' }];
 }
@@ -63,7 +62,7 @@ onUnmounted(() => {
     <div class="controls">
       <button type="button" @click="running = !running">{{ running ? '暂停人物行为' : '继续人物行为' }}</button>
       <label>场景 <select v-model="sceneMapId"><option v-for="map in MAPS" :key="map.id" :value="map.id">{{ map.name }}</option></select></label>
-      <span>{{ scene.biome }} · {{ landmarks.length }} 个配置化地标</span>
+      <span>{{ scene.biome }} · {{ scene.relief.tiles[0]?.length }} × {{ scene.relief.tiles.length }} 地图格</span>
     </div>
     <div ref="viewport" class="viewport" :class="sceneMapId" aria-label="WorldStage sandbox" data-testid="world-stage-viewport"></div>
     <p class="status">{{ status }}</p>

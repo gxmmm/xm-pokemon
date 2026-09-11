@@ -12,7 +12,6 @@ let serverLog = '';
 server.stdout.on('data', (data) => { serverLog += data; });
 server.stderr.on('data', (data) => { serverLog += data; });
 let browser: Browser | undefined;
-let releaseBackground = () => {};
 let releaseSprites = () => {};
 try {
   await mkdir(OUTPUT, { recursive: true });
@@ -46,15 +45,12 @@ try {
   await page.waitForURL('**/world');
   await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.has('battle'));
   console.log('loading: isolated world ready');
-  const backgroundGate = new Promise<void>((done) => { releaseBackground = done; });
   const spriteGate = new Promise<void>((done) => { releaseSprites = done; });
-  let backgroundRequested = false;
-  // Hold all art, then release actor images while the backdrop remains pending.
-  await page.route(/\/(?:sprites|battle\/environments)\//, async (route) => {
-    if (route.request().url().includes('/battle/environments/')) {
-      backgroundRequested = true;
-      await backgroundGate;
-    } else await spriteGate;
+  let spriteRequested = false;
+  // 保留慢资源加载回归，只拦截当前 PMD 图集。像素场景不依赖网络图片。
+  await page.route(/\/sprites\/pmd-v1\/.*\.png$/, async route => {
+    spriteRequested = true;
+    await spriteGate;
     await route.continue();
   });
   await page.evaluate(async () => {
@@ -70,8 +66,10 @@ try {
   const viewport = page.locator('.pixi-battle-viewport');
   await viewport.locator('canvas').waitFor();
   console.log('loading: battle canvas mounted');
-  for (let attempt = 0; attempt < 100 && !backgroundRequested; attempt++) await page.waitForTimeout(50);
-  assert(backgroundRequested, 'background request not intercepted: ' + JSON.stringify({ errors, body: await page.locator('body').innerText() }));
+  for (let attempt = 0; attempt < 100 && !spriteRequested; attempt++) await page.waitForTimeout(50);
+  assert(spriteRequested, 'PMD sprite request not intercepted: ' + JSON.stringify({ errors, body: await page.locator('body').innerText() }));
+  // 在截图和资源等待前暂停玩法，避免低负载机器上战斗先结束。
+  await page.getByRole('button', { name: '暂停', exact: true }).click();
   const diagnostics = () => page.evaluate(() => {
     function find(vnode: any): any {
       if (!vnode) return null;
@@ -97,16 +95,13 @@ try {
   await page.waitForTimeout(1000);
   assert.equal(await page.evaluate(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle ?? 0), 0, 'test must still be waiting for art');
   assert((await diagnostics()).drawCallTotal > 0);
-  await viewport.screenshot({ path: resolve(OUTPUT, 'all-art-pending.png') });
+  await viewport.screenshot({ path: resolve(OUTPUT, 'pmd-pending.png') });
   releaseSprites();
   await page.waitForTimeout(1500);
   assert.equal((await diagnostics()).combatantCount, 4);
   assert.equal(await page.locator('.gpu-unavailable').count(), 0);
-  await viewport.screenshot({ path: resolve(OUTPUT, 'background-pending.png') });
-  await page.getByRole('button', { name: '暂停', exact: true }).click();
-  releaseBackground();
   await page.waitForFunction(() => (window as any).__PO_RENDERER_OBSERVATION__?.().stageMounts.battle === 1);
-  assert.equal((await diagnostics()).combatantCount, 4, 'late background replaced actors');
+  assert.equal((await diagnostics()).combatantCount, 4, '迟到的PMD加载不能替换正在运行的角色');
   await viewport.screenshot({ path: resolve(OUTPUT, 'loaded.png') });
   await page.evaluate(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$router.push('/world'));
   await page.waitForURL('**/world');
@@ -114,10 +109,9 @@ try {
   assert.equal(await page.locator('.pixi-battle-viewport').count(), 0);
   assert.deepEqual(errors, []);
   await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true,
-    checks: ['all-art-pending-actors', 'background-pending-render', 'late-background-preserves-count', 'exit-clean'], errors }, null, 2));
-  console.log('✓ 发布产物：图片等待中已有4名角色，背景延迟不阻挡战斗，迟到背景保持角色，退出正常');
+    checks: ['pmd-pending-actors', 'pixel-environment-ready', 'late-sprites-preserve-count', 'exit-clean'], errors }, null, 2));
+  console.log('✓ 发布产物：PMD等待期间4名角色和像素场景已显示，迟到加载保留角色，退出正常');
 } finally {
-  releaseBackground();
   releaseSprites();
   await browser?.close();
   server.kill();

@@ -80,12 +80,6 @@ export interface WorldScenePalette {
   fog: string;
 }
 
-export interface WorldLandmarkSpec {
-  id: string;
-  kind: 'lighthouse' | 'building' | 'dock' | 'boulder' | 'path' | 'roof' | 'fog-bank' | 'crystal-cluster' | 'rift-mist' | 'cave-veil' | 'stone-terrace' | 'cave-shadow';
-  x: number; y: number; width?: number; height?: number; depth: 'terrain' | 'scenery' | 'occlusion' | 'foreground';
-}
-
 export type WorldCharacterAppearance = 'hero' | 'fisher';
 export type WorldCharacterBehavior = 'idle' | 'sort-nets';
 export interface WorldCharacterSpec {
@@ -104,7 +98,6 @@ export type WorldScenePreloadKey = 'procedural-primitives';
  * use procedural primitives only and therefore never preload global assets. */
 export interface WorldSceneResourceBudget {
   preloadKeys: readonly WorldScenePreloadKey[];
-  landmarkLimit: number;
   staticContainerLimit: number;
   ambientParticleLimit: number;
   entityLimit: number;
@@ -120,8 +113,7 @@ export interface WorldSceneSpec {
   foreground: readonly SceneLayerSpec[];
   ambience: { preset: BiomeVisualSpec['ambience']['particleKind']; density: number };
   palette: WorldScenePalette;
-  relief?: WorldReliefLayout;
-  landmarks?: readonly WorldLandmarkSpec[];
+  relief: WorldReliefLayout;
   characters?: readonly WorldCharacterSpec[];
   resources: WorldSceneResourceBudget;
 }
@@ -135,7 +127,6 @@ export interface WorldReliefLayout {
 export interface WorldSceneBudgetReport {
   sceneId: string;
   mapId: string;
-  landmarkCount: number;
   staticContainerCount: number;
   dynamicEntityCount: number;
   ambientParticleCount: number;
@@ -202,7 +193,6 @@ export const BIOME_VISUALS: Readonly<Record<BiomeId, BiomeVisualSpec>> = {
 export const ILLUSION_TOWER_SCENE_MAP_IDS = ['illusion-tower-1', 'illusion-tower-2', 'illusion-tower-3', 'illusion-tower-4', 'illusion-tower-5'] as const;
 
 function illusionTowerScene(floor: number): WorldSceneSpec {
-  const isSummit = floor === 5;
   const paletteByFloor: readonly WorldScenePalette[] = [
     { backdrop: '#172e30', ground: '#64766c', path: '#98a18a', shadow: '#1e3b38', accent: '#b8dd96', fog: '#c2d8c7' },
     { backdrop: '#183442', ground: '#567a82', path: '#91b1b0', shadow: '#193f4b', accent: '#a1e2dc', fog: '#c5e6df' },
@@ -211,7 +201,6 @@ function illusionTowerScene(floor: number): WorldSceneSpec {
     { backdrop: '#202c48', ground: '#788595', path: '#abb7bd', shadow: '#293655', accent: '#ffe0a0', fog: '#d8e2ed' },
   ];
   const palette = paletteByFloor[floor - 1]!;
-  const suffix = `f${floor}`;
   return {
     id: `illusion-tower-training-${floor}`,
     mapId: ILLUSION_TOWER_SCENE_MAP_IDS[floor - 1]!,
@@ -225,21 +214,7 @@ function illusionTowerScene(floor: number): WorldSceneSpec {
     relief: { tiles: MAP_MAP[ILLUSION_TOWER_SCENE_MAP_IDS[floor - 1]!]!.tiles,
       style: (['moss', 'tidal', 'crystal', 'forge', 'astral'] as const)[floor - 1]! },
     characters: [{ id: 'player', appearance: 'hero', behavior: 'idle' }],
-    /** Generic terrace/crystal/rift grammar. Nothing here identifies a collision
-     * cell, encounter species, stair coordinate, or floor-transition rule. */
-    landmarks: [
-      { id: `tower-far-rift-${suffix}`, kind: 'rift-mist', x: 0.3, y: 0.4, width: 15.4, height: 2.5, depth: 'scenery' },
-      { id: `tower-west-terrace-${suffix}`, kind: 'stone-terrace', x: 0.4, y: 2.1, width: 4.0, height: 8.7, depth: 'scenery' },
-      { id: `tower-east-terrace-${suffix}`, kind: 'stone-terrace', x: 11.6, y: 1.8, width: 4.0, height: 9.1, depth: 'scenery' },
-      { id: `tower-central-path-${suffix}`, kind: 'path', x: 6.3, y: 0.6, width: 3.4, height: 12.3, depth: 'terrain' },
-      { id: `tower-west-crystals-${suffix}`, kind: 'crystal-cluster', x: 2.4, y: 3.0, width: 2.8, height: 3.0, depth: 'scenery' },
-      { id: `tower-east-crystals-${suffix}`, kind: 'crystal-cluster', x: 10.6, y: 4.2, width: 2.7, height: 3.1, depth: 'scenery' },
-      { id: `tower-lower-crystals-${suffix}`, kind: 'crystal-cluster', x: 6.4, y: 8.9, width: 3.2, height: 2.4, depth: 'scenery' },
-      { id: `tower-projection-stones-${suffix}`, kind: 'boulder', x: 3.2, y: 9.9, width: 2.1, height: 1.4, depth: 'scenery' },
-      { id: `tower-north-shadow-${suffix}`, kind: 'cave-shadow', x: 0.4, y: 0, width: 6.0, height: 2.3, depth: 'occlusion' },
-      { id: `tower-${isSummit ? 'summit' : 'stair'}-veil-${suffix}`, kind: 'cave-veil', x: 0.8, y: 10.5, width: 14.1, height: 2.5, depth: 'foreground' },
-    ],
-    resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 14, staticContainerLimit: 32, ambientParticleLimit: 48, entityLimit: 8 },
+    resources: { preloadKeys: ['procedural-primitives'], staticContainerLimit: 32, ambientParticleLimit: 48, entityLimit: 8 },
   };
 }
 
@@ -261,14 +236,7 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
       { id: 'player', appearance: 'hero', behavior: 'idle' },
       { id: 'dock-fisher', appearance: 'fisher', behavior: 'sort-nets', x: 3.5, y: 11 },
     ],
-    landmarks: [
-      { id: 'west-dock', kind: 'dock', x: 1, y: 11, width: 8, height: 2, depth: 'scenery' },
-      { id: 'tide-research-institute', kind: 'building', x: 5, y: 2, width: 4, height: 3, depth: 'scenery' },
-      { id: 'mist-bay-lighthouse', kind: 'lighthouse', x: 12, y: 1, width: 2, height: 5, depth: 'scenery' },
-      { id: 'market-awning', kind: 'roof', x: 6, y: 9, width: 3, height: 2, depth: 'occlusion' },
-      { id: 'harbor-fog-front', kind: 'fog-bank', x: 0, y: 10, width: 16, height: 4, depth: 'foreground' },
-    ],
-    resources: { preloadKeys: ['procedural-primitives'], landmarkLimit: 12, staticContainerLimit: 30, ambientParticleLimit: 30, entityLimit: 12 },
+    resources: { preloadKeys: ['procedural-primitives'], staticContainerLimit: 30, ambientParticleLimit: 30, entityLimit: 12 },
   },
   ...ILLUSION_TOWER_SCENES,
 ];
@@ -285,7 +253,7 @@ export const WORLD_SCENE_PRELOAD_KEY_CATALOG: readonly WorldScenePreloadKey[] = 
 const WORLD_STAGE_AMBIENT_BASE = 17;
 
 function sceneStaticContainerCount(scene: WorldSceneSpec): number {
-  return scene.relief ? 6 + scene.relief.tiles.length : 3 + (scene.landmarks?.length ?? 0) + 1;
+  return 6 + scene.relief.tiles.length;
 }
 
 function sceneAmbientParticleCount(scene: WorldSceneSpec): number {
@@ -296,9 +264,8 @@ function sceneAmbientParticleCount(scene: WorldSceneSpec): number {
  * is introduced. It detects unintended scene composition/order changes without
  * coupling test infrastructure to Pixi or DOM output. */
 export function worldSceneFingerprint(scene: WorldSceneSpec): string {
-  const landmarkSignature = (scene.landmarks ?? []).map((landmark) => `${landmark.id}:${landmark.kind}:${landmark.depth}`).join('|');
   const characterSignature = (scene.characters ?? []).map((character) => `${character.id}:${character.appearance}:${character.behavior}`).join('|');
-  return [scene.id, scene.mapId, scene.biome, scene.ambience.preset, scene.ambience.density, landmarkSignature, characterSignature,
+  return [scene.id, scene.mapId, scene.biome, scene.ambience.preset, scene.ambience.density, characterSignature,
     scene.relief?.style ?? '', scene.relief?.tiles.map(row=>row.join(',')).join(';') ?? ''].join('#');
 }
 
@@ -315,19 +282,18 @@ export function worldSceneFingerprintHash(scene: WorldSceneSpec): string {
 /** First config-level visual regression baselines. Update deliberately only after
  * a reviewed visual change; browser screenshots can be layered on later. */
 export const WORLD_SCENE_VISUAL_BASELINES: Readonly<Record<string, string>> = {
-  pallet: '290b32cd',
-  'illusion-tower-1': '96de19cc',
-  'illusion-tower-2': '35ffc6c8',
-  'illusion-tower-3': '5be59850',
-  'illusion-tower-4': 'b982ef4f',
-  'illusion-tower-5': 'b3172093',
+  pallet: 'ef154ae3',
+  'illusion-tower-1': '7eaa7eb2',
+  'illusion-tower-2': '10f42f32',
+  'illusion-tower-3': 'c4db7f92',
+  'illusion-tower-4': 'ccc038c9',
+  'illusion-tower-5': '6a77a9ff',
 };
 
 export function worldSceneBudgetReport(scene: WorldSceneSpec): WorldSceneBudgetReport {
   return {
     sceneId: scene.id,
     mapId: scene.mapId,
-    landmarkCount: scene.landmarks?.length ?? 0,
     staticContainerCount: sceneStaticContainerCount(scene),
     dynamicEntityCount: (scene.characters?.length ?? 0),
     ambientParticleCount: sceneAmbientParticleCount(scene),
@@ -351,7 +317,7 @@ export function validateWorldSceneBudgets(scenes: readonly WorldSceneSpec[] = WO
     mapIds.add(scene.mapId);
     const report = worldSceneBudgetReport(scene);
     if (scene.resources.preloadKeys.some((key) => !WORLD_SCENE_PRELOAD_KEY_CATALOG.includes(key))) unknownPreloadKeys.push(scene.id);
-    if (report.landmarkCount > scene.resources.landmarkLimit || report.staticContainerCount > scene.resources.staticContainerLimit || report.dynamicEntityCount > scene.resources.entityLimit || report.ambientParticleCount > scene.resources.ambientParticleLimit) overBudgetSceneIds.push(scene.id);
+    if (report.staticContainerCount > scene.resources.staticContainerLimit || report.dynamicEntityCount > scene.resources.entityLimit || report.ambientParticleCount > scene.resources.ambientParticleLimit) overBudgetSceneIds.push(scene.id);
     if (WORLD_SCENE_VISUAL_BASELINES[scene.mapId] !== worldSceneFingerprintHash(scene)) mismatchedBaselineMapIds.push(scene.mapId);
   }
   return {

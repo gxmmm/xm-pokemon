@@ -1,6 +1,6 @@
 import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, PIXEL_ART_STYLE } from '@pokemon-online/config';
-import { Application, Container, Graphics, type Texture } from 'pixi.js';
+import { Application, Container, Graphics } from 'pixi.js';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController, type BattleCameraDiagnostics } from './BattleCameraController.ts';
@@ -44,7 +44,6 @@ export class BattleStage implements BattleRenderer {
     (uid) => this.combatants.getPosition(uid),
     (uid, anchor) => this.combatants.getAnchorPosition(uid, anchor));
   private overlay = new Container();
-  private environmentBackgroundTexture: Texture | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private mountedContainer: HTMLElement | null = null;
   private biomeId = 'grass';
@@ -107,7 +106,6 @@ export class BattleStage implements BattleRenderer {
     this.environmentView.clear();
     this.overlay.removeChildren().forEach((child) => child.destroy());
     this.battleArtAssets.clear();
-    this.environmentBackgroundTexture = null;
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
     // These empty containers belong to the stage instance, not one Application.
@@ -195,26 +193,18 @@ export class BattleStage implements BattleRenderer {
     const lifecycle = this.lifecycleVersion;
     const battle = ++this.battleVersion;
     const entries = input.combatants.map((combatant) => resolveBattleArtPresentation({ speciesId: combatant.speciesId, side: combatant.side, facing: combatant.facing }).asset);
-    const spec = battleEnvironmentFor(input.biomeId);
-    const environmentEntry = spec.art ? BATTLE_ASSET_BY_ID[spec.art.backgroundAssetId] : undefined;
     // Actors and their configured fallbacks must exist before any network wait.
-    // A slow background or sprite must not hide the whole ongoing battle.
+    // 角色图片加载期间也必须显示像素场景与角色兜底。
     this.effectPool.clear();
     this.cueScheduler.clear();
     this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
     this.camera.reset();
     this.biomeId = input.biomeId;
-    this.environmentBackgroundTexture = null;
     this.drawEnvironment();
     this.applyBattleSnapshot({ time: 0, combatants: input.combatants });
-    const [environmentTexture] = await Promise.all([
-      environmentEntry ? this.battleArtAssets.load(environmentEntry) : Promise.resolve(null),
-      this.battleArtAssets.preload(entries),
-    ]);
+    await this.battleArtAssets.preload(entries);
     if (!this.app || lifecycle !== this.lifecycleVersion || battle !== this.battleVersion) return;
-    this.environmentBackgroundTexture = environmentTexture;
-    this.drawEnvironment();
     // Keep the latest actors, positions and cues: loading may span many frames.
   }
 
@@ -264,7 +254,7 @@ export class BattleStage implements BattleRenderer {
 
   private drawEnvironment(): void {
     this.terrainContacts.clear();
-    this.environmentView.draw(battleEnvironmentFor(this.biomeId), this.environmentBackgroundTexture);
+    this.environmentView.draw(battleEnvironmentFor(this.biomeId));
   }
 
   private playAnimationCue(cue: Extract<BattleCue, { type: 'animation' }>): void {

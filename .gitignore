@@ -9,15 +9,12 @@ _extracted
 .codex
 .vscode
 CLAUDE.md
-# Generated browser visual-regression artifacts; reviewed baseline PNGs stay versioned.
+# 浏览器验收产物按当前版本重建，不提交截图与报告。
 doc/visual-baselines
 .hermes
 .codex*
 .agents
-# 本地素材下载缓存、调研样图与弃用草稿；正式素材仍由 Git 跟踪。
-/art-source/pmd-source-v1/
-/art-source/resource-audit/
-/art-source/emberwing-v1/
-/art-source/flame-wing-v6/
+# 本地素材工作缓存；正式素材及来源记录仍由 Git 跟踪。
+/art-source/
 # 验证入口的临时编译产物（正常结束自动清理）。
 /.script-*.mjs

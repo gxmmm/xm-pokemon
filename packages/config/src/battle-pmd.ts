@@ -24,7 +24,7 @@ export const PMD_ASSETS: readonly BattleAssetManifestEntry[] = SPECIES_LIST.flat
 const MOTIONS = ['idle', 'locomotion', 'enter', 'exit', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'] as const;
 export const PMD_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = SPECIES_LIST.map(({ id }) => ({
   id: `pmd-import:${id}`, profileId: `species:${id}`, modelId: `pmd:${id}`, status: 'integrated', sourceId: PMD_SOURCE.id,
-  format: 'png-sequence-json', generationPromptRevision: 'pmd-source-1f201ba3-native-pixels-v1',
+  format: 'png-sequence-json', sourceRevision: 'pmd-source-1f201ba3-native-pixels-v1',
   plannedFrontAssetId: `pmd:${id}:front`, plannedBackAssetId: `pmd:${id}:back`, fallbackAssetId: 'battle:fallback-shape',
   requiredMotions: MOTIONS,
   sequence: { frameWidth: PMD_BATTLE_FRAME_SIZES[id]!.width, frameHeight: PMD_BATTLE_FRAME_SIZES[id]!.height, fps: 60,

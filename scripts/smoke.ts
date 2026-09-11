@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import './asset-audit.ts';
 import { BattleSim, baseStat, createWildInstance, breed, createStarter, computeDamage, computeStats, applyExp, getAvailableEvolutions, movementStepIntervalForSpeed, roundCombatAmount, rollEncounter, rollWildGroup, isHardCc, decide, mulberry32 } from '@pokemon-online/engine';
 import { getSpecies, MAPS, getMap, SKILL_MAP, NORMAL_ATTACK, PASSIVE_SKILLS, SPECIES_LIST, SKILLS, skillRoleOf, SIGNATURE_SKILLS, ICONIC_SIGNATURE_SPECIES, COMBAT_ROLE_LABEL, isWalkable } from '@pokemon-online/config';
 import { PASSIVE_SKILL_MAX, type BattleCombatant, type PokemonInstance } from '@pokemon-online/shared';
@@ -176,14 +177,13 @@ testBattleHud();
     'battle environment exposes its six layers in stable back-to-front order',
   );
   for (const spec of Object.values(BATTLE_ENVIRONMENTS)) {
-    const usedFormalArt = environment.draw(spec, null);
-    assert(!usedFormalArt, `${spec.id} uses procedural grammar when no formal texture is available`);
+    environment.draw(spec);
     assert(environment.background.children.length === 1, `${spec.id} paints an overscanned sky base`);
     assert(environment.farBackdrop.children.length > 0 && environment.horizonLayer.children.length > 0, `${spec.id} paints backdrop and horizon depth layers`);
     assert(environment.groundLayer.children.length > 0 && environment.foreground.children.length === 1, `${spec.id} paints perspective ground and foreground framing`);
     assert(environment.terrainOcclusion.children.length === 0, `${spec.id} leaves per-combatant foot occlusion to the contact system`);
   }
-  assert(!environment.draw(BATTLE_ENVIRONMENTS.grass, Texture.EMPTY), 'pixel environment ignores legacy bitmap backdrops');
+  environment.draw(BATTLE_ENVIRONMENTS.grass);
   assert(environment.background.children.length === 1 && environment.farBackdrop.children.length > 0, 'pixel environment retains its native scenery without bitmap layers');
   environment.clear();
   assert(environment.childCount === 0, 'environment teardown releases every owned layer child');
@@ -602,9 +602,7 @@ testBattleCamera();
   assert(charizardProfile.locomotionMode === 'flight' && gengarProfile.locomotionMode === 'hover' && snorlaxProfile.locomotionMode === 'grounded', 'battle art profiles declare model-owned grounded, hover, and flight locomotion modes');
   assert(BATTLE_ENVIRONMENTS.grass.contactVisual === 'grass-clumps' && BATTLE_ENVIRONMENTS.cave.contactVisual === 'dust' && BATTLE_ENVIRONMENTS.water.contactVisual === 'ripples', 'battle environments declare terrain contact and foreground-occlusion grammar');
   assert(BATTLE_ENVIRONMENTS.grass.parallax.far < BATTLE_ENVIRONMENTS.grass.parallax.horizon && BATTLE_ENVIRONMENTS.grass.parallax.horizon < BATTLE_ENVIRONMENTS.grass.parallax.ground && BATTLE_ENVIRONMENTS.grass.parallax.ground < BATTLE_ENVIRONMENTS.grass.parallax.foreground && BATTLE_ENVIRONMENTS.grass.overscan >= 180, 'battle environment parallax is ordered from distant background through foreground with camera-safe canvas coverage');
-  const grassEnvironmentAsset = BATTLE_ASSET_MANIFEST.find((asset) => asset.id === BATTLE_ENVIRONMENTS.grass.art?.backgroundAssetId);
-  const grassEnvironmentSource = BATTLE_ASSET_SOURCES.find((source) => source.id === grassEnvironmentAsset?.sourceId);
-  assert(Object.values(BATTLE_ENVIRONMENTS).every((environment) => environment.pixelArt && !environment.art), '五种环境统一像素构件，不引用AI背景');
+  assert(Object.values(BATTLE_ENVIRONMENTS).every((environment) => !('art' in environment) && !('pixelArt' in environment)), '五种环境统一像素构件，不引用AI背景');
   const grassGrounded = terrainContactPlan('grass-clumps', 'grounded');
   const grassFlight = terrainContactPlan('grass-clumps', 'flight');
   const groundedShadow = groundShadowPlan(0, 0);
@@ -850,7 +848,7 @@ testBattleCamera();
 {
   const recipeReport = validateSkillVisualRecipes();
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && recipeReport.missingSkillIds.length === 0 && recipeReport.duplicateSkillIds.length === 0 && recipeReport.overBudgetRecipeIds.length === 0 && recipeReport.invalidSignatureSkillIds.length === 0 && recipeReport.invalidActorChoreographyRecipeIds.length === 0, 'skill visual recipe coverage and budget validation');
-  assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune' && new Set(Object.values(BATTLE_ENVIRONMENTS).map((environment) => environment.camera.height)).size >= 3 && Object.values(BATTLE_ENVIRONMENTS).every((environment) => environment.atmosphere.keyLight.radius > 0 && environment.atmosphere.horizonHaze > 0), 'BattleStage biome environment, atmosphere, and camera grammar configured');
+  assert(Object.keys(BATTLE_ENVIRONMENTS).join(',') === 'grass,cave,water,dragon,arena' && BATTLE_ENVIRONMENTS.water.terrain === 'water' && BATTLE_ENVIRONMENTS.dragon.ambience === 'rune' && new Set(Object.values(BATTLE_ENVIRONMENTS).map((environment) => environment.camera.height)).size >= 3 && Object.values(BATTLE_ENVIRONMENTS).every((environment) => environment.overscan >= 180 && environment.palette.ground.length > 0), 'BattleStage biome environment, atmosphere, and camera grammar configured');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'ember')?.variant === 'default' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'flamethrower')?.variant === 'flame-stream' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'fire-blast')?.variant === 'fire-glyph', 'fire skills use distinct config-owned basic, sustained, and finisher visual motifs');
   assert(SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'volt-chain')?.variant === 'chain' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'draco-meteor')?.variant === 'meteor' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'blazing-dive')?.variant === 'dive' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'shadow-trap')?.variant === 'bind' && SKILL_VISUAL_RECIPES.find((recipe) => recipe.skillId === 'chilling-snare')?.variant === 'snare', 'signature skills select config variants without renderer skill branches');
   console.log('✓ Stage 6 visual recipe and battle biome contract');
@@ -869,22 +867,19 @@ testBattleCamera();
 // the same grammar without a new renderer branch or a new Scene Pack family.
 {
   assert(ILLUSION_TOWER_SCENE_MAP_IDS.join(',') === 'illusion-tower-1,illusion-tower-2,illusion-tower-3,illusion-tower-4,illusion-tower-5' && ILLUSION_TOWER_SCENES.length === 5, 'Illusion Tower defines five parameterized Scene Pack instances');
-  assert(ILLUSION_TOWER_SCENES.every((scene, index) => scene.id === `illusion-tower-training-${index + 1}` && scene.biome === 'illusion-tower' && scene.landmarks?.some((landmark) => landmark.kind === 'stone-terrace') && scene.landmarks?.some((landmark) => landmark.kind === 'crystal-cluster') && scene.landmarks?.some((landmark) => landmark.kind === 'rift-mist')), 'Illusion Tower floors share generic terrace, crystal, and rift grammar');
+  assert(ILLUSION_TOWER_SCENES.every((scene, index) => scene.id === `illusion-tower-training-${index + 1}` && scene.biome === 'illusion-tower' && scene.relief.tiles === getMap(scene.mapId).tiles), '塔层由真实地图格驱动像素地形');
   assert(isGpuWorldMapId('illusion-tower-1') && isGpuWorldMapId('illusion-tower-2') && isGpuWorldMapId('illusion-tower-3') && isGpuWorldMapId('illusion-tower-4') && isGpuWorldMapId('illusion-tower-5') && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-1'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-1']!) && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-2'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-2']!) && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-3'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-3']!) && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-4'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-4']!) && WORLD_SCENE_VISUAL_BASELINES['illusion-tower-5'] === worldSceneFingerprintHash(WORLD_SCENE_BY_MAP_ID['illusion-tower-5']!), 'All five Illusion Tower floors are approved through the explicit GPU gate with their reviewed parameterized config baselines');
   console.log('✓ Illusion Tower parameterized WorldSceneSpec contract');
 }
 
-// Stage 4 config keeps Mist Bay landmarks outside the former map-id gate
-// branches, while retaining the authoritative map geometry separately.
+// 城镇使用当前地图格与像素地形，角色声明保持独立。
 {
   const mistBay = WORLD_SCENE_BY_MAP_ID.pallet;
-  assert(mistBay?.biome === 'mist-harbor' && mistBay.landmarks?.some((landmark) => landmark.kind === 'lighthouse'), 'Mist Bay WorldSceneSpec has lighthouse landmark');
-  const roof = mistBay?.landmarks?.find((landmark) => landmark.kind === 'roof' && landmark.depth === 'occlusion');
-  assert(!!roof && roof.x <= 7.2 && roof.x + (roof.width ?? 1) >= 7.2 && roof.y <= 9.6 && roof.y + (roof.height ?? 1) >= 9.6, 'Mist Bay roof occlusion covers sandbox player route');
+  assert(mistBay?.biome === 'mist-harbor' && mistBay.relief.style === 'harbor' && mistBay.relief.tiles === getMap('pallet').tiles, '城镇只使用当前港湾地形');
   const characters = mistBay?.characters ?? [];
   assert(characters.some((character) => character.id === 'player' && character.appearance === 'hero'), 'Mist Bay scene config defines GPU player character');
   assert(characters.length === 2 && characters.some((character) => character.id === 'dock-fisher'), 'Mist Bay keeps only player and ambient fisher');
-  console.log('✓ Mist Bay WorldSceneSpec landmark contract');
+  console.log('✓ Mist Bay current relief contract');
 }
 
 

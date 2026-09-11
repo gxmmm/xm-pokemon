@@ -170,7 +170,7 @@ def main():
     report_path=OUT/'import-report.json'
     results={row['id']:row for row in json.loads(report_path.read_text(encoding='utf-8'))['species']} if report_path.exists() else {}
     completed=0
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         pending={pool.submit(convert,i):i for i in ids}
         for future in as_completed(pending):
             result=future.result()

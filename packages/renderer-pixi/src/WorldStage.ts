@@ -14,15 +14,6 @@ interface ScenePalette {
   accent: string;
   fog: string;
 }
-interface Landmark {
-  id: string;
-  kind: 'lighthouse' | 'building' | 'dock' | 'boulder' | 'path' | 'roof' | 'fog-bank' | 'crystal-cluster' | 'rift-mist' | 'cave-veil' | 'stone-terrace' | 'cave-shadow';
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  depth: 'terrain' | 'scenery' | 'occlusion' | 'foreground';
-}
 interface SceneCharacter {
   id: string;
   appearance: CharacterAppearance;
@@ -37,8 +28,7 @@ export interface WorldStageSceneSpec {
   biome: string;
   ambience: { preset: string; density: number };
   palette: ScenePalette;
-  relief?: WorldReliefLayout;
-  landmarks?: readonly Landmark[];
+  relief: WorldReliefLayout;
   characters?: readonly SceneCharacter[];
   resources?: { preloadKeys: readonly string[]; ambientParticleLimit: number; entityLimit: number };
 }
@@ -292,7 +282,7 @@ export class WorldStage implements WorldRenderer {
       this.terrain.addChild(art.floor); this.scenery.addChild(art.backdrop); this.foreground.addChild(art.front);
       this.reliefObjects = art.rows;
       this.entities.addChild(...art.rows);
-    } else if (this.activeScene) this.drawLandmarks(this.activeScene, palette);
+    }
     this.drawAmbience(this.activeScene?.ambience ?? { preset: 'mist', density: 0.3 }, palette);
     this.resize();
   }
@@ -324,108 +314,8 @@ export class WorldStage implements WorldRenderer {
       }
       return;
     }
-    this.basePaint.ground.clear().rect(bounds.x, 410, bounds.width, Math.max(0, bounds.y + bounds.height - 410)).fill({ color: palette.ground });
-    this.basePaint.shadow.clear().rect(bounds.x, 408, bounds.width, 8).fill({ color: palette.shadow, alpha: 0.18 });
-  }
-
-  private drawLandmarks(scene: WorldStageSceneSpec, palette: ScenePalette): void {
-    for (const mark of scene.landmarks ?? []) {
-      const layer = mark.depth === 'terrain' ? this.terrain : mark.depth === 'scenery' ? this.scenery : mark.depth === 'occlusion' ? this.occlusion : this.foreground;
-      const x = 160 + mark.x * TILE_WIDTH;
-      const y = 105 + mark.y * TILE_HEIGHT;
-      const width = (mark.width ?? 1) * TILE_WIDTH;
-      const height = (mark.height ?? 1) * TILE_HEIGHT;
-      const graphic = new Graphics();
-      this.drawLandmark(graphic, mark.kind, x, y, width, height, palette);
-      layer.addChild(graphic);
-    }
-  }
-
-  private drawLandmark(graphic: Graphics, kind: Landmark['kind'], x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    switch (kind) {
-      case 'lighthouse':
-        graphic.rect(x, y - height * 0.6, width, height * 1.6).fill({ color: 0xe8e1c6 }).rect(x - 8, y - height * 0.72, width + 16, 16).fill({ color: 0x375b6a }).circle(x + width / 2, y - height * 0.72, 15).fill({ color: 0xffdd81, alpha: 0.8 });
-        break;
-      case 'building':
-      case 'roof':
-        graphic.rect(x, y, width, height).fill({ color: kind === 'roof' ? 0x34535f : 0xd3b283 }).poly([x - 12, y, x + width / 2, y - height * 0.45, x + width + 12, y]).fill({ color: 0x385d68 });
-        break;
-      case 'dock': graphic.rect(x, y, width, height).fill({ color: 0x8f6947 }); break;
-      case 'boulder': this.drawBoulders(graphic, x, y, width, height, palette); break;
-      case 'path': this.drawPath(graphic, x, y, width, height, palette); break;
-      case 'fog-bank': graphic.ellipse(x + width / 2, y + height / 2, width * 0.75, height * 0.7).fill({ color: palette.fog, alpha: 0.28 }); break;
-      case 'crystal-cluster': this.drawCrystalCluster(graphic, x, y, width, height, palette); break;
-      case 'rift-mist': this.drawRiftMist(graphic, x, y, width, height, palette); break;
-      case 'cave-veil': this.drawCaveVeil(graphic, x, y, width, height, palette); break;
-      case 'stone-terrace': this.drawStoneTerrace(graphic, x, y, width, height, palette); break;
-      case 'cave-shadow': this.drawCaveShadow(graphic, x, y, width, height, palette); break;
-    }
-  }
-
-  private drawBoulders(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    const count = Math.max(2, Math.round(width / 54));
-    for (let index = 0; index < count; index++) {
-      const bx = x + width * (0.2 + index / count * 0.65);
-      const by = y + height * (0.55 + index % 2 * 0.18);
-      const radius = Math.min(width / count * 0.32, height * 0.35);
-      graphic.poly([bx - radius, by + radius * 0.6, bx - radius * 0.66, by - radius * 0.45, bx + radius * 0.25, by - radius, bx + radius, by - radius * 0.15, bx + radius * 0.65, by + radius * 0.65]).fill({ color: 0x536b62 })
-        .poly([bx - radius * 0.66, by - radius * 0.45, bx + radius * 0.25, by - radius, bx + radius, by - radius * 0.15, bx + radius * 0.12, by + radius * 0.05]).fill({ color: palette.accent, alpha: 0.22 });
-    }
-  }
-
-  private drawCrystalCluster(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    const count = Math.max(3, Math.round(width / 28));
-    for (let index = 0; index < count; index++) {
-      const cx = x + width * (0.12 + index / count * 0.76);
-      const baseY = y + height * (0.78 + index % 2 * 0.1);
-      const crystalHeight = height * (0.38 + index % 3 * 0.13);
-      const crystalWidth = 8 + index % 3 * 3;
-      graphic.poly([cx - crystalWidth, baseY, cx, baseY - crystalHeight, cx + crystalWidth, baseY, cx, baseY + 5]).fill({ color: 0x7386ae, alpha: 0.84 })
-        .poly([cx, baseY - crystalHeight, cx + crystalWidth, baseY, cx, baseY]).fill({ color: palette.accent, alpha: 0.48 });
-    }
-  }
-
-  private drawRiftMist(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    const bands = Math.max(2, Math.round(width / 140));
-    for (let index = 0; index < bands; index++) {
-      const cx = x + width * (0.12 + index / bands * 0.76);
-      const cy = y + height * (0.35 + index % 2 * 0.24);
-      graphic.ellipse(cx, cy, width / bands * 0.72, height * 0.32).fill({ color: palette.fog, alpha: 0.13 + index % 2 * 0.04 })
-        .circle(cx + 10, cy - 6, 2).fill({ color: palette.accent, alpha: 0.55 });
-    }
-  }
-
-  private drawCaveVeil(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    const bands = Math.max(3, Math.round(width / 120));
-    for (let index = 0; index < bands; index++) {
-      const cx = x + width * (0.1 + index / bands * 0.8);
-      const cy = y + height * (0.36 + index % 2 * 0.22);
-      graphic.ellipse(cx, cy, width / bands * 0.66, height * 0.34).fill({ color: palette.fog, alpha: 0.11 + index % 2 * 0.04 })
-        .ellipse(cx, cy + height * 0.1, width / bands * 0.4, height * 0.12).fill({ color: 0x3fa9c4, alpha: 0.1 });
-    }
-  }
-
-  private drawStoneTerrace(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    const rows = Math.max(2, Math.round(height / 34));
-    for (let row = 0; row < rows; row++) {
-      const top = y + height * row / rows;
-      const bottom = y + height * (row + 1) / rows;
-      graphic.poly([x, top + 7, x + width * 0.84, top, x + width, top + 8, x + width * 0.9, bottom, x + width * 0.1, bottom, x, bottom - 8])
-        .fill({ color: row % 2 ? 0x7c775f : 0x8e8769, alpha: 0.93 })
-        .moveTo(x + width * 0.1, bottom - 4).lineTo(x + width * 0.88, bottom - 8).stroke({ color: palette.shadow, alpha: 0.42, width: 2 });
-    }
-  }
-
-  private drawCaveShadow(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    graphic.poly([x, y, x + width, y, x + width * 0.9, y + height * 0.74, x + width * 0.55, y + height, x + width * 0.14, y + height * 0.82])
-      .fill({ color: 0x1b1721, alpha: 0.92 })
-      .poly([x + width * 0.12, y + height * 0.08, x + width * 0.84, y + height * 0.06, x + width * 0.7, y + height * 0.36, x + width * 0.24, y + height * 0.46])
-      .fill({ color: palette.shadow, alpha: 0.42 });
-  }
-
-  private drawPath(graphic: Graphics, x: number, y: number, width: number, height: number, palette: ScenePalette): void {
-    graphic.poly([x + width * 0.18, y, x + width * 0.82, y, x + width, y + height, x, y + height]).fill({ color: palette.path, alpha: 0.94 })
-      .poly([x + width * 0.12, y, x + width * 0.18, y, x, y + height, x - width * 0.08, y + height]).fill({ color: palette.shadow, alpha: 0.2 });
+    this.basePaint.ground.clear();
+    this.basePaint.shadow.clear();
   }
 
   private drawAmbience(ambience: { preset: string; density: number }, palette: ScenePalette): void {
