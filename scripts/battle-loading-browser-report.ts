@@ -7,6 +7,7 @@ import { chromium, type Browser } from 'playwright-core';
 // Run npm run build first: exercise the same production bundle shipped to Workers.
 const BASE = 'http://127.0.0.1:41782';
 const OUTPUT = resolve('doc/visual-baselines/battle-loading');
+const visualOnly = process.argv.includes('--visual-only');
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--config', 'apps/web/vite.config.ts', '--host', '127.0.0.1', '--port', '41782', '--strictPort'], { stdio: 'pipe', windowsHide: true });
 let serverLog = '';
 server.stdout.on('data', (data) => { serverLog += data; });
@@ -24,7 +25,8 @@ try {
   assert(ready, serverLog);
   browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
   const reports: unknown[] = [];
-  for (const kind of ['fast', 'slow', 'timeout', 'failure', 'pvp-timeout'] as const) {
+  for (const kind of ['fast', 'slow', 'late', 'timeout', 'failure', 'pvp-timeout'] as const) {
+    if (visualOnly && kind !== 'fast') continue;
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -47,6 +49,8 @@ try {
       await page.locator('.starter').nth(1).click();
       await page.getByRole('button', { name: /就决定是你了/ }).click();
       await page.waitForURL('**/world');
+      await page.locator('.pixi-world-viewport canvas').waitFor();
+      await page.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
       await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.has('battle'));
       const origin = kind === 'pvp-timeout' ? '/pvp' : '/world';
       if (origin === '/pvp') await page.evaluate(async () => {
@@ -80,8 +84,11 @@ try {
         const battle = globals.$pinia._s.get('battle');
         const enemies = [18, 6, 16].map((speciesId, i) => ({ ...JSON.parse(JSON.stringify(game.rosterInstances[0])), uid: `entry-enemy-${i}`, speciesId, level: 7 }));
         if (!(pvp ? battle.startPvp(enemies, '入口验收') : battle.startWild(enemies, 'illusion-tower-1'))) throw new Error('No battle created');
-        await globals.$router.push('/battle');
       }, kind === 'pvp-timeout');
+      await page.clock.runFor(80);
+      if (kind === 'fast') await page.screenshot({ path: resolve(OUTPUT, 'fast-impact.png') });
+      await page.clock.runFor(220);
+      await page.evaluate(async () => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$router.push('/battle'));
       await page.locator('.battle-entry').waitFor();
       assert.equal((await read()).save, before.save, '进入等待不能写入发现记录或其他存档字段');
       for (let attempt = 0; attempt < 100 && !requested; attempt++) {
@@ -97,15 +104,23 @@ try {
       assert.equal((await read()).time, 0);
       assert.equal((await read()).save, before.save);
       await page.screenshot({ path: resolve(OUTPUT, `${kind}-transition.png`), animations: 'disabled' });
-      if (kind === 'fast' || kind === 'slow') {
+      if (kind === 'fast' || kind === 'slow' || kind === 'late') {
         if (kind === 'slow') await page.clock.runFor(Math.max(0, 2000 - ((await read()).now - before.now)));
+        if (kind === 'late') await page.clock.runFor(Math.max(0, 9900 - ((await read()).now - before.now)));
         release();
         await page.waitForFunction(() => (document.querySelector('#app') as any).__vue_app__.config.globalProperties.$pinia._s.get('battle').assetsReady, undefined, { polling: 50 });
         const prepared = await read();
-        if (prepared.now - before.now < 1000) {
-          assert.equal(prepared.phase, 'loading'); assert.equal(prepared.time, 0);
-          await page.clock.runFor(1001 - (prepared.now - before.now));
-        }
+        assert.equal(prepared.phase, 'loading'); assert.equal(prepared.time, 0);
+        const revealAt = Math.max(500, prepared.now - before.now);
+        await page.clock.runFor(Math.max(0, revealAt - (prepared.now - before.now)));
+        assert.equal(await page.locator('.battle-entry').getAttribute('data-stage'), 'reveal');
+        const duration = Math.min(500, 10000 - revealAt);
+        await page.clock.runFor(Math.floor(duration / 2));
+        assert.equal((await read()).time, 0, '局部展开期间不推进战斗');
+        assert.equal((await read()).save, before.save, '展开未结束不写发现记录');
+        assert(await page.locator('.side-panel').first().evaluate(element => getComputedStyle(element).visibility === 'hidden'));
+        await page.screenshot({ path: resolve(OUTPUT, `${kind}-reveal.png`), animations: 'disabled' });
+        await page.clock.runFor(Math.ceil(duration / 2) + 1);
         assert.equal((await read()).phase, 'fighting');
         await page.clock.runFor(100);
         assert((await read()).time! > 0, '就绪后才开始模拟');
@@ -131,7 +146,7 @@ try {
       console.log(`✓ 战斗过场 ${kind}`);
     } finally { release(); await page.close(); }
   }
-  await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, reports }, null, 2));
+  await writeFile(resolve(OUTPUT, visualOnly ? 'visual-report.json' : 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, reports }, null, 2));
 } finally {
   await browser?.close();
   server.kill();

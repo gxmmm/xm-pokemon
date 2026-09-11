@@ -7,6 +7,7 @@ import MessageHost from './components/MessageHost.vue';
 import GameMenu from './components/GameMenu.vue';
 import BattleEntryOverlay from './components/BattleEntryOverlay.vue';
 import { useBattleStore } from './stores/battle.ts';
+import { BATTLE_ENTRY } from '@pokemon-online/config';
 
 const auth = useAuthStore();
 const game = useGameStore();
@@ -50,8 +51,8 @@ watch(() => auth.isAuthenticated, (v) => {
 </script>
 
 <template>
-  <div class="app-stage" :class="{ 'battle-sandbox-stage': route.name === 'battle-sandbox' }">
-    <main ref="view" class="view" :inert="enteringBattle" :class="{ 'with-menu': showChrome && route.name !== 'world', immersive: route.name === 'world' || route.name === 'battle' }">
+  <div class="app-stage" :style="{ '--encounter-impact': `${BATTLE_ENTRY.impactMs}ms` }" :class="{ 'battle-sandbox-stage': route.name === 'battle-sandbox' }">
+    <main ref="view" class="view" :inert="enteringBattle" :class="{ 'encounter-shake': enteringBattle, 'with-menu': showChrome && route.name !== 'world', immersive: route.name === 'world' || route.name === 'battle' }">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -69,5 +70,7 @@ watch(() => auth.isAuthenticated, (v) => {
 </template>
 
 <style scoped>
+.encounter-shake { animation: encounter-impact var(--encounter-impact) steps(1) both; }
+@keyframes encounter-impact { 0% { translate: 0 0; } 12% { translate: -10px 4px; } 24% { translate: 9px -3px; } 38% { translate: -7px -2px; } 52% { translate: 6px 3px; } 68% { translate: -3px 0; } 84%, 100% { translate: 0 0; } }
 .save-error { position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:60; display:flex; align-items:center; gap:12px; max-width:90%; padding:10px 14px; border:1px solid var(--bad); border-radius:10px; background:var(--panel); color:var(--ink); font-size:14px; }
 </style>

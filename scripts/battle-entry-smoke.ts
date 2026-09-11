@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { BattleEntryGate } from '../apps/web/src/game/BattleEntryGate.ts';
 
 export function testBattleEntry() {
-  for (const readyAt of [200, 2000, 10001, undefined]) {
+  for (const readyAt of [200, 2000, 9999, 10000, 10001, undefined]) {
     let now = 0, starts = 0, failures = 0;
     const tasks = new Set<{ at: number; run: () => void }>();
     const gate = new BattleEntryGate(() => starts++, () => failures++, {
@@ -19,7 +19,8 @@ export function testBattleEntry() {
     };
     if (readyAt !== undefined) { advance(readyAt); gate.ready(); gate.ready(); }
     if (readyAt === 200) { advance(999); assert.equal(starts, 0); advance(1000); assert.equal(starts, 1); }
-    if (readyAt === 2000) assert.equal(starts, 1, '较慢资源就绪后立即开始');
+    if (readyAt === 2000) { advance(2499); assert.equal(starts, 0, '展开期间模拟不启动'); advance(2500); assert.equal(starts, 1); }
+    if (readyAt === 9999) { assert.equal(starts, 0); advance(10000); assert.equal(starts, 1, '临界就绪压缩展开时长'); }
     advance(11000);
     assert.equal(starts, readyAt !== undefined && readyAt < 10000 ? 1 : 0);
     assert.equal(failures, starts ? 0 : 1);

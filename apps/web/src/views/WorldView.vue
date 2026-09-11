@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useBattleStore } from '../stores/battle.ts';
-import { getMap, isWalkable, isEncounterTile, MAP_MAP, WORLD_SCENE_BY_MAP_ID, isGpuWorldMapId } from '@pokemon-online/config';
+import { BATTLE_ENTRY, getMap, isWalkable, isEncounterTile, MAP_MAP, WORLD_SCENE_BY_MAP_ID, isGpuWorldMapId } from '@pokemon-online/config';
 import { rollWildGroup, ENCOUNTER_CHANCE, dayNight } from '@pokemon-online/engine';
 import type { Facing } from '@pokemon-online/shared';
 import type { WorldEntityRenderSnapshot } from '@pokemon-online/renderer';
@@ -61,7 +61,9 @@ async function enterBattleRoute(): Promise<void> {
   // Route handoff transports visual intent only. Battle facts have already been
   // created by the battle store and world movement stays frozen by `leaving`.
   if (!gpuUnavailable.value && isGpuWorldMapId(map.value.id)) {
-    await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 240, color: '#0b2430' });
+    const pending = battle.sim;
+    await new Promise(resolve => setTimeout(resolve, BATTLE_ENTRY.impactMs));
+    if (!pending || battle.sim !== pending) return;
     requestBattleVisualTransition({ mapId: map.value.id });
   }
   await router.push({ name: 'battle' });

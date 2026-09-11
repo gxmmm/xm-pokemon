@@ -330,7 +330,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 </script>
 
 <template>
-  <div class="battle" v-if="sim">
+  <div class="battle" v-if="sim" :class="{ 'entering-battle': battle.phase === 'loading' }">
     <div class="battle-toolbar" v-if="battle.phase === 'fighting'">
       <span class="bold tiny">{{ running ? '自动战斗中' : ended ? '战斗结束' : '战斗已暂停' }}</span>
       <div class="arena-controls">
@@ -445,6 +445,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
 <style scoped>
 .battle { position:relative; width:100%; height:100%; isolation:isolate; }
+.entering-battle .side-panel, .entering-battle .tactic-ribbon { visibility:hidden; }
 .wild-list { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
 .wild-entry { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-radius: 8px; padding: 6px 8px; }
 

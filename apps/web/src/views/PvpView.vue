@@ -5,7 +5,7 @@ import { useGameStore } from '../stores/game.ts';
 import { useBattleStore } from '../stores/battle.ts';
 import { useMessage } from '../stores/message.ts';
 import { api } from '../api/client.ts';
-import { getSpecies } from '@pokemon-online/config';
+import { BATTLE_ENTRY, getSpecies } from '@pokemon-online/config';
 import type { PokemonInstance } from '@pokemon-online/shared';
 import PokemonCard from '../components/PokemonCard.vue';
 import BackHub from '../components/BackHub.vue';
@@ -50,10 +50,14 @@ async function fetchOpponent(): Promise<void> {
   } finally { busy.value = false; }
 }
 
-function startBattle(): void {
+async function startBattle(): Promise<void> {
   if (!opponentTeam.value || opponentTeam.value.length === 0) return;
   const ok = battle.startPvp(opponentTeam.value, opponentName.value);
-  if (ok) router.push({ name: 'battle' });
+  if (ok) {
+    const pending = battle.sim;
+    await new Promise(resolve => setTimeout(resolve, BATTLE_ENTRY.impactMs));
+    if (pending && battle.sim === pending) await router.push({ name: 'battle' });
+  }
   else msg.warn('你的切磋队伍为空，请先在「队伍」页设置3只宝可梦');
 }
 </script>
