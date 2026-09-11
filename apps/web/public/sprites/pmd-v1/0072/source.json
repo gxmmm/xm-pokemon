@@ -1,0 +1,9 @@
+{
+  "revision": "1f201ba3f969dd0eb4447744dffaeaaef26f5ae7",
+  "species": 72,
+  "url": "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/1f201ba3f969dd0eb4447744dffaeaaef26f5ae7/sprite/0072/",
+  "castingSource": "Shoot",
+  "faintFallback": true,
+  "changes": "裁切方向、按源影子中心对齐画布、拆分施法阶段；保留像素与1/60秒帧时长",
+  "xmlSha256": "6d4c41f7b6ad5b8b88034116b6a972df59ab2021f6519c96b17e7c5c9d07ddbf"
+}

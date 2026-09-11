@@ -1,6 +1,7 @@
 import { BATTLE_HIT_REACTION, BATTLE_VISUAL_THEMES, battleArtMotionForAnimation, resolveBattleArtAnchor, resolveBattleArtPresentation, type BattleArtAnchorId, type BattleArtLayerSpec, type BattleArtLocomotionMode, type BattleArtMotionId, type BattleVisualTheme, type ResolvedBattleArtPresentation } from '@pokemon-online/config';
 import type { BattleActorChoreography, BattleCombatant, TypeName } from '@pokemon-online/shared';
-import { Container, Graphics } from 'pixi.js';
+import { Container } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BATTLE_SPRITE_DISPLAY_HEIGHT, CombatantSprite } from './CombatantSprite.ts';
 import { CombatantStatusLayer, type CombatantStatusVisual } from './CombatantStatusLayer.ts';
@@ -264,7 +265,7 @@ export class CombatantView extends Container {
     const height = this.sprite.visible ? this.sprite.height : BATTLE_SPRITE_DISPLAY_HEIGHT;
     this.body.updateLocalTransform();
     this.updateLocalTransform();
-    const bodyPoint = this.body.localTransform.apply({ x: anchor.x * width, y: anchor.y * height });
+    const bodyPoint = this.body.localTransform.apply(this.sprite.getFrameAnchor(id) ?? { x: anchor.x * width, y: anchor.y * height });
     return this.localTransform.apply(bodyPoint);
   }
 
@@ -314,21 +315,22 @@ export class CombatantView extends Container {
       beganNextMotion = true;
     }
 
-    const pulse = this.motion === 'idle' ? Math.sin(progress * Math.PI * 2) * 0.025
+    const authored = this.presentation.profile.authoredFrames;
+    const pulse = authored ? 0 : this.motion === 'idle' ? Math.sin(progress * Math.PI * 2) * 0.025
       : this.motion === 'locomotion' ? Math.sin(progress * Math.PI * 2) * 0.05
       : this.motion === 'charge' || this.motion === 'channel' ? Math.sin(progress * Math.PI * 2) * 0.035
       : 0;
-    const recoil = this.motion === 'hit' ? Math.sin(progress * Math.PI) * -12 : 0;
+    const recoil = !authored && this.motion === 'hit' ? Math.sin(progress * Math.PI) * -12 : 0;
     const track = this.presentation.profile.motionTracks?.[this.motion];
     // 横向轨道已经描述完整的前冲与后坐；再叠加通用位移会使脚点滑动。
     // 仅有纵向、缩放等轨道的角色仍使用通用横向动作。
     const authoredAdvance = track?.some((frame) => frame.offsetX !== undefined);
-    const actionAdvance = authoredAdvance ? 0 : this.motion === 'attack' ? Math.sin(progress * Math.PI) * 22
+    const actionAdvance = authored || authoredAdvance ? 0 : this.motion === 'attack' ? Math.sin(progress * Math.PI) * 22
       : this.motion === 'cast' ? Math.sin(progress * Math.PI) * 10
         : this.motion === 'channel' ? 5
           : this.motion === 'recover' ? -Math.sin(progress * Math.PI) * 8
             : 0;
-    const faintScale = this.motion === 'faint' || !this.alive ? 1 - Math.min(0.3, progress * 0.3) : 1;
+    const faintScale = !authored && (this.motion === 'faint' || !this.alive) ? 1 - Math.min(0.3, progress * 0.3) : 1;
     const pose = sampleBattleMotionPose(this.presentation.profile.motionPoses[this.motion] ?? {}, track, progress);
     const choreography = this.choreographyTransform(progress);
     const target: MotionTransform = {
@@ -340,10 +342,11 @@ export class CombatantView extends Container {
       scaleX: this.facing * this.baseScale * (pose.scaleX ?? 1) * (1 + pulse) * faintScale,
       scaleY: this.baseScale * (pose.scaleY ?? 1) * (1 - pulse * 0.6) * faintScale,
       x: this.facing * ((pose.offsetX ?? 0) + recoil + actionAdvance) + choreography.x,
-      y: (pose.offsetY ?? 0) + choreography.y + this.movementBobOffsetY,
-      rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + this.movementTiltRad,
+      y: (pose.offsetY ?? 0) + choreography.y + (authored ? 0 : this.movementBobOffsetY),
+      rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + (authored ? 0 : this.movementTiltRad),
     };
-    this.sprite.advance(beganNextMotion ? 0 : elapsedMs, clip.loop, clip.loop ? undefined : this.activeMotionDurationMs());
+    const timedClip = !clip.loop || this.motionDurationOverrideMs !== null;
+    this.sprite.advance(beganNextMotion ? 0 : elapsedMs, !timedClip, timedClip ? this.activeMotionDurationMs() : undefined);
     const transform = this.interpolateTransition(target, beganNextMotion ? 0 : elapsedMs);
     const hover = this.hoverTransform(elapsedMs);
     this.visualHoverOffsetY = hover.offsetY;

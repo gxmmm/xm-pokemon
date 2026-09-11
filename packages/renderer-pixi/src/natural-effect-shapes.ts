@@ -16,17 +16,18 @@ export function drawElementMotes(graphic: Graphics, shape: ElementalVfxShape, x:
     const py = y + site.y * height - progress * (5 + index % 3 * 4);
     const size = 3 + index % 3;
     if (shape === 'flame') {
-      graphic.moveTo(px - size, py + size).quadraticCurveTo(px - size * 0.7, py - size, px + 1, py - size * 3)
-        .quadraticCurveTo(px + size * 1.4, py, px + size, py + size).closePath().fill({ color: index % 2 ? color : 0xffaf45, alpha });
+      graphic.rect(px-size,py-size,size*2,size*2).fill({color,alpha})
+        .rect(px,py-size*3,size,size*2).fill({color,alpha})
+        .rect(px,py-size,size,size).fill({color:0xffd16a,alpha});
     } else if (shape === 'water-wave') {
-      graphic.moveTo(px, py - size * 2).quadraticCurveTo(px + size * 1.5, py + size, px, py + size)
-        .quadraticCurveTo(px - size, py, px, py - size * 2).fill({ color, alpha });
+      graphic.rect(px-size,py-size,size*2,size*2).fill({color,alpha})
+        .rect(px,py-size*2,size,size).fill({color,alpha})
+        .rect(px-size,py-size,size,size).fill({color:0xd2f8ff,alpha});
     } else if (shape === 'lightning') {
       graphic.moveTo(px - size, py - size * 2).lineTo(px + size, py).lineTo(px - size, py + size).lineTo(px + size, py + size * 2)
-        .stroke({ color, alpha, width: 1.6 });
+        .stroke({ color, alpha, width: 3 });
     } else if (shape === 'leaf') {
-      graphic.moveTo(px - size, py + size).quadraticCurveTo(px - size, py - size * 2, px + size * 2, py - size)
-        .quadraticCurveTo(px + size, py + size, px - size, py + size).fill({ color, alpha });
+      graphic.rect(px-size,py,size,size).rect(px,py-size,size*2,size*2).rect(px+size,py-size*2,size,size).fill({color,alpha});
     } else {
       graphic.poly([px, py - size * 1.7, px + size, py, px, py + size, px - size * 0.6, py]).fill({ color, alpha });
     }

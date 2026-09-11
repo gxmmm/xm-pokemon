@@ -1,7 +1,9 @@
 import { type AssetKey, type SceneTransitionRequest, type WorldCue, type WorldRenderInput, type WorldRenderer, type WorldRenderSnapshot } from '@pokemon-online/renderer';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import { CharacterView, type CharacterAppearance, type CharacterBehavior } from './CharacterView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
+import { PIXEL_ART_STYLE } from '@pokemon-online/config';
 
 interface ScenePalette {
   backdrop: string;
@@ -110,14 +112,15 @@ export class WorldStage implements WorldRenderer {
       height: DESIGN_HEIGHT,
       background: FALLBACK_PALETTE.backdrop,
       autoDensity: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      resolution: 1 / PIXEL_ART_STYLE.screenPixelSize,
+      antialias: false,
       preference: 'webgl',
     });
     if (version !== this.lifecycleVersion) {
       this.disposeApplication(app);
       return;
     }
-    app.canvas.style.cssText = 'display:block;width:100%;height:100%;';
+    app.canvas.style.cssText = 'display:block;width:100%;height:100%;image-rendering:pixelated;';
     host.replaceChildren(app.canvas);
     this.app = app;
     this.drawCallObserver = new DrawCallObserver((app.renderer as unknown as { gl?: WebGLRenderingContext }).gl ?? null);

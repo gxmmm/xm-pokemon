@@ -1,13 +1,13 @@
 :root {
-  --bg: #2b3a55;
-  --bg-dark: #1c2740;
-  --panel: #f8f8f8;
-  --panel-2: #e9ecef;
+  --bg: #243c39;
+  --bg-dark: #172c2b;
+  --panel: #f1e9cf;
+  --panel-2: #e3dabe;
   --ink: #2b2b2b;
   --muted: #6b7280;
   --accent: #ee1515;
-  --accent-2: #3b4cca;
-  --gold: #ffcb05;
+  --accent-2: #39776a;
+  --gold: #e9c66c;
   --good: #3b9c3b;
   --bad: #d23b3b;
   --warn: #e0a800;
@@ -51,7 +51,7 @@ button {
   font-family: inherit;
   cursor: pointer;
   border: none;
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 8px 14px;
   background: var(--accent-2);
   color: #fff;
@@ -73,9 +73,9 @@ button.sm { padding: 4px 8px; font-size: 12px; }
 .panel {
   background: var(--panel);
   color: var(--ink);
-  border-radius: 12px;
+  border-radius: 2px;
   padding: 14px;
-  box-shadow: 0 4px 0 rgba(0,0,0,.18);
+  box-shadow: 0 4px 0 #132b2b66, inset 0 0 0 2px #fff6dc;
 }
 .row { display: flex; gap: 10px; }
 .col { display: flex; flex-direction: column; gap: 10px; }
@@ -89,7 +89,7 @@ button.sm { padding: 4px 8px; font-size: 12px; }
 .h-title { font-size: 20px; font-weight: 800; color: var(--accent); letter-spacing: .5px; }
 
 /* bars */
-.bar { position: relative; height: 10px; background: #d9d9d9; border-radius: 6px; overflow: hidden; }
+.bar { position: relative; height: 10px; background: #d9d9d9; border-radius: 1px; overflow: hidden; }
 .bar > span { display: block; height: 100%; transition: width .25s; }
 .hp-bar { background: var(--hp-bg); }
 .hp-bar > span { background: var(--hp); }

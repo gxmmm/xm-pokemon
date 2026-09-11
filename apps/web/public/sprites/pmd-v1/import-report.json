@@ -1,0 +1,760 @@
+{
+  "revision": "1f201ba3f969dd0eb4447744dffaeaaef26f5ae7",
+  "species": [
+    {
+      "id": 1,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 2,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 3,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 4,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 5,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 6,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 7,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 8,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 9,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 10,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 11,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 12,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 13,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 14,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 15,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 16,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 17,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 18,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 19,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 20,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 21,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 22,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 23,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 24,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 25,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 26,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 27,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 28,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 29,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 30,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 31,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 32,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 33,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 34,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 35,
+      "castingSource": "Dance",
+      "faintFallback": true
+    },
+    {
+      "id": 36,
+      "castingSource": "Dance",
+      "faintFallback": true
+    },
+    {
+      "id": 37,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 38,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 39,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 40,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 41,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 42,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 43,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 44,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 45,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 46,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 47,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 48,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 49,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 50,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 51,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 52,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 53,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 54,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 55,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 56,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 57,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 58,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 59,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 60,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 61,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 62,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 63,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 64,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 65,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 66,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 67,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 68,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 69,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 70,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 71,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 72,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 73,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 74,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 75,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 76,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 77,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 78,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 79,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 80,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 81,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 82,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 83,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 84,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 85,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 86,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 87,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 88,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 89,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 90,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 91,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 92,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 93,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 94,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 95,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 96,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 97,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 98,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 99,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 100,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 101,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 102,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 103,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 104,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 105,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 106,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 107,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 108,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 109,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 110,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 111,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 112,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 113,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 114,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 115,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 116,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 117,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 118,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 119,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 120,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 121,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 122,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 123,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 124,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 125,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 126,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 127,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 128,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 129,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 130,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 131,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 132,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 133,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 134,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 135,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 136,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 137,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 138,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 139,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 140,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 141,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 142,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 143,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 144,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 145,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 146,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 147,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 148,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 149,
+      "castingSource": "Shoot",
+      "faintFallback": true
+    },
+    {
+      "id": 150,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    },
+    {
+      "id": 151,
+      "castingSource": "Shoot",
+      "faintFallback": false
+    }
+  ]
+}

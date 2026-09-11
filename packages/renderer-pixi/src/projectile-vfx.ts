@@ -1,6 +1,6 @@
 import type { TypeName } from '@pokemon-online/shared';
 import { projectileTimingFor } from '@pokemon-online/config';
-import { Graphics } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
@@ -16,7 +16,7 @@ export function spawnProjectile(
   element?: TypeName,
 ): void {
   // A shadow needs to occlude the bright stage, not add light to it.
-  const graphic = new Graphics({ blendMode: variant === 'shadow-orb' || variant === 'arc-bolt' || element === 'water' ? 'normal' : 'add' });
+  const graphic = new Graphics({ blendMode: 'normal' });
   const timing = projectileTimingFor(variant, intensity);
   const shape = elementalVfxShapeFor(element);
   runtime.add(graphic, timing.durationMs / 1000, (progress) => {
@@ -97,7 +97,22 @@ export function spawnProjectile(
           .stroke({ color, alpha: 0.76 - arc * 0.12, width: 2 });
       }
     } else if (variant === 'stone-shot') {
-      graphic.poly([x + nx * 16, y + ny * 16, x + px * 14, y + py * 14, x - nx * 14, y - ny * 14, x - px * 14, y - py * 14]).fill({ color, alpha: 0.9 });
+      graphic.poly([x-15,y-5,x-7,y-14,x+8,y-12,x+16,y-2,x+10,y+13,x-9,y+11]).fill({ color: 0x695b48, alpha: .98 })
+        .poly([x-12,y-5,x-5,y-11,x+7,y-9,x+11,y+1,x-3,y+5]).fill({ color, alpha: .98 })
+        .rect(x-6,y-9,9,4).fill({ color: 0xd9c99a, alpha: .96 });
+    } else if (variant === 'lunar-orb') {
+      const radius = 12 + intensity * 5;
+      graphic.circle(x,y,radius).fill({ color: 0x93659c, alpha: .98 })
+        .circle(x-2,y-2,radius*.79).fill({ color, alpha: .98 })
+        .rect(x-6,y-8,7,5).fill({ color: 0xffe7cd, alpha: .96 });
+      graphic.rect(x-nx*24-2,y-ny*24-2,4,4).fill({color,alpha:.65});
+    } else if (variant === 'wind-flakes') {
+      for (let i=0;i<3;i++) {
+        const sway=Math.sin(progress*10+i*2)*7;
+        const cx=x-nx*i*11+px*sway, cy=y-ny*i*11+py*sway;
+        graphic.poly([cx-nx*11,cy-ny*11,cx+px*4,cy+py*4,cx+nx*12,cy+ny*12,cx-px*2,cy-py*2])
+          .fill({color:i===1?0xf0e6c6:color,alpha:.94-i*.1});
+      }
     } else if (variant === 'wind-cutter') {
       for (const side of [-1, 1]) graphic.moveTo(x - nx * 18 + px * side * 9, y - ny * 18 + py * side * 9).lineTo(x + nx * 21, y + ny * 21).stroke({ color, alpha: 0.82, width: 4 + intensity * 2 });
     } else if (variant === 'fairy-spark' || variant === 'neutral-star') {

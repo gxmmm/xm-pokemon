@@ -1,6 +1,6 @@
 import type { TypeName } from '@pokemon-online/shared';
 import { BATTLE_EFFECT_COMPOSITION, BATTLE_SKILL_DETAILS } from '@pokemon-online/config';
-import { Graphics } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';
@@ -8,7 +8,7 @@ import { drawElementMotes } from './natural-effect-shapes.ts';
 
 export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, color: number, intensity: number, variant = 'default', source?: BattleStagePoint): void {
   const directional = (BATTLE_SKILL_DETAILS.directionalImpacts as readonly string[]).includes(variant);
-  const graphic = new Graphics({ blendMode: directional || variant === 'water-shot' || variant === 'arc-bolt' || variant === 'shadow-orb' || variant === 'flame-stream' ? 'normal' : 'add' });
+  const graphic = new Graphics({ blendMode: 'normal' });
   if (source && directional) {
     graphic.pivot.set(at.x, at.y); graphic.position.set(at.x, at.y);
     graphic.rotation = Math.atan2(at.y - source.y, at.x - source.x);
@@ -17,6 +17,21 @@ export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, col
   runtime.add(graphic, duration, (progress) => {
     graphic.clear();
     const alpha = (1 - progress) * 0.92;
+    if (variant === 'stone-shot' || variant === 'wind-flakes' || variant === 'lunar-orb') {
+      for (let i=0;i<6;i++) {
+        const angle=i*2.4, distance=8+progress*30, size=(i%2?3:5)*(1-progress*.6);
+        const x=at.x+Math.cos(angle)*distance, y=at.y+Math.sin(angle)*distance*.65-progress*10;
+        if (variant === 'stone-shot') {
+          graphic.poly([x-size,y-size,x+size*.6,y-size,x+size,y+size,x-size*.7,y+size*.6]).fill({color:i%2?color:0x776a54,alpha})
+            .rect(x-size*.5,y-size*.6,size,size*.5).fill({color:0xd9c99a,alpha});
+        } else if (variant === 'wind-flakes') {
+          graphic.poly([x-size*2,y+size,x,y-size,x+size*2,y-size,x,y+size*.3]).fill({color:i%2?color:0xf0e6c6,alpha});
+        } else {
+          graphic.rect(x-size*.4,y-size,size*.8,size*2).rect(x-size,y-size*.4,size*2,size*.8).fill({color:i%2?color:0xffe7cd,alpha});
+        }
+      }
+      return;
+    }
     if (variant === 'water-shot' || variant === 'arc-bolt') {
       drawElementMotes(graphic, variant === 'water-shot' ? 'water-wave' : 'lightning', at.x, at.y, progress, color, 6, 15 + progress * 12, 12);
       return;
@@ -130,7 +145,7 @@ export function spawnImpact(runtime: BattleEffectPool, at: BattleStagePoint, col
  * motif. The layered taper and staggered embers deliberately read as flame
  * rather than a flat rectangular beam. */
 export function spawnDive(runtime: BattleEffectPool, from: BattleStagePoint, to: BattleStagePoint, color: number, intensity: number): void {
-  const graphic = new Graphics({ blendMode: 'add' });
+  const graphic = new Graphics({ blendMode: 'normal' });
   const duration = 0.38;
   runtime.add(graphic, duration, (progress) => {
     const dx = to.x - from.x;
@@ -166,8 +181,10 @@ export function spawnDive(runtime: BattleEffectPool, from: BattleStagePoint, to:
       const y = from.y + dy * t + py * sway;
       graphic.circle(x, y, Math.max(2, 5 + intensity * 3 - index * 0.35)).fill({ color: index % 2 ? color : 0xffea9a, alpha: 0.80 - index * 0.055 });
     }
-    graphic.circle(head.x, head.y, 10 + intensity * 10).fill({ color: 0xfff0b1, alpha: 0.94 })
-      .circle(head.x, head.y, 17 + intensity * 14).stroke({ color, alpha: 0.68, width: 3 + intensity * 2 });
+    const spark = 5 + intensity * 4;
+    graphic.rect(head.x - spark, head.y - spark * 2, spark * 2, spark * 4)
+      .rect(head.x - spark * 2, head.y - spark, spark * 4, spark * 2).fill({ color, alpha: .88 })
+      .rect(head.x - spark * .5, head.y - spark * .5, spark, spark).fill({ color: 0xffe49a, alpha: .94 });
   });
 }
 

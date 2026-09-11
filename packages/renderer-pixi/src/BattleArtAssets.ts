@@ -13,7 +13,11 @@ export class BattleArtAssetLoader {
     const cached = this.textureRequests.get(entry.id);
     if (cached) return cached;
     const request = Assets.load(entry.url)
-      .then((asset) => asset instanceof Texture ? asset : null)
+      .then((asset) => {
+        if (!(asset instanceof Texture)) return null;
+        asset.source.scaleMode = 'nearest';
+        return asset;
+      })
       .catch(() => null);
     this.textureRequests.set(entry.id, request);
     return request;
@@ -43,7 +47,11 @@ export class BattleArtAssetLoader {
         const rows = Math.ceil(texture.height / metadata.frameHeight);
         const maxFrames = metadata.columns * rows;
         if (clip.frames.some((frame) => !Number.isInteger(frame) || frame < 0 || frame >= maxFrames)) return null;
-        return clip.frames.map((frame) => new Texture({
+        const uniqueFrames = new Map<number, Texture>();
+        return clip.frames.map((frame) => {
+          const cached = uniqueFrames.get(frame);
+          if (cached) return cached;
+          const sliced = new Texture({
           source: texture.source,
           frame: new Rectangle(
             (frame % metadata.columns) * metadata.frameWidth,
@@ -51,7 +59,10 @@ export class BattleArtAssetLoader {
             metadata.frameWidth,
             metadata.frameHeight,
           ),
-        }));
+          });
+          uniqueFrames.set(frame, sliced);
+          return sliced;
+        });
       })
       .catch(() => null);
     this.clipTextureRequests.set(key, request);
@@ -77,11 +88,18 @@ export function isSpriteAsset(kind: BattleArtAssetKind): boolean {
 function isSpriteSheetMetadata(value: unknown): value is BattleArtSpriteSheetMetadata {
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
+  if (record.pixelScale !== undefined && (typeof record.pixelScale !== 'number' || !Number.isFinite(record.pixelScale) || record.pixelScale <= 0)) return false;
+  if (record.pivot !== undefined) {
+    const pivot = record.pivot as { x?: unknown; y?: unknown } | null;
+    if (!pivot || typeof pivot.x !== 'number' || typeof pivot.y !== 'number' || !Number.isFinite(pivot.x) || !Number.isFinite(pivot.y)) return false;
+  }
+  if (record.frameAnchors !== undefined && (!Array.isArray(record.frameAnchors) || record.frameAnchors.some((frame) => !frame || typeof frame !== 'object'
+    || Object.values(frame).some((point) => !point || typeof point !== 'object' || !Number.isFinite((point as { x: number }).x) || !Number.isFinite((point as { y: number }).y))))) return false;
   if (record.schemaVersion !== 1 || !positiveInteger(record.frameWidth) || !positiveInteger(record.frameHeight) || !positiveInteger(record.columns) || !positiveInteger(record.fps) || !record.clips || typeof record.clips !== 'object' || !Array.isArray(record.transitions)) return false;
   return Object.values(record.clips as Record<string, unknown>).every((clip) => {
     if (!clip || typeof clip !== 'object') return false;
     const candidate = clip as Record<string, unknown>;
-    return typeof candidate.loop === 'boolean' && Array.isArray(candidate.frames) && candidate.frames.length > 0 && candidate.frames.every((frame) => Number.isInteger(frame) && (frame as number) >= 0);
+    return typeof candidate.loop === 'boolean' && (candidate.holdLastFrame === undefined || typeof candidate.holdLastFrame === 'boolean') && Array.isArray(candidate.frames) && candidate.frames.length > 0 && candidate.frames.every((frame) => Number.isInteger(frame) && (frame as number) >= 0);
   }) && record.transitions.every((transition) => {
     if (!transition || typeof transition !== 'object') return false;
     const candidate = transition as Record<string, unknown>;

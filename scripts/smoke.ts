@@ -183,8 +183,8 @@ testBattleHud();
     assert(environment.groundLayer.children.length > 0 && environment.foreground.children.length === 1, `${spec.id} paints perspective ground and foreground framing`);
     assert(environment.terrainOcclusion.children.length === 0, `${spec.id} leaves per-combatant foot occlusion to the contact system`);
   }
-  assert(environment.draw(BATTLE_ENVIRONMENTS.grass, Texture.EMPTY), 'configured formal environment art replaces the procedural distant backdrop');
-  assert(environment.background.children.length === 3 && environment.farBackdrop.children.length === 0, 'formal environment art keeps sky and tone layers without duplicate backdrop geometry');
+  assert(!environment.draw(BATTLE_ENVIRONMENTS.grass, Texture.EMPTY), 'pixel environment ignores legacy bitmap backdrops');
+  assert(environment.background.children.length === 1 && environment.farBackdrop.children.length > 0, 'pixel environment retains its native scenery without bitmap layers');
   environment.clear();
   assert(environment.childCount === 0, 'environment teardown releases every owned layer child');
   console.log('✓ standalone layered battle environment view');
@@ -604,7 +604,7 @@ testBattleCamera();
   assert(BATTLE_ENVIRONMENTS.grass.parallax.far < BATTLE_ENVIRONMENTS.grass.parallax.horizon && BATTLE_ENVIRONMENTS.grass.parallax.horizon < BATTLE_ENVIRONMENTS.grass.parallax.ground && BATTLE_ENVIRONMENTS.grass.parallax.ground < BATTLE_ENVIRONMENTS.grass.parallax.foreground && BATTLE_ENVIRONMENTS.grass.overscan >= 180, 'battle environment parallax is ordered from distant background through foreground with camera-safe canvas coverage');
   const grassEnvironmentAsset = BATTLE_ASSET_MANIFEST.find((asset) => asset.id === BATTLE_ENVIRONMENTS.grass.art?.backgroundAssetId);
   const grassEnvironmentSource = BATTLE_ASSET_SOURCES.find((source) => source.id === grassEnvironmentAsset?.sourceId);
-  assert(grassEnvironmentAsset?.url === '/battle/environments/grass-clearing-v1.png' && grassEnvironmentSource?.reviewStatus === 'ai-generated' && existsSync('apps/web/public/battle/environments/grass-clearing-v1.png'), 'formal grass environment art is manifest-owned, locally present, and provenance-audited');
+  assert(Object.values(BATTLE_ENVIRONMENTS).every((environment) => environment.pixelArt && !environment.art), '五种环境统一像素构件，不引用AI背景');
   const grassGrounded = terrainContactPlan('grass-clumps', 'grounded');
   const grassFlight = terrainContactPlan('grass-clumps', 'flight');
   const groundedShadow = groundShadowPlan(0, 0);
@@ -625,8 +625,8 @@ testBattleCamera();
   const charizardFacingLeft = resolveBattleArtPresentation({ speciesId: 6, side: 'player', facing: -1 });
   const gengarFacingRight = resolveBattleArtPresentation({ speciesId: 94, side: 'enemy', facing: 1 });
   const gengarFacingLeft = resolveBattleArtPresentation({ speciesId: 94, side: 'enemy', facing: -1 });
-  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'battle:flame-wing:v5:back:sequence' && charizardSwift.asset.metadataUrl?.endsWith('/flame-wing-v5/back-sheet.json') && pikachuSwift.asset.url.endsWith('/25.png'), '共享技能通过配置化的玩家/敌方模型资产解析，不需要 renderer 分支');
-  assert(charizardFacingLeft.asset.id === 'battle:flame-wing:v5:front:sequence' && gengarFacingRight.asset.id === 'battle:spectral-caster:v2:back:sequence' && gengarFacingLeft.asset.id === 'battle:spectral-caster:v2:front:sequence', 'combatant.facing 通用选择前后视源图，左右换位后不再把背视镜像成正面');
+  assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'pmd:6:back' && pikachuSwift.asset.id === 'pmd:25:front', '共享技能使用PMD配置资源');
+  assert(charizardFacingLeft.asset.id === 'pmd:6:front' && gengarFacingRight.asset.id === 'pmd:94:back' && gengarFacingLeft.asset.id === 'pmd:94:front', '朝向选择真实前后视PMD帧');
   assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'cast', 'one shared skill receives model-configured theme, anchor, and motion differences');
   const unknown = resolveBattleArtPresentation({ speciesId: -1, side: 'enemy', skillId: '__missing__', motion: 'hit' });
   assert(unknown.profile.id === 'generic:fallback' && unknown.asset.kind === 'fallback-shape' && unknown.motion.id === 'hit', 'battle art resolver has a configuration-owned missing model/skill fallback');
@@ -635,17 +635,35 @@ testBattleCamera();
     return existsSync(`apps/web/public/${relative}`);
   });
   assert(manifestFilesExist, 'every static battle-art manifest entry resolves to a bundled public asset');
-  const flameWingImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:flame-wing-2d-sequence');
-  const spectralCasterImport = BATTLE_ART_IMPORT_CONTRACTS.find((contract) => contract.id === 'vertical-slice:spectral-caster-2d-sequence');
-  assert(BATTLE_ASSET_SOURCES.every((source) => source.sourceUrl && source.licenseLabel && source.licenseEvidenceUrl && source.attribution), 'every battle asset source has auditable provenance, licence evidence, and attribution');
-  assert(flameWingImport?.status === 'integrated' && flameWingImport.sourceId === 'pokemon-online-code-authored-flame-wing-v5-motion' && flameWingImport.format === 'png-sequence-json' && flameWingImport.sequence.frameWidth === 96 && flameWingImport.sequence.frameHeight === 96 && flameWingImport.sequence.fps === 16 && flameWingImport.sequence.chromaKey === 'transparent-alpha' && flameWingImport.requiredMotions.includes('locomotion') && flameWingImport.sequence.requiredClips.includes('recover') && flameWingImport.sequence.transitions.some((transition) => transition.from === 'idle' && transition.to === 'locomotion' && transition.durationMs === 90) && flameWingImport.sequence.transitions.some((transition) => transition.from === 'attack' && transition.to === 'recover' && transition.durationMs === 70), '火翼飞龙无损序列契约记录来源、尺寸、动作与平滑 clip 过渡');
-  assert(spectralCasterImport?.status === 'integrated' && spectralCasterImport.sourceId === 'pokemon-online-code-authored-spectral-caster-v2-motion' && spectralCasterImport.format === 'png-sequence-json' && spectralCasterImport.sequence.frameWidth === 96 && spectralCasterImport.sequence.frameHeight === 96 && spectralCasterImport.sequence.fps === 16 && spectralCasterImport.sequence.requiredClips.includes('locomotion') && spectralCasterImport.sequence.requiredClips.includes('recover') && spectralCasterImport.requiredMotions.includes('faint'), '耿鬼无损序列契约记录已下载 PokeAPI 基底、悬浮施法动作与公共 fallback');
-  const sequenceAssets = [flameWingImport!, spectralCasterImport!].flatMap((contract) => [contract.plannedFrontAssetId, contract.plannedBackAssetId]).map((id) => BATTLE_ASSET_MANIFEST.find((asset) => asset.id === id)!);
-  assert(sequenceAssets.every((asset) => asset.kind === 'sprite-sheet' && !!asset.metadataUrl && existsSync(`apps/web/public/${asset.url.replace(/^\//, '')}`) && existsSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`)), '代表模型的序列图与 JSON 元数据均通过 manifest 进入 public 资产目录');
-  const sequenceMetadata = sequenceAssets.map((asset) => JSON.parse(readFileSync(`apps/web/public/${asset.metadataUrl!.replace(/^\//, '')}`, 'utf8')) as { frameWidth: number; frameHeight: number; columns: number; fps: number; clips: Record<string, { frames: number[]; loop: boolean }>; transitions: Array<{ from: string; to: string; durationMs: number; easing: string }> });
-  assert(sequenceMetadata.every((metadata) => metadata.frameWidth === 96 && metadata.frameHeight === 96 && metadata.columns === 8 && metadata.fps === 16 && metadata.clips.idle?.frames.length === 6 && metadata.clips.locomotion?.frames.length === 8 && metadata.clips.recover?.frames.length === 4 && metadata.clips.faint?.frames.length === 10 && metadata.transitions.some((transition) => transition.from === 'idle' && transition.to === 'locomotion' && transition.durationMs === 90 && transition.easing === 'cubic-in-out')), '代表模型前后视元数据包含真实移动、恢复、倒下关键帧与统一补间');
+  assert(BATTLE_ART_IMPORT_CONTRACTS.length === BATTLE_ART_PROFILES.length, '每个角色都有导入契约');
+  assert(BATTLE_ASSET_SOURCES.every((source) => source.sourceUrl && source.licenseLabel && source.licenseEvidenceUrl && source.attribution), '资源来源与署名完整');
+  const sequenceAssets = BATTLE_ART_IMPORT_CONTRACTS.flatMap((contract) => [contract.plannedFrontAssetId, contract.plannedBackAssetId]).map((id) => BATTLE_ASSET_MANIFEST.find((asset) => asset.id === id)!);
+  for (const asset of sequenceAssets) {
+    assert(asset.kind === 'sprite-sheet' && asset.sourceId === 'pmdcollab-v1' && asset.metadataUrl, '角色由PMD manifest声明');
+    const metadata = JSON.parse(readFileSync(`apps/web/public${asset.metadataUrl}`, 'utf8')) as {
+      frameWidth: number; frameHeight: number; columns: number; fps: number; pixelScale: number;
+      pivot: { x: number; y: number }; frameAnchors: Array<Record<string, { x: number; y: number }>>;
+      clips: Record<string, { frames: number[]; loop: boolean; holdLastFrame?: boolean }>;
+    };
+    const png = readFileSync(`apps/web/public${asset.url}`);
+    assert(png.readUInt32BE(16) === metadata.columns * metadata.frameWidth, '图集宽度匹配元数据');
+    assert(png.readUInt32BE(20) % metadata.frameHeight === 0, '图集高度为整帧');
+    assert(metadata.fps === 60 && metadata.pixelScale === 2.5, '源1/60秒时长和统一原生像素比例');
+    for (const name of ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint', 'enter', 'exit']) {
+      const clip = metadata.clips[name];
+      assert(clip && clip.frames.length > 0, `${asset.id} ${name}: 必需动作或已声明兜底`);
+      for (const frame of clip.frames) {
+        assert(Number.isInteger(frame) && frame >= 0 && frame < metadata.frameAnchors.length, '帧索引与逐帧挂点有效');
+        for (const name of ['ground','body','head','muzzle']) {
+          const anchor = metadata.frameAnchors[frame]![name]!;
+          assert(anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y), '源位置标记经过转换');
+        }
+      }
+    }
+    assert(metadata.clips.charge!.holdLastFrame && metadata.clips.channel!.holdLastFrame, '持续姿态不回卷准备帧');
+  }
   const representativeProfiles = REPRESENTATIVE_BATTLE_ART_SPECIES.map((speciesId) => resolveBattleArtPresentation({ speciesId, side: 'enemy' }).profile);
-  assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length === 0 && Object.keys(profile.motionPoses).length >= 4), 'representative models retain distinct poses without permanent status-like decorations');
+  assert(representativeProfiles.length === 6 && representativeProfiles.every((profile) => profile.layers.length === 0 && profile.authoredFrames), '不同体型统一使用帧内动作');
   assert(new Set(representativeProfiles.map((profile) => profile.modelId)).size === representativeProfiles.length, 'representative model identities remain explicit profile data rather than renderer branches');
   console.log(`✓ battle art config and resolver: ${BATTLE_ART_PROFILES.length} profiles, ${BATTLE_ASSET_MANIFEST.length} assets`);
   const officialBattleView = readFileSync('apps/web/src/views/BattleView.vue', 'utf8');
@@ -714,11 +732,11 @@ testBattleCamera();
   combatantView.playAnimation('windup');
   combatantView.update(0.12);
   const viewDiagnostics = combatantView.getDiagnostics();
-  assert(combatantView.alpha === 1 && viewDiagnostics.modelId === 'showcase:flame-wing' && viewDiagnostics.layerCount === 0 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1, 'CombatantView resolves windup without ambient decorations through its generic configuration contract');
+  assert(combatantView.alpha === 1 && viewDiagnostics.modelId === 'pmd:6' && viewDiagnostics.layerCount === 0 && viewDiagnostics.motion === 'charge' && viewDiagnostics.facing === 1, 'CombatantView resolves windup without ambient decorations through its generic configuration contract');
   combatantView.refresh({ ...viewCombatant, facing: -1 });
   combatantView.update(0.12);
   const reversedViewDiagnostics = combatantView.getDiagnostics();
-  assert(viewDiagnostics.locomotionMode === 'flight' && viewDiagnostics.visualHoverOffsetY < 0 && reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView keeps generic pose geometry directional while applying configuration-owned flight lift');
+  assert(viewDiagnostics.locomotionMode === 'flight' && viewDiagnostics.visualHoverOffsetY === 0 && reversedViewDiagnostics.facing === -1 && reversedViewDiagnostics.bitmapFacing === -1, 'CombatantView uses source frame flight poses and retains directional facing');
   combatantView.setGrounding({ x: 3, y: 44 }, 44, 0.68, 0.86);
   combatantView.update(0.02);
   const raisedViewDiagnostics = combatantView.getDiagnostics();

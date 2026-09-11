@@ -54,8 +54,8 @@ export function testCombatantMotion(): void {
     assert(view.isSettled());
     assert.equal(JSON.stringify(actor), snapshot, 'pose playback cannot change battle facts');
     const profile = resolveBattleArtPresentation({ speciesId, side: 'player' }).profile;
-    const tracks = profile.motionTracks!.cast!;
-    const base = profile.motionPoses.cast!;
+    const tracks = [{ at: 0, offsetY: -6, rotationDeg: -4 }, { at: .54, offsetY: -15, rotationDeg: 7 }, { at: 1, offsetY: -8, rotationDeg: -1 }];
+    const base = { offsetY: -8 };
     assert.equal(sampleBattleMotionPose(base, tracks, 0).offsetY, tracks[0]!.offsetY);
     assert.equal(sampleBattleMotionPose(base, tracks, 0.54).rotationDeg, tracks[1]!.rotationDeg);
     assert.equal(sampleBattleMotionPose(base, tracks, 1).offsetY, tracks[2]!.offsetY);
@@ -91,11 +91,11 @@ export function testCombatantMotion(): void {
   const fallbackPose = { offsetX: 5 };
   // 验证最终显示的身体位移：横向关键帧拥有前冲，其他角色仍有通用动作。
   for (const facing of [1, -1] as const) for (const sample of [
-    { species: 6, animation: 'melee', progress: 0.48, expectedX: 21 },
-    { species: 6, animation: 'projectile', progress: 0.54, expectedX: 14 },
-    { species: 6, animation: 'recoil', progress: 0.35, expectedX: -5 },
-    { species: 94, animation: 'projectile', progress: 0.5, expectedX: 10 },
-    { species: 25, animation: 'melee', progress: 0.5, expectedX: 46 },
+    { species: 6, animation: 'melee', progress: 0.48, expectedX: 0 },
+    { species: 6, animation: 'projectile', progress: 0.54, expectedX: 0 },
+    { species: 6, animation: 'recoil', progress: 0.35, expectedX: 0 },
+    { species: 94, animation: 'projectile', progress: 0.5, expectedX: 0 },
+    { species: 25, animation: 'melee', progress: 0.5, expectedX: 0 },
   ]) {
     const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(sample.species, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
     const before = JSON.stringify(actor);
@@ -143,7 +143,7 @@ export function testCombatantMotion(): void {
     for (const view of [hit, reference]) view.destroy({ children: true });
   }
   assert.equal(sampleBattleMotionPose(fallbackPose, undefined, 0.5), fallbackPose, 'other profiles retain their existing poses');
-  assert.equal(BATTLE_ART_PROFILES.filter((profile) => profile.motionTracks).length, 2, 'only the two reviewed showcase profiles opt in');
+  assert(BATTLE_ART_PROFILES.every((profile) => profile.authoredFrames && !profile.motionTracks), '全量PMD角色使用帧内动作，避免叠加静态角色变形');
   assets.clear();
   console.log('✓ authored motion tracks, continuous hover, and action handoff');
 }

@@ -9,6 +9,8 @@ export const SKILL_SHOWCASES = [
   { id: 'flamethrower', species: 6 }, { id: 'water-gun', species: 9 },
   { id: 'thunderbolt', species: 25 }, { id: 'shadow-ball', species: 94 },
   { id: 'hyper-beam', species: 149 }, { id: 'karate-chop', species: 68 },
+  { id: 'fairy-wind', species: 35 }, { id: 'moonblast', species: 36 },
+  { id: 'flash-cannon', species: 81 }, { id: 'rock-throw', species: 95 },
 ] as const;
 
 /** Isolated inputs through the same director and stage used by the game. */

@@ -1,5 +1,6 @@
 import type { Container, Graphics } from 'pixi.js';
-import { Graphics as PixiGraphics, Container as PixiContainer } from 'pixi.js';
+import { Container as PixiContainer } from 'pixi.js';
+import { PixelGraphics as PixiGraphics } from './PixelGraphics.ts';
 
 export type { WorldCharacterAppearance as CharacterAppearance, WorldCharacterBehavior as CharacterBehavior } from '@pokemon-online/config';
 import type { WorldCharacterAppearance as CharacterAppearance, WorldCharacterBehavior as CharacterBehavior } from '@pokemon-online/config';

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import type { Page } from 'playwright-core';
+import { PIXEL_ART_STYLE } from '@pokemon-online/config';
 
 /** Check actual game routes, including their GPU canvas and floating controls. */
 export async function checkFullWindowScene(page: Page, output: string, scene: 'world' | 'battle'): Promise<void> {
@@ -8,11 +9,11 @@ export async function checkFullWindowScene(page: Page, output: string, scene: 'w
   await page.locator(`${selector} canvas`).waitFor();
   for (const size of [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(size);
-    await page.waitForFunction((selector) => {
+    await page.waitForFunction(({ selector, pixelSize }) => {
       const canvas = document.querySelector<HTMLCanvasElement>(`${selector} canvas`);
-      const ratio = Math.min(window.devicePixelRatio, 2);
+      const ratio = 1 / pixelSize;
       return canvas && canvas.width === Math.round(innerWidth * ratio) && canvas.height === Math.round(innerHeight * ratio);
-    }, selector);
+    }, { selector, pixelSize: PIXEL_ART_STYLE.screenPixelSize });
     const bounds = await page.evaluate(({ selector, scene }) => {
       return ['.app-stage', 'main', `.${scene}`, selector, `${selector} canvas`].map((query) => {
         const element = document.querySelector<HTMLElement>(query)!;

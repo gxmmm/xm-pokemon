@@ -1,5 +1,5 @@
 import type { TypeName } from '@pokemon-online/shared';
-import { Graphics } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { elementalVfxShapeFor } from './elemental-vfx.ts';

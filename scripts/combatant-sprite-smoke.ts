@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { BATTLE_ASSET_MANIFEST, type BattleArtSpriteSheetMetadata } from '@pokemon-online/config';
-import { Texture } from 'pixi.js';
+import { Rectangle, Texture } from 'pixi.js';
 import type { BattleArtAssetLoader } from '../packages/renderer-pixi/src/BattleArtAssets.ts';
 import { CombatantSprite } from '../packages/renderer-pixi/src/CombatantSprite.ts';
 
@@ -147,6 +147,33 @@ export async function testCombatantSprite(): Promise<void> {
   await sprite.setAsset(otherSheet, 'idle');
   assert(!sprite.visible && fallback.visible, 'missing initial sequence retains fallback');
 
+  // 原生像素尺寸、稳定脚点、逐帧嘴点与源时长不受序列帧画布留白影响。
+  const nativeFrames = [0, 1].map((column) => new Texture({ source: Texture.EMPTY.source,
+    frame: new Rectangle(column * 16, 0, 16, 24), orig: new Rectangle(0, 0, 16, 24) }));
+  const nativeMetadata: BattleArtSpriteSheetMetadata = {
+    schemaVersion: 1, frameWidth: 16, frameHeight: 24, columns: 2, fps: 60,
+    pixelScale: 2.5, pivot: { x: .25, y: .75 },
+    frameAnchors: [{ ground: { x: 4, y: 18 }, muzzle: { x: 10, y: 4 } },
+      { ground: { x: 4, y: 18 }, muzzle: { x: 12, y: 6 } }],
+    clips: { charge: { frames: [0, 0, 1], loop: true, holdLastFrame: true } }, transitions: [],
+  };
+  metadataRequests.set(sheet.id, Promise.resolve(nativeMetadata));
+  clipRequests.set(`${sheet.id}:charge`, Promise.resolve([nativeFrames[0]!, nativeFrames[0]!, nativeFrames[1]!]));
+  await sprite.setAsset(sheet, 'charge');
+  assert.equal(sprite.width, 40); assert.equal(sprite.height, 60);
+  assert.deepEqual(sprite.getFrameAnchor('ground'), { x: 0, y: 0 });
+  assert.deepEqual(sprite.getFrameAnchor('muzzle'), { x: 15, y: -35 });
+  sprite.advance(20, true);
+  assert.equal(sprite.texture, nativeFrames[0], 'repeated atlas index preserves the longer source frame');
+  sprite.advance(20, true);
+  assert.equal(sprite.texture, nativeFrames[1]);
+  assert.deepEqual(sprite.getFrameAnchor('muzzle'), { x: 20, y: -30 });
+  sprite.advance(500, true);
+  assert.equal(sprite.texture, nativeFrames[1], 'held windup never wraps while waiting on gameplay');
+  sprite.scale.x *= -1;
+  assert.deepEqual(sprite.getFrameAnchor('muzzle'), { x: -20, y: -30 });
+  sprite.scale.x *= -1;
+
   const afterUnmount = deferred<Texture | null>();
   staticRequests.set(staticAsset.id, afterUnmount.promise);
   const unmountedLoad = sprite.setAsset(staticAsset, 'idle');
@@ -166,5 +193,6 @@ export async function testCombatantSprite(): Promise<void> {
   await destroyedLoad;
   assert(sprite.destroyed && fallback.visible, 'destroyed sprites ignore late clip completion');
   for (const texture of textures) texture.destroy();
+  for (const texture of nativeFrames) texture.destroy();
   console.log('✓ combatant sprite loading, playback, fallback, and async race contracts');
 }

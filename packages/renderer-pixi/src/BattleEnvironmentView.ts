@@ -1,6 +1,7 @@
 import type { BattleEnvironmentSpec } from '@pokemon-online/config';
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { BATTLE_DESIGN_HEIGHT as DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH as DESIGN_WIDTH } from './battle-stage-layout.ts';
+import { drawPixelBattleEnvironment } from './PixelBattleEnvironment.ts';
 
 const DETAIL_DENSITY = 0.62;
 
@@ -21,6 +22,10 @@ export class BattleEnvironmentView {
   /** Draws the configured biome and returns whether formal bitmap art was used. */
   draw(spec: BattleEnvironmentSpec, texture: Texture | null): boolean {
     this.clear();
+    if (spec.pixelArt) {
+      drawPixelBattleEnvironment(this, spec);
+      return false;
+    }
     const { palette } = spec;
     const o = spec.overscan;
     // Every camera-reactive layer has a configuration-owned safety margin, so

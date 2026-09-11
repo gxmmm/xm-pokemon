@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { pokemonIconUrl } from '@pokemon-online/config';
 
 const props = withDefaults(defineProps<{ speciesId: number; back?: boolean; size?: number; faded?: boolean }>(), {
   size: 96,
 });
 const errored = ref(false);
-const src = computed(() => `/sprites/pokemon/${props.back ? 'back/' : ''}${props.speciesId}.png`);
+const src = computed(() => pokemonIconUrl(props.speciesId, props.back));
 watch(() => props.speciesId, () => { errored.value = false; });
 </script>
 
@@ -26,5 +27,6 @@ watch(() => props.speciesId, () => { errored.value = false; });
 </template>
 
 <style scoped>
+.poke-sprite { object-fit: contain; image-rendering: pixelated; }
 .sprite-fallback { display: flex; align-items: center; justify-content: center; opacity: .5; }
 </style>

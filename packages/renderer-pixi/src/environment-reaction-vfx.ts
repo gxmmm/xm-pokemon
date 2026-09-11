@@ -1,5 +1,5 @@
 import type { BattleEnvironmentSpec } from '@pokemon-online/config';
-import { Graphics } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { drawElementMotes } from './natural-effect-shapes.ts';

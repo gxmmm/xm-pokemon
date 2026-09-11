@@ -5,6 +5,7 @@ import { SPECIES_LIST } from './pokemon.ts';
 import { NORMAL_ATTACK, SKILLS } from './skills.ts';
 import { SKILL_VISUAL_RECIPE_MAP } from './skill-visuals.ts';
 import type { DeliveryKind, SkillVisualRecipe } from './visuals.ts';
+import { PMD_ASSETS, PMD_SOURCE, PMD_IMPORT_CONTRACTS } from './battle-pmd.ts';
 
 /** Opaque idle body budget in stage pixels, before perspective and action poses.
  * Small sprites retain their authored size; transparent texture margins do not
@@ -71,6 +72,8 @@ export interface BattleArtFrameTransitionSpec {
 export interface BattleArtSpriteSheetClip {
   frames: readonly number[];
   loop: boolean;
+  /** 持续蓄力／施法在姿态末帧保持，避免回卷到准备姿态。 */
+  holdLastFrame?: boolean;
 }
 
 export interface BattleArtSpriteSheetMetadata {
@@ -79,6 +82,9 @@ export interface BattleArtSpriteSheetMetadata {
   frameHeight: number;
   columns: number;
   fps: number;
+  pixelScale?: number;
+  pivot?: { x: number; y: number };
+  frameAnchors?: readonly Partial<Record<BattleArtAnchorId, { x: number; y: number }>>[];
   clips: Partial<Readonly<Record<BattleArtMotionId, BattleArtSpriteSheetClip>>>;
   transitions: readonly BattleArtFrameTransitionSpec[];
 }
@@ -176,6 +182,8 @@ export interface BattleVisualTheme {
 
 export interface BattleArtProfile {
   id: string;
+  /** 帧内已有完整动作，关闭针对静态角色的整体拉伸与前冲。 */
+  authoredFrames?: boolean;
   speciesId?: number;
   modelId: string;
   frontAssetId: string;
@@ -302,6 +310,7 @@ const FALLBACK_ASSET_ID = 'battle:fallback-shape';
  * review. The PokeAPI record preserves the existing project's attribution and
  * deliberately does not claim a new licence for Pokémon IP. */
 export const BATTLE_ASSET_SOURCES: readonly BattleAssetSourceRecord[] = [
+  PMD_SOURCE,
   {
     id: 'pokeapi-sprites',
     label: 'PokeAPI Sprites repository',
@@ -399,6 +408,7 @@ export const BATTLE_ASSET_SOURCE_BY_ID: Readonly<Record<string, BattleAssetSourc
 );
 
 export const BATTLE_ASSET_MANIFEST: readonly BattleAssetManifestEntry[] = [
+  ...PMD_ASSETS,
   { id: FALLBACK_ASSET_ID, kind: 'fallback-shape', url: '', sourceId: 'procedural-fallback', quality: 'all' },
   { id: 'battle:environment:grass-clearing:v1', kind: 'static-sprite', url: '/battle/environments/grass-clearing-v1.png', sourceId: 'pokemon-online-imagegen-grass-environment-v1', quality: 'all' },
   {
@@ -546,82 +556,7 @@ export const REPRESENTATIVE_BATTLE_ART_SPECIES = [6, 25, 94, 131, 143, 149] as c
 /** B-3 is intentionally blocked before any unapproved character bitmap is
  * added. Once a source is approved, create the two declared manifest entries,
  * switch this profile's asset IDs atomically, and retain this fallback. */
-export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = [
-  {
-    id: 'vertical-slice:flame-wing-2d-sequence',
-    profileId: 'species:6',
-    modelId: 'showcase:flame-wing',
-    status: 'integrated',
-    sourceId: 'pokemon-online-code-authored-flame-wing-v5-motion',
-    format: 'png-sequence-json',
-    sequence: {
-      frameWidth: 96,
-      frameHeight: 96,
-      fps: 16,
-      chromaKey: 'transparent-alpha',
-      requiredClips: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
-      transitions: [
-        { from: 'idle', to: 'locomotion', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'locomotion', to: 'idle', durationMs: 110, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'attack', durationMs: 100, easing: 'cubic-in-out' },
-        { from: 'attack', to: 'recover', durationMs: 70, easing: 'cubic-in-out' },
-        { from: 'recover', to: 'idle', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'cast', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'cast', to: 'recover', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'charge', durationMs: 160, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'attack', durationMs: 80, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'cast', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'channel', durationMs: 100, easing: 'cubic-in-out' },
-        { from: 'channel', to: 'recover', durationMs: 110, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'hit', durationMs: 60, easing: 'cubic-in-out' },
-        { from: 'hit', to: 'idle', durationMs: 130, easing: 'cubic-in-out' },
-        { from: 'hit', to: 'faint', durationMs: 40, easing: 'cubic-in-out' },
-      ],
-    },
-    generationPromptRevision: 'showcase-motion-v1-nearest-neighbour-keyframe-derivation',
-    plannedFrontAssetId: 'battle:flame-wing:v5:front:sequence',
-    plannedBackAssetId: 'battle:flame-wing:v5:back:sequence',
-    fallbackAssetId: FALLBACK_ASSET_ID,
-    requiredMotions: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
-  },
-  {
-    id: 'vertical-slice:spectral-caster-2d-sequence',
-    profileId: 'species:94',
-    modelId: 'showcase:spectral-caster',
-    status: 'integrated',
-    sourceId: 'pokemon-online-code-authored-spectral-caster-v2-motion',
-    format: 'png-sequence-json',
-    sequence: {
-      frameWidth: 96,
-      frameHeight: 96,
-      fps: 16,
-      chromaKey: 'transparent-alpha',
-      requiredClips: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
-      transitions: [
-        { from: 'idle', to: 'locomotion', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'locomotion', to: 'idle', durationMs: 110, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'attack', durationMs: 100, easing: 'cubic-in-out' },
-        { from: 'attack', to: 'recover', durationMs: 70, easing: 'cubic-in-out' },
-        { from: 'recover', to: 'idle', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'cast', durationMs: 120, easing: 'cubic-in-out' },
-        { from: 'cast', to: 'recover', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'charge', durationMs: 160, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'attack', durationMs: 80, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'cast', durationMs: 90, easing: 'cubic-in-out' },
-        { from: 'charge', to: 'channel', durationMs: 100, easing: 'cubic-in-out' },
-        { from: 'channel', to: 'recover', durationMs: 110, easing: 'cubic-in-out' },
-        { from: 'idle', to: 'hit', durationMs: 60, easing: 'cubic-in-out' },
-        { from: 'hit', to: 'idle', durationMs: 130, easing: 'cubic-in-out' },
-        { from: 'hit', to: 'faint', durationMs: 40, easing: 'cubic-in-out' },
-      ],
-    },
-    generationPromptRevision: 'showcase-motion-v1-nearest-neighbour-keyframe-derivation',
-    plannedFrontAssetId: 'battle:spectral-caster:v2:front:sequence',
-    plannedBackAssetId: 'battle:spectral-caster:v2:back:sequence',
-    fallbackAssetId: FALLBACK_ASSET_ID,
-    requiredMotions: ['idle', 'locomotion', 'attack', 'cast', 'charge', 'channel', 'recover', 'hit', 'faint'],
-  },
-];
+export const BATTLE_ART_IMPORT_CONTRACTS: readonly BattleArtImportContract[] = PMD_IMPORT_CONTRACTS;
 
 const REPRESENTATIVE_BATTLE_ART_TUNINGS: Readonly<Record<number, RepresentativeBattleArtTuning>> = {
   6: {
@@ -748,22 +683,22 @@ function profileFor(species: Species): BattleArtProfile {
   return {
     id: `species:${species.id}`,
     speciesId: species.id,
-    modelId: tuning?.modelId ?? `pokemon:${species.id}`,
-    frontAssetId: tuning?.frontAssetId ?? `pokemon:${species.id}:front`,
-    backAssetId: tuning?.backAssetId ?? `pokemon:${species.id}:back`,
+    modelId: `pmd:${species.id}`,
+    authoredFrames: true,
+    frontAssetId: `pmd:${species.id}:front`,
+    backAssetId: `pmd:${species.id}:back`,
     fallbackAssetId: FALLBACK_ASSET_ID,
     themeId: `type:${type}`,
     /** The profile palette lets a shared move inherit model identity without cloning the skill. */
     paletteMode: 'hybrid',
     locomotionMode: tuning?.locomotionMode ?? (species.types.includes('flying') ? 'flight' : 'grounded'),
-    hoverHeight: tuning?.hoverHeight ?? (species.types.includes('flying') ? 8 : 0),
-    hoverAmplitude: tuning?.hoverAmplitude ?? (species.types.includes('flying') ? 2 : 0),
+    hoverHeight: 0,
+    hoverAmplitude: 0,
     anchors: DEFAULT_ANCHORS,
     motions: DEFAULT_MOTIONS,
-    layers: tuning?.layers ?? DEFAULT_LAYERS,
-    motionPoses: tuning?.motionPoses ?? DEFAULT_MOTION_POSES,
-    motionTracks: tuning?.motionTracks,
-    scale: tuning?.scale ?? 1,
+    layers: [],
+    motionPoses: {},
+    scale: 1,
     shadowScale: tuning?.shadowScale ?? 1,
   };
 }
@@ -961,7 +896,7 @@ export function validateBattleArtConfiguration(
       || !contract.sequence.chromaKey
       || contract.sequence.requiredClips.length === 0
       || contract.sequence.requiredClips.some((motion) => !contract.requiredMotions.includes(motion))
-      || contract.sequence.transitions.length === 0
+      || (!profile.authoredFrames && contract.sequence.transitions.length === 0)
       || contract.sequence.transitions.some((transition) => transition.durationMs <= 0 || transition.easing !== 'cubic-in-out' || !contract.requiredMotions.includes(transition.from) || !contract.requiredMotions.includes(transition.to))
       || new Set(contract.sequence.transitions.map((transition) => `${transition.from}:${transition.to}`)).size !== contract.sequence.transitions.length
       || (contract.status === 'integrated'

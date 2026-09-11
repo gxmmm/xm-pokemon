@@ -108,7 +108,7 @@ async function main(): Promise<void> {
       await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));
       await checkSkillShowcases(page, OUTPUT, process.argv.includes('--before'));
       assert.deepEqual(errors, []);
-      console.log('✓ six representative skill showcases');
+      console.log('✓ six skill families and four PMD casting/size variants in both directions');
       return;
     }
     if (process.argv.includes('--natural-only')) {
@@ -122,22 +122,22 @@ async function main(): Promise<void> {
     }
     await selectTeams(page);
     const idleTasks = await page.evaluate(() => window.__BATTLE_BROWSER_TASKS__());
-    // Keep the initial background load pending until the component is removed.
+    // Keep the initial sprite load pending until the component is removed.
     let release!: () => void;
     let intercepted = false;
     const gate = new Promise<void>((done) => { release = done; });
-    await page.route('**/battle/environments/grass-clearing-v1.png', async (route) => {
+    await page.route('**/sprites/pmd-v1/0006/back.png', async (route) => {
       intercepted = true;
       await gate;
       await route.continue();
     });
     await page.locator('.start-button').click();
     for (let attempt = 0; attempt < 100 && !intercepted; attempt++) await page.waitForTimeout(100);
-    assert(intercepted, 'slow-load case did not intercept the real background request');
+    assert(intercepted, 'slow-load case did not intercept the real sprite request');
     await page.getByRole('button', { name: '返回选队', exact: true }).click();
     release();
     await page.waitForLoadState('networkidle');
-    await page.unroute('**/battle/environments/grass-clearing-v1.png');
+    await page.unroute('**/sprites/pmd-v1/0006/back.png');
     await page.waitForTimeout(1200);
     assert.equal(await page.locator('canvas').count(), 0, 'late loading reattached a canvas');
     assert.equal(await page.evaluate(() => window.__PO_RENDERER_OBSERVATION__?.().stageMounts.battle ?? 0), 0, 'removed viewport emitted ready');

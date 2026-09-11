@@ -44,8 +44,8 @@ float turbulence(vec2 p) {
   return noise(p) * 0.57 + noise(p * 2.03 + 7.1) * 0.28 + noise(p * 4.07 + 19.3) * 0.15;
 }
 void main() {
-  float x = vUV.x;
-  float y = vUV.y * 2.0 - 1.0;
+  float x = floor(vUV.x * 96.0) / 96.0;
+  float y = floor(vUV.y * 32.0) / 32.0 * 2.0 - 1.0;
   vec2 flow = vec2(x * 6.5 - uTime * 4.8, y * 3.2);
   vec2 warp = vec2(turbulence(flow * 0.65 + 3.1), turbulence(flow * 0.65 + 17.4)) - 0.5;
   float detail = turbulence(flow + warp * 2.8);
@@ -53,12 +53,12 @@ void main() {
   float center = y + warp.y * (0.10 + x * 0.48);
   float heat = 1.0 - abs(center) / width + (detail - 0.5) * (0.7 + x * 1.1);
   heat -= x * 0.18;
-  float edge = smoothstep(0.06, 0.24, heat);
+  float edge = step(0.20, heat);
   float ends = smoothstep(0.0, 0.018, x) * (1.0 - smoothstep(0.85, 1.0, x));
   float opacity = edge * ends * uOpacity;
-  vec3 color = mix(vec3(0.86, 0.12, 0.015), uTint, smoothstep(0.15, 0.46, heat));
-  color = mix(color, vec3(1.0, 0.71, 0.10), smoothstep(0.42, 0.76, heat));
-  color = mix(color, vec3(1.0, 0.94, 0.62), smoothstep(0.76, 1.12, heat));
+  vec3 color = mix(vec3(0.86, 0.12, 0.015), uTint, step(0.35, heat));
+  color = mix(color, vec3(1.0, 0.71, 0.10), step(0.65, heat));
+  color = mix(color, vec3(1.0, 0.94, 0.62), step(0.95, heat));
   finalColor = vec4(color * opacity, opacity) * vColor;
 }`;
 
@@ -103,6 +103,6 @@ export function spawnFlameStream(runtime: BattleEffectPool, from: BattleStagePoi
       from = { ...source };
     }
     uniforms.uniforms.uTime = progress * duration;
-    uniforms.uniforms.uOpacity = Math.sin(Math.PI * progress) * 0.94;
+    uniforms.uniforms.uOpacity = Math.min(1, progress / .08, (1 - progress) / .06) * 0.94;
   });
 }

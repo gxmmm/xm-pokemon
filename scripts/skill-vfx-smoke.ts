@@ -97,7 +97,7 @@ export function testSkillVfx(): void {
       }
     }
   }
-  for (const [variant, count] of [['default', 2], ['stone-shot', 1], ['neutral-star', 1]] as const) {
+  for (const [variant, count] of [['default', 2], ['stone-shot', 3], ['neutral-star', 1]] as const) {
     spawnProjectile(runtime, from, to, 0xa98ae7, 0.7, variant, 'ghost');
     runtime.update(0.1);
     assert.equal((runtime.container.children[0] as Graphics).context.instructions.length, count, 'generic fallback is drawn only without a dedicated motif');

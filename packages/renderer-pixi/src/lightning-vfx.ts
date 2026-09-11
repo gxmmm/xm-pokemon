@@ -1,4 +1,4 @@
-import { Graphics } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import { BATTLE_DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH, type BattleStagePoint } from './battle-stage-layout.ts';
 
@@ -7,7 +7,7 @@ import { BATTLE_DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH, type BattleStagePoint } from
  * instantaneous atmospheric strike rather than a yellow projectile. */
 export function spawnSkyStrike(runtime: BattleEffectPool, at: BattleStagePoint, intensity: number): void {
   const shade = new Graphics();
-  const graphic = new Graphics({ blendMode: 'add' });
+  const graphic = new Graphics({ blendMode: 'normal' });
   const duration = 0.48;
   runtime.add(shade, duration, (progress) => {
     const rise = Math.min(1, progress / 0.16);
@@ -75,7 +75,7 @@ export function spawnSkyStrike(runtime: BattleEffectPool, at: BattleStagePoint, 
  * phases and branches around its destination, so multi-target skills read as
  * electricity jumping between bodies rather than an area explosion. */
 export function spawnChainLightning(runtime: BattleEffectPool, from: BattleStagePoint, targets: readonly BattleStagePoint[], intensity: number): void {
-  const graphic = new Graphics({ blendMode: 'add' });
+  const graphic = new Graphics({ blendMode: 'normal' });
   const duration = 0.46;
   runtime.add(graphic, duration, (progress) => {
     const alpha = Math.sin(Math.PI * Math.min(1, progress * 1.16)) * 0.96;

@@ -1,5 +1,5 @@
 import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
-import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation } from '@pokemon-online/config';
+import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, PIXEL_ART_STYLE } from '@pokemon-online/config';
 import { Application, Container, Graphics, type Texture } from 'pixi.js';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -64,16 +64,16 @@ export class BattleStage implements BattleRenderer {
         width: DESIGN_WIDTH,
         height: DESIGN_HEIGHT,
         background: '#10213a',
-        antialias: true,
+        antialias: false,
         autoDensity: true,
-        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        resolution: 1 / PIXEL_ART_STYLE.screenPixelSize,
         preference: 'webgl',
       });
       if (version !== this.lifecycleVersion) {
         this.disposeApplication(app);
         return;
       }
-      app.canvas.style.cssText = 'display:block;width:100%;height:100%;';
+      app.canvas.style.cssText = 'display:block;width:100%;height:100%;image-rendering:pixelated;';
       container.replaceChildren(app.canvas);
       this.app = app;
       this.drawCallObserver = new DrawCallObserver((app.renderer as unknown as { gl?: WebGLRenderingContext }).gl ?? null);

@@ -10,7 +10,7 @@ export async function checkSkillShowcases(page: Page, root: string, baseline: bo
     `/@fs/${resolve('scripts/skill-showcase-browser-fixture.ts').replaceAll('\\', '/')}`);
   const samples: unknown[] = [];
   try {
-    for (let index = 0; index < 6; index++) for (const mode of baseline ? ['forward'] : ['forward', 'reverse']) {
+    for (let index = 0; index < (baseline ? 6 : 10); index++) for (const mode of baseline ? ['forward'] : ['forward', 'reverse']) {
       const reverse = mode === 'reverse';
       const timing = await page.evaluate(({ index, reverse }) => window.__SKILL_SHOWCASE__.play(index, reverse), { index, reverse });
       let previous = 0;

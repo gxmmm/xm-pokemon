@@ -1,4 +1,4 @@
-import type { BattleArtMotionId, BattleArtSpriteSheetMetadata, BattleAssetManifestEntry } from '@pokemon-online/config';
+import type { BattleArtAnchorId, BattleArtMotionId, BattleArtSpriteSheetMetadata, BattleAssetManifestEntry } from '@pokemon-online/config';
 import { Sprite, Texture } from 'pixi.js';
 import type { BattleArtAssetLoader } from './BattleArtAssets.ts';
 
@@ -51,6 +51,7 @@ export class CombatantSprite extends Sprite {
   private loop = true;
   private durationMs: number | undefined;
   private metadata: BattleArtSpriteSheetMetadata | null = null;
+  private holdLastFrame = false;
   private contactFrame: OpaqueFrame | null = null;
 
   constructor(
@@ -102,13 +103,26 @@ export class CombatantSprite extends Sprite {
     const frame = !this.loop && this.durationMs
       ? Math.floor(this.elapsedMs / this.durationMs * this.frames.length)
       : Math.floor(this.elapsedMs / (1000 / this.fps));
-    const index = this.loop ? frame % this.frames.length : Math.min(this.frames.length - 1, frame);
+    const index = this.loop && !this.holdLastFrame ? frame % this.frames.length : Math.min(this.frames.length - 1, frame);
     const texture = this.frames[index]!;
     if (this.texture !== texture || !this.visible) this.showTexture(texture);
   }
 
   transitionDuration(from: BattleArtMotionId, to: BattleArtMotionId): number | undefined {
     return this.metadata?.transitions.find((transition) => transition.from === from && transition.to === to)?.durationMs;
+  }
+
+  /** 源逐帧挂点随选中的方向图和帧变化，返回身体容器内坐标。 */
+  getFrameAnchor(id: BattleArtAnchorId): { x: number; y: number } | undefined {
+    const metadata = this.metadata;
+    if (!metadata?.frameAnchors || !this.visible) return undefined;
+    const index = Math.round(this.texture.frame.y / metadata.frameHeight) * metadata.columns
+      + Math.round(this.texture.frame.x / metadata.frameWidth);
+    const point = metadata.frameAnchors[index]?.[id];
+    return point ? {
+      x: (point.x / metadata.frameWidth - this.anchor.x) * this.width * Math.sign(this.scale.x),
+      y: (point.y / metadata.frameHeight - this.anchor.y) * this.height,
+    } : undefined;
   }
 
   getBodyBounds(forContact = false) {
@@ -131,6 +145,7 @@ export class CombatantSprite extends Sprite {
     const [frames, metadata] = await Promise.all([framesForMotion, this.assets.loadMetadata(asset)]);
     if (!this.isCurrent(token) || !frames?.length) return;
     this.metadata = metadata;
+    this.holdLastFrame = metadata?.clips[motion]?.holdLastFrame ?? false;
     this.frames = frames;
     this.fps = metadata?.fps ?? 12;
     this.updateFrame();
@@ -143,9 +158,10 @@ export class CombatantSprite extends Sprite {
   private showTexture(texture: Texture): void {
     this.texture = texture;
     this.contactFrame ??= opaqueFrame(texture);
+    this.anchor.set(this.metadata?.pivot?.x ?? 0.5, this.metadata?.pivot?.y ?? 0.58);
     const ratio = texture.height > 0 ? texture.width / texture.height : 1;
-    this.height = BATTLE_SPRITE_DISPLAY_HEIGHT;
-    this.width = Math.max(54, Math.min(142, BATTLE_SPRITE_DISPLAY_HEIGHT * ratio));
+    this.height = this.metadata?.pixelScale ? texture.height * this.metadata.pixelScale : BATTLE_SPRITE_DISPLAY_HEIGHT;
+    this.width = this.metadata?.pixelScale ? texture.width * this.metadata.pixelScale : Math.max(54, Math.min(142, BATTLE_SPRITE_DISPLAY_HEIGHT * ratio));
     this.visible = true;
     this.fallback.visible = false;
   }

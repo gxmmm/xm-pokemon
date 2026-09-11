@@ -37,7 +37,7 @@ const hud = computed(() => combatHud(props.combatant, props.time, props.interrup
 </template>
 
 <style scoped>
-.mon-card { flex:none; box-sizing:border-box; height:198px; padding:9px 11px; border:1px solid rgba(210,231,242,.22); border-radius:9px; background:rgba(13,30,43,.88); color:#edf5f5; box-shadow:0 3px 12px #0002; font-size:12px; }
+.mon-card { flex:none; box-sizing:border-box; height:198px; padding:9px 11px; border:2px solid #afbd98; border-radius:2px; background:#203932; color:#f1edce; box-shadow:3px 3px 0 #142a27; font-size:12px; }
 .mon-card.critical { border-color:#ff929088; }.mon-card.casting { border-top-color:#edc574; }
 .mon-card.fainted { background:rgba(24,31,38,.88); color:#a9b5bf; }
 .mc-head { height:30px; display:flex; align-items:center; gap:7px; }.mc-head strong { flex:1; font-size:14px; }

@@ -1,6 +1,7 @@
 import type { BattleEnvironmentSpec } from '@pokemon-online/config';
 import { BATTLE_FOOT_CONTACT } from '@pokemon-online/config';
-import { Graphics, type Container } from 'pixi.js';
+import type { Container } from 'pixi.js';
+import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import type { BattleStagePoint } from './battle-stage-layout.ts';
 import { parseHexColor } from './pixi-color.ts';

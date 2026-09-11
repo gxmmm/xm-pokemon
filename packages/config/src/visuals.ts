@@ -27,7 +27,7 @@ export const BATTLE_BODY_EFFECTS = {
   flameAnchors: [[-0.23, -0.32], [0.19, -0.27], [-0.08, -0.19], [0.29, -0.08], [-0.29, -0.04],
     [0.07, -0.02], [-0.17, 0.10], [0.22, 0.16], [-0.03, 0.23], [0.05, -0.37]],
   moteCount: 9,
-  minimumScreenPixel: { body: 0.85, flame: 1.1, glyph: 1.8 },
+  minimumScreenPixel: { body: 2, flame: 2, glyph: 2 },
   palette: { ember: 0xa93624, fire: 0xed7027, fireTip: 0xffca62, poison: 0x885b9f, poisonLight: 0xb78bc3, poisonCore: 0x512368,
     electric: 0xf3ce5c, ice: 0x79bdd3, iceLight: 0xc3e5ec, sleep: 0xb8cfdf, confuse: 0xc495bb, shadow: 0x293448 },
 } as const;
@@ -151,7 +151,7 @@ export type EnvironmentReaction = 'scorch' | 'frost' | 'spark' | 'splash' | 'spo
 export type SkillRecipeVariant = 'default' | 'cross' | 'meteor' | 'chain' | 'surge' | 'hymn' | 'crown' | 'chant' | 'dive' | 'bind' | 'snare'
   | 'flame-stream' | 'fire-glyph' | 'arc-bolt' | 'sky-strike'
   | 'fist' | 'claw' | 'bite' | 'horn' | 'tail' | 'body-slam' | 'wing-slap' | 'beak-peck' | 'tusk-gore' | 'pincer-snap' | 'whip-lash' | 'kick' | 'shell-bash'
-  | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star';
+  | 'flame-bolt' | 'water-shot' | 'spark-bolt' | 'leaf-shot' | 'ice-shard' | 'psychic-bolt' | 'shadow-orb' | 'stone-shot' | 'wind-cutter' | 'fairy-spark' | 'neutral-star' | 'wind-flakes' | 'lunar-orb';
 
 export interface SkillVisualRecipe {
   id: string;
