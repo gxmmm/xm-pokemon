@@ -59,8 +59,8 @@ export function testBattleMovement(): void {
   assert(canStep(p(7, 7)), 'already crowded actors can separate');
   actor!.position = actor!.pixel = p(8, 7);
   other!.position = other!.pixel = p(10, 7);
-  assert(canStep(p(9, 7)), 'opponents may still enter orthogonal melee reach');
-  assert(canStep(p(9, 8)), 'opponents may still enter diagonal melee reach');
+  assert(!canStep(p(9, 7)), 'opponents retain body room instead of stepping into an adjacent cell');
+  assert(canStep(p(8, 8)), 'opponents can engage within the configured 2.5-cell melee reach');
   other!.side = actor!.side;
   assert(!canStep(p(9, 7)), 'allies cannot reserve adjacent stops');
   assert(!canStep(p(9, 8)), 'allies cannot reserve diagonal-adjacent stops');

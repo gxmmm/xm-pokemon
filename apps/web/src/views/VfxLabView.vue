@@ -43,7 +43,7 @@ function staticCombatant(speciesId: number, side: 'player' | 'enemy', uid: strin
     maxHp: stats.hp, currentHp: stats.hp, position, pixel: { ...position }, facing: side === 'player' ? 1 : -1,
     cooldowns: {}, abilityCooldowns: {}, pressureUntil: 0, sturdyUsed: false, normalAttackCd: 0,
     normalAttackInterval: species.normalAttackInterval, normalAttackSpeedMultiplier: 1, regenAccumulator: 0,
-    normalRangeCells: species.normalAttackDelivery === 'ranged' ? 6 : 1.5, normalIsRanged: species.normalAttackDelivery === 'ranged',
+    normalRangeCells: species.normalAttackDelivery === 'ranged' ? 6 : 2.5, normalIsRanged: species.normalAttackDelivery === 'ranged',
     status: null, statusTimer: 0, statStages: { atk: 0, def: 0, spd: 0 }, shields: 0, damageDealt: 0, damageTaken: 0,
     normalDamage: 0, skillDamage: 0, healingDone: 0, shieldAbsorbed: 0, controlSeconds: 0, interrupts: 0, knockouts: 0,
     skillCasts: 0, normalAttacks: 0, hits: 0, misses: 0, skillStats: {}, buffs: [], castProgress: null, alive: true,

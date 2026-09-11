@@ -11,6 +11,7 @@ export interface BattleStageVfxPlan {
   actorId?: string;
   actorAnchor?: BattleArtAnchorId;
   targetIds: readonly string[];
+  aimPoint?: { x: number; y: number };
   reaction?: string;
   variant?: SkillRecipeVariant;
   particleBudget?: number;
@@ -34,6 +35,7 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     actorId: cue.anchors.actorId,
     actorAnchor: cue.anchors.actorAnchor as BattleArtAnchorId | undefined,
     targetIds,
+    aimPoint: cue.anchors.aimPoint,
     variant: cue.recipe.variant as SkillRecipeVariant | undefined,
     particleBudget: cue.recipe.particleBudget,
   };

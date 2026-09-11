@@ -568,17 +568,17 @@ testBattleCamera();
   assert(!!WORLD_SCENE_BY_MAP_ID.pallet && WORLD_SCENE_BY_MAP_ID.pallet.biome === 'mist-harbor', 'Mist Bay scene pack configured');
   assert(Object.keys(BIOME_VISUALS).length === 2, 'biome visual catalog configured');
   assert(SKILL_VISUAL_RECIPES.length === SKILLS.length && SKILL_VISUAL_RECIPES.every((recipe) => !!SKILL_MAP[recipe.skillId]), 'every skill has a visual recipe');
-  assert(getSpecies(6).normalAttackDelivery === 'melee' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
+  assert(getSpecies(6).normalAttackDelivery === 'ranged' && getSpecies(68).normalAttackDelivery === 'melee' && getSpecies(65).normalAttackDelivery === 'ranged' && getSpecies(150).normalAttackDelivery === 'ranged', 'normal attack delivery is a fixed species/Pokédex balance field rather than a learned-skill side effect');
   assert(normalAttackVisualStyleFor(68, 'melee') === 'fist' && normalAttackVisualStyleFor(6, 'melee') === 'claw' && normalAttackVisualStyleFor(65, 'ranged') === 'psychic-bolt', 'normal attacks resolve fighter, claw, and psychic-ranged styles from fixed species delivery configuration');
   assert(normalAttackVisualProfileFor(6, 'ranged').style === 'flame-bolt' && normalAttackVisualProfileFor(6, 'ranged').element === 'fire' && normalAttackVisualProfileFor(9, 'ranged').style === 'water-shot' && normalAttackVisualProfileFor(25, 'ranged').style === 'spark-bolt' && normalAttackVisualProfileFor(12, 'melee').style === 'wing-slap' && normalAttackVisualProfileFor(99, 'melee').style === 'pincer-snap', 'model normal-attack profiles resolve distinct elemental ranged bolts and contact silhouettes without renderer species branches');
-  const meleeModelWithRangedSkills = createWildInstance(6, 20);
+  const meleeModelWithRangedSkills = createWildInstance(68, 20);
   meleeModelWithRangedSkills.activeSkills = ['flamethrower'];
   const rangedModelWithMeleeSkills = createWildInstance(65, 20);
   rangedModelWithMeleeSkills.activeSkills = ['karate-chop'];
   const deliveryFixture = new BattleSim({ mode: 'pve', player: [meleeModelWithRangedSkills], enemy: [rangedModelWithMeleeSkills], seed: 7162026 });
-  const fixedMelee = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 6)!;
+  const fixedMelee = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 68)!;
   const fixedRanged = deliveryFixture.state.combatants.find((combatant) => combatant.speciesId === 65)!;
-  assert(!fixedMelee.normalIsRanged && fixedMelee.normalRangeCells === 1.5 && fixedRanged.normalIsRanged && fixedRanged.normalRangeCells === 6, 'learned active skills cannot change a model-fixed normal attack delivery or reach');
+  assert(!fixedMelee.normalIsRanged && fixedMelee.normalRangeCells === 2.5 && fixedRanged.normalIsRanged && fixedRanged.normalRangeCells === 6, 'learned active skills cannot change a model-fixed normal attack delivery or reach');
   assert(getSpecies(6).normalAttackInterval === 1.1 && getSpecies(68).normalAttackInterval === 1.35 && getSpecies(65).normalAttackInterval === 1.2 && getSpecies(143).normalAttackInterval === 1.55, 'each model declares a fixed Pokédex basic-attack interval balanced by delivery and battle identity');
   const intervalFixture = new BattleSim({ mode: 'pve', player: [createWildInstance(6, 20)], enemy: [createWildInstance(143, 20)], seed: 7162027 });
   const intervalCharizard = intervalFixture.state.combatants.find((combatant) => combatant.speciesId === 6)!;
@@ -630,7 +630,7 @@ testBattleCamera();
   const gengarFacingLeft = resolveBattleArtPresentation({ speciesId: 94, side: 'enemy', facing: -1 });
   assert(charizardSwift.skillRecipe?.id === pikachuSwift.skillRecipe?.id && charizardSwift.asset.id === 'pmd:6:back' && pikachuSwift.asset.id === 'pmd:25:front', '共享技能使用PMD配置资源');
   assert(charizardFacingLeft.asset.id === 'pmd:6:front' && gengarFacingRight.asset.id === 'pmd:94:back' && gengarFacingLeft.asset.id === 'pmd:94:front', '朝向选择真实前后视PMD帧');
-  assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'cast', 'one shared skill receives model-configured theme, anchor, and motion differences');
+  assert(charizardSwift.theme.primary !== pikachuSwift.theme.primary && charizardSwift.projectileAnchor.id === 'muzzle' && charizardSwift.motion.id === 'charge', 'one shared skill receives model-configured theme, anchor, and motion differences');
   const unknown = resolveBattleArtPresentation({ speciesId: -1, side: 'enemy', skillId: '__missing__', motion: 'hit' });
   assert(unknown.profile.id === 'generic:fallback' && unknown.asset.kind === 'fallback-shape' && unknown.motion.id === 'hit', 'battle art resolver has a configuration-owned missing model/skill fallback');
   const manifestFilesExist = BATTLE_ASSET_MANIFEST.filter((asset) => asset.kind === 'static-sprite').every((asset) => {
@@ -1040,7 +1040,13 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
 {
   const combatant = (speciesId: number, level = 50) => createWildInstance(speciesId, level);
   const forceAbility = (inst: PokemonInstance, ability: string) => { inst.ability = ability; return inst; };
-  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => {
+    // 特性单元场景显式放在有效射程内；空间躲避由专项独立验收。
+    actor.position = actor.pixel = { x: 5, y: 7 };
+    actor.currentTargetUid = sim.state.combatants.find(c => c.side !== actor.side)?.uid;
+    sim.state.combatants.filter(c => c.side !== actor.side).forEach((c, i) => { c.position = c.pixel = { x: 6, y: 7 + i }; });
+    (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+  };
 
   // Natural Cure: status expiry heals 12% and records an internal 8s cooldown.
   {
@@ -1161,7 +1167,13 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const make = (speciesId: number, ability: string, level = 45) => {
     const inst = createWildInstance(speciesId, level); inst.ability = ability; return inst;
   };
-  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+  const resolve = (sim: BattleSim, actor: BattleCombatant, skillId: string) => {
+    // 特性单元场景显式放在有效射程内；空间躲避由专项独立验收。
+    actor.position = actor.pixel = { x: 5, y: 7 };
+    actor.currentTargetUid = sim.state.combatants.find(c => c.side !== actor.side)?.uid;
+    sim.state.combatants.filter(c => c.side !== actor.side).forEach((c, i) => { c.position = c.pixel = { x: 6, y: 7 + i }; });
+    (sim as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(actor, skillId);
+  };
 
   // 节奏感 (legacy id illuminate): hit -> reduce another cooling skill by 0.35s.
   {
@@ -1266,7 +1278,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
 {
   const roles = new Set(['fill', 'main', 'burst', 'area', 'control', 'support']);
   assert(SKILLS.every((skill) => roles.has(skillRoleOf(skill))), 'every configured skill has a balance role');
-  assert(skillRoleOf(SKILL_MAP['ember']!) === 'fill' && skillRoleOf(SKILL_MAP['hyper-beam']!) === 'burst', 'damage skill budgets classify fill and burst moves');
+  assert(skillRoleOf(SKILL_MAP['ember']!) === 'fill' && skillRoleOf(SKILL_MAP['finishing-ray']!) === 'burst', 'damage skill budgets classify fill and burst moves');
   assert(skillRoleOf(SKILL_MAP['surf']!) === 'area' && skillRoleOf(SKILL_MAP['recover']!) === 'support' && skillRoleOf(SKILL_MAP['sleep-powder']!) === 'control', 'area, support, and control skills have distinct budgets');
   console.log('✓ skill balance budgets:', SKILLS.length);
 }
@@ -1318,15 +1330,18 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const areaSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(25, 55)], enemy: [createWildInstance(6, 55), createWildInstance(9, 55), createWildInstance(3, 55)], isWild: false, seed: 227 });
   const area = areaSim.state.combatants.find((c) => c.side === 'player')!;
   area.personality = 'cool'; ready(areaSim.state.combatants);
+  area.position = area.pixel = { x: 5, y: 7 };
+  areaSim.state.combatants.filter(c => c.side === 'enemy').forEach((c, i) => { c.position = c.pixel = { x: 10, y: 6 + i }; });
   const areaPlan = decide(area, areaSim.state, mulberry32(3))!;
   assert(areaPlan.preferredSkillId === 'volt-chain', 'area role favors Pikachu signature against a clustered enemy team');
 
   const controlSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(65, 55)], enemy: [createWildInstance(143, 55), createWildInstance(150, 55)], isWild: false, seed: 229 });
   const controller = controlSim.state.combatants.find((c) => c.side === 'player')!;
-  controller.personality = 'cool'; ready(controlSim.state.combatants);
+  controller.personality = 'wise'; ready(controlSim.state.combatants);
+  controller.position = controller.pixel = { x: 5, y: 5 };
   const controlEnemies = controlSim.state.combatants.filter((c) => c.side === 'enemy');
   controlEnemies[0]!.position = { x: 8, y: 5 };
-  controlEnemies[1]!.position = { x: 14, y: 5 };
+  controlEnemies[1]!.position = { x: 9, y: 5 };
   // Keep both large nukes outside the forecast window: this case isolates the
   // baseline control-role threat selector from the later cooldown-window test.
   controlEnemies[0]!.cooldowns['hyper-beam'] = 3;
@@ -1346,8 +1361,9 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const supportPlan = decide(support, supportSim.state, mulberry32(5))!;
   assert(['tidal-aegis', 'tide-ward', 'renewal-chant'].includes(supportPlan.preferredSkillId ?? ''), 'support role uses a survival skill under lethal pressure');
 
-  const bruiserSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(149, 55)], enemy: [createWildInstance(131, 55), createWildInstance(25, 55)], isWild: false, seed: 239 });
+  const bruiserSim = new BattleSim({ mode: 'pvp', player: [createWildInstance(149, 55, { rng: () => .5 })], enemy: [createWildInstance(131, 55, { rng: () => .5 }), createWildInstance(25, 55, { rng: () => .5 })], isWild: false, seed: 239 });
   const bruiser = bruiserSim.state.combatants.find((c) => c.side === 'player')!;
+  bruiser.position = bruiser.pixel = { x: 7, y: 5 };
   bruiser.personality = 'cool'; ready(bruiserSim.state.combatants);
   const bruiserEnemies = bruiserSim.state.combatants.filter((c) => c.side === 'enemy');
   bruiserEnemies[0]!.position = { x: 9, y: 5 };
@@ -1355,7 +1371,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const bruiserPlan = decide(bruiser, bruiserSim.state, mulberry32(6))!;
   assert(bruiserPlan.targetUid === bruiserEnemies[0]!.uid, 'bruiser role holds the nearest frontline target');
   assert(bruiserPlan.preferredSkillId === 'dragon-surge', 'bruiser role favors its melee signature');
-  assert(bruiserPlan.desiredRangeCells === 1, 'bruiser role closes to melee distance');
+  assert(bruiserPlan.desiredRangeCells === 2, 'bruiser role closes to melee distance');
   console.log('✓ species role AI tactics');
 }
 
@@ -1368,7 +1384,9 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const area = new BattleSim({ mode: 'pvp', player: [surfUser], enemy: victims, isWild: false, seed: 7 });
   const caster = area.state.combatants.find((c) => c.uid === surfUser.uid)!;
   const enemies = area.state.combatants.filter((c) => c.side === 'enemy');
-  caster.currentTargetUid = enemies[0]!.uid;
+  caster.position = caster.pixel = { x: 5, y: 7 };
+  enemies.forEach((enemy, index) => { enemy.position = enemy.pixel = { x: 10, y: 6 + index }; });
+  caster.currentTargetUid = enemies[1]!.uid;
   (area as unknown as { resolveSkill: (c: BattleCombatant, id: string) => void }).resolveSkill(caster, 'surf');
   const hits = area.state.events.filter((e) => e.type === 'damage' && e.skillId === 'surf' && e.actor === caster.uid);
   assert(hits.length === enemies.length, `surf spread hits every enemy (${hits.length}/${enemies.length})`);
@@ -1421,7 +1439,10 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   target.pixel = { x: 9, y: 6 };
   const windupId = caster.activeSkills.find((id) => (SKILL_MAP[id]?.castTime ?? 0) > 0)!;
   (castSim as unknown as { startCast: (c: BattleCombatant, id: string) => void }).startCast(caster, windupId);
-  assert(!!caster.castProgress && caster.pixel.x === caster.position.x && caster.pixel.y === caster.position.y, 'starting a cast snaps and locks render position');
+  assert(!caster.castProgress && caster.pixel.x === 4.2, 'mid-step cast waits without teleporting');
+  caster.pixel = { ...caster.position };
+  (castSim as unknown as { startCast: (c: BattleCombatant, id: string) => void }).startCast(caster, windupId);
+  assert(!!caster.castProgress, 'arrived caster begins committed windup');
   const locked = { ...caster.position };
   castSim.tick(0.05);
   assert(caster.position.x === locked.x && caster.position.y === locked.y && !!caster.castProgress, 'caster cannot move during windup');
@@ -1469,6 +1490,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const finishEnemies = [createWildInstance(143, 42), createWildInstance(131, 42), createWildInstance(16, 42)];
   const finishSim = new BattleSim({ mode: 'pvp', player: finishTeam, enemy: finishEnemies, isWild: false, seed: 41 });
   const finishTarget = finishSim.state.combatants.find((combatant) => combatant.uid === finishEnemies[1]!.uid)!;
+  finishTarget.position = { x: 10, y: 7 };
   finishTarget.currentHp = Math.floor(finishTarget.maxHp * 0.22);
   finishSim.tick(0.35);
   const finishIntent = finishSim.state.teamTactics.player;
@@ -1500,10 +1522,11 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   coverTank.position = { x: 7, y: 6 };
   backliner.position = { x: 9, y: 6 };
   diver.position = { x: 10, y: 6 };
-  const backlinerStartX = backliner.position.x;
+  for (const c of coverSim.state.combatants) c.pixel = { ...c.position };
+  const backlinerStartDistance = Math.hypot(backliner.position.x - diver.position.x, backliner.position.y - diver.position.y);
   coverSim.tick(0.35);
   assert(backliner.plan?.positioning === 'backline' || backliner.currentTargetUid === diver.uid, 'control role receives a backline movement plan');
-  assert(backliner.position.x < backlinerStartX, 'backline controller yields space behind its frontline cover');
+  assert(Math.hypot(backliner.position.x - diver.position.x, backliner.position.y - diver.position.y) > backlinerStartDistance, 'backline controller makes room on a legal escape direction');
   console.log('✓ team tactical intents and positioning');
 }
 
@@ -1517,6 +1540,8 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const windowSim = new BattleSim({ mode: 'pvp', player: [controllerInst], enemy: [nukeInst], isWild: false, seed: 53 });
   const controller = windowSim.state.combatants.find((combatant) => combatant.uid === controllerInst.uid)!;
   const nuke = windowSim.state.combatants.find((combatant) => combatant.uid === nukeInst.uid)!;
+  controller.position = { x: 5, y: 7 };
+  nuke.position = { x: 8, y: 7 };
   controller.personality = 'cool';
   for (const combatant of windowSim.state.combatants) for (const id of Object.keys(combatant.cooldowns)) combatant.cooldowns[id] = 0;
   nuke.cooldowns['psyonic-annihilation'] = 0.8;

@@ -1,6 +1,7 @@
 import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, battleUiAssetsFor, PIXEL_ART_STYLE } from '@pokemon-online/config';
 import { Application, Container, Graphics } from 'pixi.js';
+import { BattleCastZones } from './BattleCastZones.ts';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { BattleCameraController, type BattleCameraDiagnostics } from './BattleCameraController.ts';
@@ -37,6 +38,7 @@ export class BattleStage implements BattleRenderer {
   private hitStopAfterFrameMs = 0;
   private readonly environmentView = new BattleEnvironmentView();
   private readonly effectPool = new BattleEffectPool();
+  private readonly castZones = new BattleCastZones();
   private readonly terrainContacts = new TerrainContactEffects(this.effectPool, this.environmentView.terrainOcclusion);
   private readonly battleArtAssets = new BattleArtAssetLoader();
   private requiredArt: ReturnType<typeof resolveBattleArtPresentation>[] = [];
@@ -101,6 +103,7 @@ export class BattleStage implements BattleRenderer {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.effectPool.clear();
+    this.castZones.clear();
     this.cueScheduler.clear();
     this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
@@ -201,6 +204,7 @@ export class BattleStage implements BattleRenderer {
     // Actors and their configured fallbacks must exist before any network wait.
     // 角色图片加载期间也必须显示像素场景与角色兜底。
     this.effectPool.clear();
+    this.castZones.clear();
     this.cueScheduler.clear();
     this.hitStopAfterFrameMs = 0;
     this.combatants.clear();
@@ -216,6 +220,7 @@ export class BattleStage implements BattleRenderer {
   applyBattleSnapshot(snapshot: BattleRenderSnapshot): void {
     if (!this.app) return;
     this.combatants.applySnapshot(snapshot, this.biomeId);
+    this.castZones.update(snapshot, this.biomeId);
   }
 
   areAssetsReady(): boolean {
@@ -252,6 +257,7 @@ export class BattleStage implements BattleRenderer {
       this.environmentView.horizonLayer,
       this.environmentView.groundLayer,
       this.effectPool.groundContainer,
+      this.castZones.container,
       this.combatants.container,
       this.environmentView.terrainOcclusion,
       this.environmentView.foreground,

@@ -48,9 +48,10 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 
   // type-immunity abilities
   const t = skill.type;
+  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
   const immuneAbility = (() => {
     const ab = ABILITY_MAP[defender.ability];
-    if (!ab) return null;
+    if (!ab || isNormalAttack) return null;
     if (ab.effect.kind === 'typeImmunity' && ab.effect.type === t) return ab;
     return null;
   })();
@@ -68,16 +69,17 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   }
 
   // effectiveness
-  let eff = typeMultiplier(t, defender.types as TypeName[]);
+  let eff = isNormalAttack ? 1 : typeMultiplier(t, defender.types as TypeName[]);
   // passives: typeResist on defender
   for (const pid of defender.passiveSkills) {
     const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
+    if (!isNormalAttack && p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
   }
   // ability: thick-fat halves fire/ice
-  if (defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
+  if (!isNormalAttack && defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
   result.effectiveness = eff;
   if (eff === 0) {
+    result.immune = true;
     log.push(`对${defender.name}没有效果...`);
     return result;
   }
@@ -88,13 +90,12 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   const level = attacker.level;
   const atk = effectiveStat(attacker, 'atk');
   const def = Math.max(1, effectiveStat(defender, 'def'));
-  const isNormalAttack = skill.id === NORMAL_ATTACK.id;
   let dmg = isNormalAttack
     ? Math.round(atk * 0.38 - def * 0.22 + 4 + level * 0.16)
     // Active skills build on the same attack-defense core as a normal attack;
     // configured power is a modest additive premium, not an attack multiplier.
     : Math.round(atk * 0.42 + skill.power * 0.24 - def * 0.26 + 4 + level * 0.16);
-  dmg = Math.max(1, dmg);
+  dmg = Math.max(Math.round(atk * 0.12), 1, dmg);
 
   // Normal attacks are universal baseline damage: they do not receive STAB,
   // type advantage, or type-specific passive/ability bonuses.

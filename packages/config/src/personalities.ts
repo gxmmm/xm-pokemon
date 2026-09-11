@@ -11,7 +11,7 @@ export const PERSONALITIES: Personality[] = [
   {
     id: 'brave',
     name: '勇敢',
-    description: '崇尚力量，总是冲向最近敌人全力输出。',
+    description: '优先压制附近敌人，在自身有效距离内积极前压和持续输出。',
     aggression: 0.9,
     rangePreference: 'melee',
     riskTolerance: 0.85,
@@ -22,7 +22,7 @@ export const PERSONALITIES: Personality[] = [
   {
     id: 'timid',
     name: '胆小',
-    description: '保持距离，专挑血量最低的目标下手，危急时想要逃跑。',
+    description: '偏向安全站位，优先攻击可达的虚弱目标，受压时择机后撤。',
     aggression: 0.3,
     rangePreference: 'ranged',
     riskTolerance: 0.25,
@@ -45,7 +45,7 @@ export const PERSONALITIES: Personality[] = [
   {
     id: 'stubborn',
     name: '固执',
-    description: '只认一个目标死磕到底，偏爱高威力招式。',
+    description: '更长时间专注同一可达目标，偏爱高威力招式，仍遵守自身作战距离。',
     aggression: 0.8,
     rangePreference: 'melee',
     riskTolerance: 0.7,
@@ -56,7 +56,7 @@ export const PERSONALITIES: Personality[] = [
   {
     id: 'cautious',
     name: '谨慎',
-    description: '远程周旋，血量健康时也会留有余地。',
+    description: '在自身作战距离内保留余地，重视防御与反制时机。',
     aggression: 0.35,
     rangePreference: 'ranged',
     riskTolerance: 0.4,

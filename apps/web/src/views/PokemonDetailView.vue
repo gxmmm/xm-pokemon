@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { rangeInCells } from '@pokemon-online/engine';
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
@@ -111,7 +112,7 @@ function abilityTip(a: Ability): string {
 function skillTip(s: Skill | undefined): string {
   if (!s) return '';
   const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
-  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
+  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 
 const STAT_FULL: Record<StatKey, string> = { hp: '生命', atk: '攻击', def: '防御', spd: '速度' };

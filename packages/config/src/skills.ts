@@ -197,6 +197,30 @@ export const SKILLS: Skill[] = [
   { id: 'solarflare-wing', name: '日炎天翔', type: 'fire', category: 'special', power: 88, accuracy: 90, cooldown: 8, range: 'ranged', rangeTiles: 400, targetMode: 'all-enemies', areaMultiplier: 0.6, effect: { kind: 'status', target: 'enemy', status: 'burn', chance: 0.3 }, description: '火焰鸟振翼洒下日炎笼罩敌方全体，每个目标承受60%伤害并可能灼伤。' },
 ];
 
+// 空间效果由配置定义，AI 预测与实际结算共用同一几何规则。
+const SPACE_OVERRIDES: Record<string, NonNullable<Skill['space']>> = {
+  flamethrower: { shape: 'cone', reach: 7, width: 2.3 },
+  surf: { shape: 'cone', reach: 7, width: 4 },
+  'hydro-pump': { shape: 'line', reach: 8, width: 1.1 },
+  'solar-beam': { shape: 'line', reach: 8, width: 1.2 },
+  'hyper-beam': { shape: 'line', reach: 8, width: 1.2 },
+  earthquake: { shape: 'radial', reach: 6, radius: 6 },
+  'vine-whip': { shape: 'single', reach: 3.5 },
+  'aqua-tail': { shape: 'single', reach: 3 },
+};
+for (const skill of SKILLS) {
+  const override = SPACE_OVERRIDES[skill.id];
+  if (override) skill.space = override;
+  else if (skill.targetMode === 'all-enemies') skill.space = { shape: 'burst', reach: 7, radius: 3 };
+  if (skill.space && skill.space.shape !== 'single') {
+    skill.targetMode = 'all-enemies';
+    skill.areaMultiplier ??= 0.75;
+    skill.castTime = Math.max(skill.castTime ?? 0, 0.35);
+    const shape = skill.space.shape === 'cone' ? '前方扇形' : skill.space.shape === 'line' ? '瞄准直线' : skill.space.shape === 'radial' ? '自身周围' : '瞄准点周围';
+    skill.description = `${skill.description.replaceAll('敌方全体', '覆盖区域内敌人').replaceAll('所有敌人', '覆盖区域内敌人')} ${shape}范围攻击，射程${skill.space.reach}格；仅命中覆盖区域内的敌人，每个目标承受${Math.round(skill.areaMultiplier * 100)}%伤害。蓄力时锁定范围，离开覆盖区可以躲避。`;
+  }
+}
+
 export const SKILL_MAP: Record<string, Skill> = Object.fromEntries(
   SKILLS.map((s) => [s.id, s]),
 );

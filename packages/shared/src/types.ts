@@ -109,7 +109,7 @@ export interface SkillEffect {
  * never stops when every skill is on cooldown.
  */
 /** Target pattern for an active move. `all-enemies` is a 3v3 spread attack:
- * every opposing active combatant is hit, with the move's `areaMultiplier`
+ * opponents inside the configured spatial footprint are hit, with `areaMultiplier`
  * applied to each target's final damage. */
 export type SkillTargetMode = 'single' | 'all-enemies';
 
@@ -146,6 +146,8 @@ export interface Skill {
   cooldown: number; // seconds (independent CD)
   range: 'melee' | 'ranged';
   rangeTiles: number; // effective distance in arena units
+  /** 引擎空间覆盖；单位为战斗格，方向技能在蓄力开始时锁定瞄准点。 */
+  space?: { shape: 'single' | 'cone' | 'line' | 'burst' | 'radial'; reach: number; radius?: number; width?: number };
   castTime?: number; // windup seconds (default 0)
   targetMode?: SkillTargetMode; // default single-target
   /** Per-target final-damage multiplier for an all-enemies move (usually < 1). */
@@ -441,6 +443,8 @@ export interface TimedEffect {
 }
 
 export interface BattleCombatant {
+  /** 施法开始时锁定的格坐标，供空间结算与表现读取。 */
+  castAim?: { x: number; y: number };
   uid: string;
   side: 'player' | 'enemy';
   speciesId: number;

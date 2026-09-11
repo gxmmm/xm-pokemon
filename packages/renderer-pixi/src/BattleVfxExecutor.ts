@@ -1,6 +1,6 @@
 import type { BattleArtAnchorId, BattleEnvironmentSpec } from '@pokemon-online/config';
 import { elementColor, type BattleStageVfxPlan } from './battle-plan.ts';
-import { battleContactPoint } from './battle-ground.ts';
+import { battleContactPoint, battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import type { BattleEffectPool } from './BattleEffectPool.ts';
 import { BATTLE_DESIGN_HEIGHT, BATTLE_DESIGN_WIDTH, type BattleStagePoint as Point } from './battle-stage-layout.ts';
 import { spawnBeam } from './beam-vfx.ts';
@@ -26,8 +26,8 @@ export class BattleVfxExecutor {
       // Explicit targets never fall back to a different actor or screen center.
       // Chain is one connected path; other primitives address each unique victim.
       const targetIds = [...new Set(plan.targetIds)].filter((uid) => !!this.resolvePosition(uid));
-      if (plan.targetIds.length && !targetIds.length) continue;
-      const resolved = plan.primitive === 'chain' || !targetIds.length
+      if (!plan.aimPoint && plan.targetIds.length && !targetIds.length) continue;
+      const resolved = plan.aimPoint || plan.primitive === 'chain' || !targetIds.length
         ? [{ ...plan, targetIds }] : targetIds.map((uid) => ({ ...plan, targetIds: [uid] }));
       for (const targetPlan of resolved) if (this.spawnPlan(targetPlan, environment)) spawned++;
     }
@@ -37,7 +37,7 @@ export class BattleVfxExecutor {
   private spawnPlan(plan: BattleStageVfxPlan, environment: BattleEnvironmentSpec): boolean {
     const actor = plan.actorId ? this.resolvePosition(plan.actorId) : undefined;
     const targets = plan.targetIds.map(this.resolvePosition).filter((point): point is Point => !!point);
-    const targetRoot = targets[0] ?? actor ?? { x: BATTLE_DESIGN_WIDTH / 2, y: BATTLE_DESIGN_HEIGHT * 0.58 };
+    const targetRoot = (plan.aimPoint ? projectBattleWorldPoint(battleWorldPositionFromGrid(plan.aimPoint.x, plan.aimPoint.y), environment.camera) : targets[0]) ?? actor ?? { x: BATTLE_DESIGN_WIDTH / 2, y: BATTLE_DESIGN_HEIGHT * 0.58 };
     const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
     const color = elementColor(plan.element);
     const resolveSource = () => plan.actorId && plan.actorAnchor && this.resolveAnchor

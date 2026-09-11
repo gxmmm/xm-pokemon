@@ -27,6 +27,7 @@ export interface BattlePresentationOutcome {
  * gameplay meaning from localized log text.
  */
 export interface BattlePresentationEvent {
+  aimPoint?: { x: number; y: number };
   id: string;
   sequence: number;
   type: BattlePresentationEventType;
@@ -59,6 +60,7 @@ export interface VfxRecipeRef {
 }
 
 export interface VfxAnchors {
+  aimPoint?: { x: number; y: number };
   actorId?: string;
   actorAnchor?: BattleArtAnchorId;
   targetIds?: readonly string[];
@@ -120,6 +122,7 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
     sequence: event.seq ?? 0,
     type,
     actorId: event.actor,
+    aimPoint: event.type === 'skill' ? vfx?.to : undefined,
     targetIds,
     skillId: event.skillId,
     element: vfx?.type,

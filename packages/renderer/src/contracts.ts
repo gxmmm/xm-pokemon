@@ -57,7 +57,7 @@ export interface BattleRenderSnapshot {
  * import a director implementation. Presentation is structurally compatible. */
 export type BattleCue = { delayMs?: number } & (
   | { type: 'camera'; plan: BattleCameraPlan }
-  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[] }; intensity: number }
+  | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[]; aimPoint?: { x: number; y: number } }; intensity: number }
   | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number }
   | { type: 'action-window'; milliseconds: number }
   | { type: 'hit-stop'; milliseconds: number }

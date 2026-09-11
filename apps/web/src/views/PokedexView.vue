@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { rangeInCells } from '@pokemon-online/engine';
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
 import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
@@ -30,7 +31,7 @@ const RARITY_LABEL: Record<Rarity, string> = {
 
 const NORMAL_ATTACK_DELIVERY_LABEL = { melee: '近战普攻', ranged: '远程普攻' } as const;
 const NORMAL_ATTACK_DELIVERY_TIP = {
-  melee: '普通攻击：近战\n需要贴近目标；视为接触攻击。',
+  melee: '普通攻击：近战\n在2.5格接敌范围内输出；视为接触攻击。',
   ranged: '普通攻击：远程\n可在固定射程内攻击；不视为接触攻击，伤害为近战普攻的 80%。',
 } as const;
 const normalAttackIntervalLabel = (seconds: number): string => `${seconds.toFixed(2)} 秒 / 次`;
@@ -80,9 +81,9 @@ function skillTip(s: Skill | undefined): string {
   if (!s) return '';
   const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
   const target = s.targetMode === 'all-enemies'
-    ? `敌方全体 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
+    ? `覆盖区域内敌人 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
     : '敌方单体';
-  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${s.rangeTiles} · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
+  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格 · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 </script>
 

@@ -5,6 +5,7 @@ import { mulberry32, hashSeed, type RNG } from './rng.ts';
 import { computeStats, effectiveStat } from './stats.ts';
 import { computeDamage } from './damage.ts';
 import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
+import { skillVictims } from './skill-space.ts';
 import { decide, isHardCc } from './ai.ts';
 import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance, findGridApproachStep } from './grid.ts';
 
@@ -23,10 +24,6 @@ export interface BattleSimOptions {
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
-}
-
-function dist(a: BattleCombatant, b: BattleCombatant): number {
-  return distCells(a.position, b.position);
 }
 
 // Presentation-paced combat: skills are deliberate beats rather than a constant
@@ -58,7 +55,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     gy = formPos.y;
   } else {
     gx = side === 'player' ? Math.floor(cols * 0.2) : Math.floor(cols * 0.8);
-    gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * 2), 1, rows - 2);
+    gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * BATTLE_MOVEMENT.allyDestinationClearance), 1, rows - 2);
   }
   // Active skills start partway through a longer presentation-paced cooldown.
   // The opening still uses normal attacks, then skills arrive as readable beats.
@@ -140,6 +137,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
  * resulting state.
  */
 export class BattleSim {
+  private effectSequence = 0;
   state: BattleState;
   rng: RNG;
   deployment: 'sequential' | 'simultaneous';
@@ -368,13 +366,9 @@ export class BattleSim {
     return isCellInArena(cell.x, cell.y) && !this.state.combatants.some((other) => {
       if (!other.alive || other.uid === c.uid) return false;
       if (other.position.x === cell.x && other.position.y === cell.y) return true;
-      if (other.side === c.side) {
-        const destinationGap = distCells(cell, other.position);
-        // Reserve room when choosing a stop, without enlarging melee range or
-        // moving an in-range actor just to spread out. Crowded saves can escape.
-        if (destinationGap < BATTLE_MOVEMENT.allyDestinationClearance
-          && destinationGap <= distCells(c.position, other.position)) return true;
-      }
+      const destinationGap = distCells(cell, other.position);
+      const stopClearance = other.side === c.side ? BATTLE_MOVEMENT.allyDestinationClearance : BATTLE_MOVEMENT.enemyDestinationClearance;
+      if (destinationGap < stopClearance && destinationGap <= distCells(c.position, other.position)) return true;
       const gap = travelPathDistance(c.pixel, c.pixel, other.pixel, other.position);
       const clearance = Math.min(BATTLE_MOVEMENT.pathClearance, gap);
       if (travelPathDistance(c.pixel, cell, other.pixel, other.position) < clearance - 1e-9) return true;
@@ -386,7 +380,7 @@ export class BattleSim {
   }
 
   /** Ease engine-owned travel coordinates toward the logical cell center.
-   * Swept-path occupancy uses these coordinates; attack range still uses cells.
+   * Swept-path occupancy and release coverage use these continuous coordinates.
    * Presentation consumes them without inventing a separate avoidance path. */
   private updatePixel(c: BattleCombatant, dt: number): void {
     const k = 1 - Math.exp(-dt * 9);
@@ -400,43 +394,43 @@ export class BattleSim {
   private stepMove(c: BattleCombatant, target: BattleCombatant, desiredRangeCells: number): void {
     const plan = c.plan;
     const movementTarget = plan?.movementTargetUid ? this.find(plan.movementTargetUid) ?? target : target;
-    const coverAlly = plan?.coverAllyUid ? this.find(plan.coverAllyUid) : undefined;
-    const protectAlly = plan?.protectAllyUid ? this.find(plan.protectAllyUid) : undefined;
     c.facing = target.position.x >= c.position.x ? 1 : -1;
     if ((c.moveCd ?? 0) > 0) return;
 
-    // A frontline protector moves to the segment between a threatened ally and
-    // the hostile caster, while still keeping the action target in front of it.
-    if (plan?.positioning === 'frontline' && protectAlly?.alive) {
-      const blocker = {
-        x: Math.round((protectAlly.position.x + target.position.x) / 2),
-        y: Math.round((protectAlly.position.y + target.position.y) / 2),
-      };
-      if (this.tryStepToward(c, blocker, false)) return;
-    }
-
-    // Backliners use a durable ally as cover: when they drift in front of that
-    // ally, take a step back toward their own deployment side before resuming
-    // normal range logic. This turns protection into readable body-blocking.
-    if (plan?.positioning === 'backline' && coverAlly?.alive && this.isAheadOf(c, coverAlly)) {
-      if (this.tryStepToward(c, { x: c.position.x - c.facing, y: c.position.y }, false)) return;
-    }
-
+    // 保护通过选敌和可达接敌位实现；不再强制跑向同一个队友/目标中点。
     const dx = movementTarget.position.x - c.position.x;
     const dy = movementTarget.position.y - c.position.y;
     const d = Math.hypot(dx, dy);
     const wantKite = desiredRangeCells >= 3;
     const tooFar = d > desiredRangeCells + MOVE_BUFFER;
     const tooClose = wantKite && d < desiredRangeCells - 1;
+    if (tooClose && this.state.time < (c.nextRetreatAt ?? 0)) return;
     // In a valid attack band, stand your ground. Skill casts and local VFX are
     // easier to read when the whole squad does not orbit every decision cycle.
-    if (!tooFar && !tooClose) return;
-    this.tryStepToward(c, movementTarget.position, tooClose, tooFar ? desiredRangeCells + MOVE_BUFFER : undefined);
-  }
-
-  /** Is a combatant closer to the enemy side than its intended cover ally? */
-  private isAheadOf(c: BattleCombatant, cover: BattleCombatant): boolean {
-    return c.side === 'player' ? c.position.x > cover.position.x : c.position.x < cover.position.x;
+    if (!tooFar && !tooClose) {
+      const crowdedAlly = this.state.combatants.find(ally => ally.alive && ally.uid !== c.uid && ally.side === c.side && distCells(c.position, ally.position) < BATTLE_MOVEMENT.allyDestinationClearance);
+      if (crowdedAlly) this.tryStepToward(c, crowdedAlly.position, true);
+      return;
+    }
+    if (tooFar && !c.normalIsRanged && desiredRangeCells < 3) {
+      const reach = desiredRangeCells + MOVE_BUFFER;
+      const reserved = c.attackSlot;
+      const valid = (point: { x: number; y: number }) => isCellInArena(point.x, point.y)
+        && distCells(point, target.position) <= reach
+        && !this.state.combatants.some(ally => ally.uid !== c.uid && ally.alive && ally.attackSlot && ally.attackSlot.until > this.state.time && distCells(point, ally.attackSlot) < BATTLE_MOVEMENT.allyDestinationClearance)
+        && this.canStepTo({ ...c, position: point, pixel: point }, point);
+      let slot = reserved && reserved.targetUid === target.uid && reserved.until > this.state.time && valid(reserved) ? reserved : undefined;
+      if (!slot) {
+        const candidates: { x: number; y: number }[] = [];
+        for (let x = Math.ceil(target.position.x - reach); x <= target.position.x + reach; x++)
+          for (let y = Math.ceil(target.position.y - reach); y <= target.position.y + reach; y++) if (valid({ x, y })) candidates.push({ x, y });
+        candidates.sort((a, b) => distCells(c.position, a) - distCells(c.position, b) || b.y - a.y);
+        const point = candidates[0];
+        if (point) slot = c.attackSlot = { ...point, targetUid: target.uid, until: this.state.time + BATTLE_MOVEMENT.formationHold };
+      }
+      if (slot && this.tryStepToward(c, slot, false, .1)) return;
+    }
+    if (this.tryStepToward(c, movementTarget.position, tooClose, tooFar ? desiredRangeCells + MOVE_BUFFER : undefined) && tooClose) c.nextRetreatAt = this.state.time + BATTLE_MOVEMENT.retreatCooldown;
   }
 
   /** Take one deterministic lane-aware step toward a point, or away when retreating. */
@@ -482,13 +476,13 @@ export class BattleSim {
     return true;
   }
 
-  private startCast(c: BattleCombatant, skillId: string): void {
+  private startCast(c: BattleCombatant, skillId: string): boolean {
     const skill = SKILL_MAP[skillId];
-    if (!skill) return;
+    if (!skill || distCells(c.pixel, c.position) > .05) return false;
+    c.castAim = this.find(c.currentTargetUid) ? { ...this.find(c.currentTargetUid)!.pixel } : undefined;
     const cast = skill.castTime ?? 0;
     if (cast > 0) {
-      // A windup commits the combatant to its current cell. Snapping the visual
-      // position here also prevents it from gliding after the cast bar appears.
+      // 完成当前一步才起手，避免蓄力将角色瞬移到下一落点。
       c.pixel.x = c.position.x;
       c.pixel.y = c.position.y;
       c.plan = null;
@@ -497,6 +491,7 @@ export class BattleSim {
     } else {
       this.resolveSkill(c, skillId);
     }
+    return true;
   }
 
   /** A windup (castProgress) is interrupted by hard control (flinch/sleep/freeze):
@@ -507,6 +502,7 @@ export class BattleSim {
     const skillId = c.castProgress.skillId;
     const skill = SKILL_MAP[skillId];
     c.castProgress = null;
+    c.castAim = undefined;
     c.plan = null;
     c.nextDecisionAt = this.state.time + 0.3;
     this.emit('info', c.uid, undefined, skillId, undefined, `${c.name} 的${skill?.name ?? '蓄力'}被打断！`, { kind: 'interrupt' });
@@ -565,7 +561,7 @@ export class BattleSim {
         if (self) {
           const shield = roundCombatAmount(e.magnitude ?? 100);
           self.shields += shield;
-          self.buffs.push({ id: 'shield_' + Date.now(), kind: 'shield', remaining: e.duration ?? 3, magnitude: shield });
+          self.buffs.push({ id: 'shield_' + (++this.effectSequence), kind: 'shield', remaining: e.duration ?? 3, magnitude: shield });
           this.emit('buff', self.uid, undefined, undefined, undefined, `${self.name} 张开了护盾`, { kind: 'shield' });
         }
         break;
@@ -584,7 +580,7 @@ export class BattleSim {
         break;
       case 'dot':
         if (self && e.magnitude) {
-          self.buffs.push({ id: 'dot_' + Date.now(), kind: 'dot', remaining: e.duration ?? 6, magnitude: e.magnitude, from: caster.uid });
+          self.buffs.push({ id: 'dot_' + (++this.effectSequence), kind: 'dot', remaining: e.duration ?? 6, magnitude: e.magnitude, from: caster.uid });
           this.emit('status', caster.uid, self.uid, skillId, undefined, `${self.name} 被施加了持续伤害`, { kind: 'status', status: e.status });
         }
         break;
@@ -666,7 +662,7 @@ export class BattleSim {
     skillId: string,
     areaMultiplier = 1,
     spread?: { targetUids: string[]; hitIndex: number },
-  ): { dealt: number; immune: boolean } {
+  ): { dealt: number; immune: boolean; missed?: boolean } {
     const skill = SKILL_MAP[skillId] ?? NORMAL_ATTACK;
     const res = computeDamage(attacker, defender, skill, this.rng);
     for (const m of res.log) this.emit('info', attacker.uid, defender.uid, skillId, undefined, m);
@@ -681,7 +677,7 @@ export class BattleSim {
         secondary: spread ? spread.hitIndex > 0 : undefined,
         impactDelay: spread ? spread.hitIndex * 0.055 : undefined,
       });
-      return { dealt: 0, immune: false };
+      return { dealt: 0, immune: false, missed: true };
     }
     if (res.immune) {
       if (res.healed && res.healed > 0) {
@@ -773,7 +769,7 @@ export class BattleSim {
       if ((cds['rock-head'] ?? 0) <= 0) {
         const shield = roundCombatAmount(attacker.maxHp * (attackerAbility.effect.magnitude ?? 0.04));
         attacker.shields += shield;
-        attacker.buffs.push({ id: 'rock-head_' + Date.now(), kind: 'shield', remaining: attackerAbility.effect.duration ?? 2.5, magnitude: shield });
+        attacker.buffs.push({ id: 'rock-head_' + (++this.effectSequence), kind: 'shield', remaining: attackerAbility.effect.duration ?? 2.5, magnitude: shield });
         cds['rock-head'] = attackerAbility.effect.cooldown ?? 4;
         this.emit('buff', attacker.uid, undefined, undefined, undefined, `${attacker.name} 的坚硬脑袋形成了护盾！`, { kind: 'shield' });
       }
@@ -825,9 +821,9 @@ export class BattleSim {
     this.skillRecap(c, skillId).casts += 1;
     c.cooldowns[skillId] = skill.cooldown * SKILL_COOLDOWN_SCALE;
     const target = this.find(c.currentTargetUid);
-    const targets = skill.targetMode === 'all-enemies'
-      ? this.state.combatants.filter((x) => x.side !== c.side && x.alive)
-      : target && target.alive ? [target] : [];
+    const aim = c.castAim ?? target?.pixel;
+    const targets = skillVictims(skill, c, target, this.state.combatants.filter(x => x.side !== c.side), aim);
+    c.castAim = undefined;
     const primary = targets.includes(target as BattleCombatant) ? target : targets[0];
     const targetUids = targets.map((x) => x.uid);
 
@@ -837,18 +833,27 @@ export class BattleSim {
       for (const victim of targets) victim.ccIncomingUntil = this.state.time + 0.6;
     }
     if (skill.power > 0) {
-      if (targets.length === 0 || !primary) return;
+      if (!aim) return;
+      let visualAim = { ...aim };
+      if (skill.space?.shape === 'radial') visualAim = { ...c.position };
+      if (skill.space?.shape === 'cone' || skill.space?.shape === 'line') {
+        const dx = aim.x - c.position.x, dy = aim.y - c.position.y, length = Math.max(.001, Math.hypot(dx, dy));
+        visualAim = { x: c.position.x + dx / length * skill.space.reach, y: c.position.y + dy / length * skill.space.reach };
+      }
       const vfxKind = skill.targetMode === 'all-enemies' ? 'burst' : skill.range === 'ranged' ? 'projectile' : 'melee';
-      this.emit('skill', c.uid, primary.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, {
-        kind: vfxKind, type: skill.type, targetUids: skill.targetMode === 'all-enemies' ? targetUids : undefined,
+      this.emit('skill', c.uid, primary?.uid ?? target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, {
+        kind: vfxKind, type: skill.type, to: skill.space ? visualAim : undefined, targetUids: skill.targetMode === 'all-enemies' ? targetUids : undefined,
       });
+      if (!targets.length) { c.misses++; this.skillRecap(c, skillId).misses++; this.emit('info', c.uid, target?.uid, skillId, undefined, '目标离开了技能覆盖区域', { kind: 'miss', missed: true }); }
       const areaMultiplier = skill.targetMode === 'all-enemies' ? skill.areaMultiplier ?? 0.7 : 1;
+      let totalDealt = 0, landed = false;
       for (let hitIndex = 0; hitIndex < targets.length; hitIndex++) {
         const victim = targets[hitIndex]!;
-        const { dealt } = this.dealDamage(c, victim, skillId, areaMultiplier,
+        const { dealt, immune, missed } = this.dealDamage(c, victim, skillId, areaMultiplier,
           skill.targetMode === 'all-enemies' ? { targetUids, hitIndex } : undefined);
         // Secondary effects roll once per hit target, matching the damage event.
-        if (skill.effect && victim.alive) {
+        if (!immune && !missed) { totalDealt += dealt; landed = true; }
+        if (skill.effect && victim.alive && !immune && !missed && skill.effect.target !== 'self') {
           const e = skill.effect;
           const ability = ABILITY_MAP[c.ability];
           const secondaryChance = ability?.effect.kind === 'secondaryBoost'
@@ -857,11 +862,12 @@ export class BattleSim {
           if (this.rng() < secondaryChance) this.applyEffect(c, e.target === 'self' ? c : victim, skillId, dealt);
         }
       }
+      if (landed && c.alive && skill.effect?.target === 'self' && this.rng() < (skill.effect.chance ?? 1)) this.applyEffect(c, c, skillId, totalDealt);
     } else {
       // Status / utility skills remain single-target or self-target.
       this.emit('skill', c.uid, target?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       const e = skill.effect;
-      const tgt = e?.target === 'enemy' ? target : c;
+      const tgt = e?.target === 'enemy' ? targets[0] : c;
       if (e?.target === 'enemy' && tgt) {
         const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
         if (this.rng() > acc) {
@@ -1032,14 +1038,17 @@ export class BattleSim {
       const target = this.find(c.plan.targetUid);
       if (!target || !target.alive) { c.plan = null; continue; }
       // movement (grid step)
-      this.stepMove(c, target, c.plan.desiredRangeCells);
+      const readySkill = c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0 ? SKILL_MAP[c.plan.preferredSkillId] : undefined;
+      const preparing = readySkill && (readySkill.power === 0 && readySkill.effect?.target !== 'enemy' || distCells(c.pixel, target.pixel) <= rangeInCells(readySkill));
+      const needsSpace = c.normalIsRanged && distCells(c.position, target.position) < c.plan.desiredRangeCells - 1
+        || this.state.combatants.some(ally => ally.alive && ally.uid !== c.uid && ally.side === c.side && distCells(c.position, ally.position) < BATTLE_MOVEMENT.allyDestinationClearance);
+      if (!preparing || needsSpace) this.stepMove(c, target, c.plan.desiredRangeCells);
       // action
       if (c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0) {
         const skill = SKILL_MAP[c.plan.preferredSkillId];
         if (skill) {
-          const selfCast = skill.effect?.target === 'self' || skill.power === 0 && skill.effect?.target !== 'enemy';
-          if (selfCast || dist(c, target) <= rangeInCells(skill)) {
-            this.startCast(c, c.plan.preferredSkillId);
+          const selfCast = skill.power === 0 && skill.effect?.target !== 'enemy';
+          if ((selfCast || distCells(c.pixel, target.pixel) <= rangeInCells(skill)) && this.startCast(c, c.plan.preferredSkillId)) {
             c.plan = null;
             continue;
           }
@@ -1049,7 +1058,7 @@ export class BattleSim {
       // keeps dealing damage while kiting (advancing or backing off) between
       // skill CDs; the range is per-combatant (normalRangeCells). Direction of
       // the preceding stepMove is irrelevant -- in-range => can fire.
-      if (dist(c, target) <= (c.normalRangeCells ?? MELEE_RANGE_CELLS) && c.normalAttackCd <= 0) {
+      if (distCells(c.pixel, target.pixel) <= (c.normalRangeCells ?? MELEE_RANGE_CELLS) && c.normalAttackCd <= 0) {
         this.normalAttack(c, target);
       }
     }

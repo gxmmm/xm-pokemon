@@ -3,17 +3,16 @@
  * Combatants occupy integer cells and step cell-by-cell; distance is measured
  * in cell units.
  *
- * Skill `rangeTiles` in config was tuned against the legacy 720-wide continuous
- * arena. We convert it to cells so the existing config keeps working unchanged
- * (frozen: ranges come from config, not hardcoded here). Melee moves always
- * reach an adjacent cell (incl. diagonal), so melee range is 1.5 cells
- * (diagonal adjacency = sqrt(2) ~= 1.41 < 1.5).
+ * 技能优先声明 space.reach 格数；未声明的远程值统一换算。
+ * 近战共享 2.5 格接敌范围，实际脚点与预约落点由引擎管理。
  */
+import { BATTLE_MOVEMENT } from '@pokemon-online/config';
 import type { Skill } from '@pokemon-online/shared';
 import { ARENA, BATTLE_GRID } from '@pokemon-online/shared';
 
 /** Effective range of a skill in grid-cell units. */
-export function rangeInCells(skill: Pick<Skill, 'range' | 'rangeTiles'>): number {
+export function rangeInCells(skill: Pick<Skill, 'range' | 'rangeTiles' | 'space'>): number {
+  if (skill.space?.reach) return skill.space.reach;
   if (skill.range === 'melee') return MELEE_RANGE_CELLS;
   // Scale ranged range down from the legacy 720-wide arena conversion. The raw
   // factor (1.0) gave 8-13 cells on the 20-col grid -- over half the arena --
@@ -103,12 +102,12 @@ export function defaultFormation(): { x: number; y: number }[] {
 /** Player's starting area columns (left side) where formation placement is allowed. */
 export const FORMATION_START_COLS = Math.ceil(BATTLE_GRID.cols * 0.35);
 
-/** Melee reach: adjacent including diagonal. Normal attack (melee) uses this. */
-export const MELEE_RANGE_CELLS = 1.5;
-/** Where a melee/normal-attack fighter wants to stand (orthogonal-adjacent). */
-export const MELEE_DESIRED_CELLS = 1.0;
+/** 近战接敌范围；基础攻击共用，避免挤入同一落点。 */
+export const MELEE_RANGE_CELLS = BATTLE_MOVEMENT.meleeReach;
+/** 近战停靠距离。 */
+export const MELEE_DESIRED_CELLS = BATTLE_MOVEMENT.meleeReach - 0.5;
 /** Movement "stop band" buffer. A combatant stops stepping once within
  *  desiredRange + MOVE_BUFFER. MUST satisfy (desired + buffer) <= attack range
  *  for melee, else a fighter stops just out of reach and never attacks
- *  (the grid version of the old stall bug). Melee: 1.0 + 0.5 = 1.5 == range. */
+ *  (the grid version of the old stall bug). Melee: 2.0 + 0.5 = 2.5 == range. */
 export const MOVE_BUFFER = 0.5;

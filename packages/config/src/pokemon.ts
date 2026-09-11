@@ -380,6 +380,8 @@ if (missingCombatRoles.length) {
  * Ranged models trade the normal-attack damage multiplier for safe spacing.
  */
 export const RANGED_NORMAL_ATTACK_SPECIES = new Set<number>([
+  // 喷射型火系以远程基础攻击维持距离，近身技能保留为反制。
+  6, 126, 146,
   // Plant / spore / vine casters.
   1, 2, 3, 43, 44, 45, 69, 70, 71, 102, 103, 114,
   // Water cannons, bubbles, spray and sea casters.

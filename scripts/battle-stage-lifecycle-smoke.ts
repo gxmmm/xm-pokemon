@@ -82,6 +82,7 @@ export async function testBattleStageLifecycle(): Promise<void> {
 
     const currentApp = apps.at(-1)!;
     const reusableLayers = [...currentApp.stage.children[0]!.children];
+    const combatantLayer = (stage as unknown as { combatants: { container: Container } }).combatants.container;
     const oldBattle = deferred();
     preloadQueue.push(oldBattle);
     const grass = stage.enterBattle({ biomeId: 'grass', combatants: [] });
@@ -96,20 +97,20 @@ export async function testBattleStageLifecycle(): Promise<void> {
     preloadQueue.push(waitingArt);
     const waitingScene = stage.enterBattle({ biomeId: 'grass', combatants: [{ ...actor, speciesId: -1 }] });
     assert.equal(stage.getDiagnostics().combatantCount, 1, 'fallback actors exist before art finishes');
-    const loadingActor = reusableLayers[5]!.children[0];
+    const loadingActor = combatantLayer.children[0];
     stage.applyBattleSnapshot({ time: 2, combatants: [{ ...actor, speciesId: -1, currentHp: 0, alive: false }] });
     await stage.playBattleCues([{ type: 'environment', reaction: 'splash', anchors: { targetIds: [actor.uid] } }]);
     const loadingEffects = stage.getDiagnostics().activeEffectCount;
     assert(loadingEffects > 0, 'cues play while scene art is pending');
     waitingArt.resolve();
     await waitingScene;
-    assert.equal(reusableLayers[5]!.children[0], loadingActor, 'late art must preserve the updated actor instance');
+    assert.equal(combatantLayer.children[0], loadingActor, 'late art must preserve the updated actor instance');
     assert.equal(stage.getDiagnostics().activeEffectCount, loadingEffects, 'late art must preserve pending effects');
     assert.equal((loadingActor as unknown as { alive: boolean }).alive, false, 'late art must not restore initial life state');
     await stage.enterBattle({ biomeId: 'water', combatants: [] });
     stage.applyBattleSnapshot({ time: 0, combatants: [{ ...actor, speciesId: -1 }] });
     const descendants = (node: Container): Container[] => [node, ...node.children.flatMap(descendants)];
-    const actorNodes = descendants(reusableLayers[5]!.children[0]!);
+    const actorNodes = descendants(combatantLayer.children[0]!);
     stage.applyBattleSnapshot({ time: 1, combatants: [{ ...actor, speciesId: -1, currentHp: 0, alive: false }] });
     await stage.playBattleCues([
       { type: 'vfx', recipe: { id: 'impact:normal', delivery: 'aura' }, anchors: { targetIds: [actor.uid] }, intensity: 1 },
@@ -124,7 +125,7 @@ export async function testBattleStageLifecycle(): Promise<void> {
     const cameraAtImpact = stage.getDiagnostics().camera;
     assert.equal(reusableLayers[4]!.children.length, 1, 'ground response is below the actor layer');
     assert.equal(stage.getDiagnostics().effectChildCount, 2, 'stage diagnostics include ground and front effects');
-    assert(impactWidth > 0 && reusableLayers[5]!.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
+    assert(impactWidth > 0 && combatantLayer.children[0]!.alpha === 0.25, 'KO graphics and life state draw before the first hit-stop frame');
     tickers.get(currentApp)!({ deltaTime: 1 });
     assert.equal(impact.getLocalBounds().width, impactWidth, 'hit-stop holds the rendered impact instead of an empty graphic');
     assert.deepEqual(stage.getDiagnostics().camera, cameraAtImpact, 'the shared hit-stop clock holds the camera with the impact');

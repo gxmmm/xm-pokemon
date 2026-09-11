@@ -77,8 +77,9 @@ const DELIVERY_OVERRIDES: Readonly<Record<string, DeliveryKind>> = {
 };
 
 function deliveryFor(skill: Skill): DeliveryKind {
-  if (skill.effect?.kind === 'heal' || skill.effect?.kind === 'shield' || skill.effect?.kind === 'buff') return 'aura';
+  if (skill.power === 0 && (skill.effect?.kind === 'heal' || skill.effect?.kind === 'shield' || skill.effect?.kind === 'buff')) return 'aura';
   if (DELIVERY_OVERRIDES[skill.id]) return DELIVERY_OVERRIDES[skill.id];
+  if (skill.space?.shape === 'line') return 'beam';
   if (skill.targetMode === 'all-enemies') return 'area';
   if (skill.range === 'melee') return 'melee';
   if (skill.id.includes('beam') || skill.id.includes('ray') || skill.id.includes('laser')) return 'beam';
