@@ -183,6 +183,8 @@ export interface BattleArtProfile {
   id: string;
   /** 帧内已有完整动作，关闭针对静态角色的整体拉伸与前冲。 */
   authoredFrames?: boolean;
+  /** 完整动作已含收招时，恢复阶段使用声明的中立片段，避免跨动作族跳形。 */
+  recoverySources?: Partial<Readonly<Record<BattleArtMotionId, BattleArtMotionId>>>;
   speciesId?: number;
   modelId: string;
   frontAssetId: string;
@@ -354,6 +356,7 @@ function profileFor(species: Species): BattleArtProfile {
     speciesId: species.id,
     modelId: `pmd:${species.id}`,
     authoredFrames: true,
+    recoverySources: { attack: 'idle' },
     frontAssetId: `pmd:${species.id}:front`,
     backAssetId: `pmd:${species.id}:back`,
     fallbackAssetId: FALLBACK_ASSET_ID,
@@ -592,6 +595,8 @@ export function validateBattleArtConfiguration(
     if (!BATTLE_VISUAL_THEMES[profile.themeId] || profile.scale <= 0 || profile.shadowScale <= 0) invalidProfileIds.push(profile.id);
     for (const assetId of [profile.frontAssetId, profile.backAssetId, profile.fallbackAssetId]) if (!assetIds.has(assetId)) missingAssetIds.push(`${profile.id}:${assetId}`);
     const anchorIds = new Set(profile.anchors.map((anchor) => anchor.id));
+    if (Object.entries(profile.recoverySources ?? {}).some(([from, to]) =>
+      !REQUIRED_MOTIONS.includes(from as BattleArtMotionId) || !REQUIRED_MOTIONS.includes(to))) invalidMotionProfileIds.push(profile.id);
     if (profile.layers.some((layer) => !layer.id || layer.alpha < 0 || layer.alpha > 1 || layer.scale <= 0 || (layer.pulse !== undefined && (layer.pulse < 0 || layer.pulse > 1)))) invalidLayerProfileIds.push(profile.id);
     if (Object.values(profile.motionPoses).some((pose) => Object.values(pose).some((value) => !Number.isFinite(value)))) invalidLayerProfileIds.push(profile.id);
     if (Object.entries(profile.motionTracks ?? {}).some(([motion, frames]) =>

@@ -102,6 +102,17 @@ export async function testCombatantSprite(): Promise<void> {
   delayedAction.resolve([first, second, third, fourth]);
   await delayedMotion;
   assert.equal(sprite.texture, fourth, 'late clip catches up to the active action clock');
+  const turningClip = deferred<readonly Texture[] | null>();
+  clipRequests.set(`${otherSheet.id}:attack`, turningClip.promise);
+  metadataRequests.set(otherSheet.id, Promise.resolve(metadata));
+  const turn = sprite.setAsset(otherSheet, 'attack', true);
+  assert(sprite.visible && !fallback.visible, '转向等待期间保留可见角色，不闪兜底');
+  assert.equal(sprite.texture, fourth);
+  sprite.advance(10, false, 200);
+  turningClip.resolve([fourth, third, second, first]);
+  await turn;
+  assert.equal(sprite.texture, first, '转向继承动作进度并计入等待耗时，不重播首帧');
+  metadataRequests.delete(otherSheet.id);
   await sprite.setAsset(sheet, 'idle');
   sprite.advance(100, true);
 

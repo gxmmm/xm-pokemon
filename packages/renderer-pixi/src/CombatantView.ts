@@ -63,6 +63,7 @@ export class CombatantView extends Container {
   private motionElapsedMs = 0;
   private bodyEffectSeconds = 0;
   private motion: BattleArtMotionId;
+  private spriteMotion: BattleArtMotionId = 'idle';
   private motionDurationOverrideMs: number | null = null;
   private activeChoreography: ActiveActorChoreography | null = null;
   private queuedMotions: QueuedMotion[] = [];
@@ -162,7 +163,7 @@ export class CombatantView extends Container {
     if (changedProfile) this.rebuildLayers();
     if (changedAsset) {
       this.drawFallback();
-      void this.sprite.setAsset(this.presentation.asset, this.motion);
+      void this.sprite.setAsset(this.presentation.asset, this.spriteMotion, !changedProfile);
     }
   }
 
@@ -304,16 +305,18 @@ export class CombatantView extends Container {
     const elapsedMs = dtSeconds * 1000;
     this.motionElapsedMs += elapsedMs;
     let beganNextMotion = false;
-    const durationMs = this.activeMotionDurationMs();
-    const finite = !clip.loop || this.motionDurationOverrideMs !== null;
-    let progress = finite ? Math.min(1, this.motionElapsedMs / durationMs) : (this.motionElapsedMs % durationMs) / durationMs;
-    if (finite && progress >= 1 && this.motion !== 'faint') {
+    while ((!clip.loop || this.motionDurationOverrideMs !== null)
+      && this.motionElapsedMs >= this.activeMotionDurationMs() && this.motion !== 'faint') {
+      const remainder = this.motionElapsedMs - this.activeMotionDurationMs();
       const next = this.queuedMotions.shift();
-      this.setMotion(next?.motion ?? 'idle', next?.durationMs, next?.choreography, next?.target, next?.element);
+      this.setMotion(next?.motion ?? (this.moving && this.alive && !this.casting ? 'locomotion' : 'idle'), next?.durationMs, next?.choreography, next?.target, next?.element);
+      this.motionElapsedMs = remainder;
       clip = this.presentation.profile.motions[this.motion];
-      progress = 0;
       beganNextMotion = true;
     }
+    const durationMs = this.activeMotionDurationMs();
+    const finite = !clip.loop || this.motionDurationOverrideMs !== null;
+    const progress = finite ? Math.min(1, this.motionElapsedMs / durationMs) : (this.motionElapsedMs % durationMs) / durationMs;
 
     const authored = this.presentation.profile.authoredFrames;
     const pulse = authored ? 0 : this.motion === 'idle' ? Math.sin(progress * Math.PI * 2) * 0.025
@@ -346,7 +349,7 @@ export class CombatantView extends Container {
       rotation: this.facing * (pose.rotationDeg ?? 0) * Math.PI / 180 + (authored ? 0 : this.movementTiltRad),
     };
     const timedClip = !clip.loop || this.motionDurationOverrideMs !== null;
-    this.sprite.advance(beganNextMotion ? 0 : elapsedMs, !timedClip, timedClip ? this.activeMotionDurationMs() : undefined);
+    this.sprite.advance(beganNextMotion ? this.motionElapsedMs : elapsedMs, !timedClip, timedClip ? this.activeMotionDurationMs() : undefined);
     const transform = this.interpolateTransition(target, beganNextMotion ? 0 : elapsedMs);
     const hover = this.hoverTransform(elapsedMs);
     this.visualHoverOffsetY = hover.offsetY;
@@ -459,11 +462,12 @@ export class CombatantView extends Container {
     };
     this.transitionElapsedMs = 0;
     this.transitionDurationMs = this.transitionDurationFor(this.motion, motion);
+    this.spriteMotion = motion === 'recover' ? this.presentation.profile.recoverySources?.[this.motion] ?? motion : motion;
     this.motion = motion;
     this.motionDurationOverrideMs = durationMs ?? null;
     this.motionElapsedMs = 0;
     this.activeChoreography = choreography && target ? { spec: choreography, target, theme: choreographyThemeFor(element) } : null;
-    void this.sprite.setMotion(this.presentation.asset, motion);
+    void this.sprite.setMotion(this.presentation.asset, this.spriteMotion);
   }
 
   private shouldQueueAction(): boolean {

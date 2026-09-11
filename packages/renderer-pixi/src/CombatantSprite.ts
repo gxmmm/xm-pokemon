@@ -64,14 +64,16 @@ export class CombatantSprite extends Sprite {
     this.visible = false;
   }
 
-  async setAsset(asset: BattleAssetManifestEntry, motion: BattleArtMotionId): Promise<void> {
+  async setAsset(asset: BattleAssetManifestEntry, motion: BattleArtMotionId, preservePlayback = false): Promise<void> {
     const token = ++this.requestToken;
     this.frames = null;
-    this.elapsedMs = 0;
-    this.metadata = null;
-    this.contactFrame = null;
-    this.visible = false;
-    this.fallback.visible = true;
+    if (!preservePlayback) {
+      this.elapsedMs = 0;
+      this.metadata = null;
+      this.contactFrame = null;
+      this.visible = false;
+      this.fallback.visible = true;
+    }
     if (asset.kind === 'sprite-sheet') {
       // Never display an entire sequence atlas as a single combatant bitmap.
       await this.loadClip(asset, motion, token);

@@ -10,6 +10,42 @@ export function testCombatantMotion(): void {
   assets.load = async () => null;
   assets.loadClip = async () => null;
   assets.loadMetadata = async () => null;
+  for (const speciesId of [6, 25, 94, 131, 143, 149, 68]) {
+    const requested: string[] = [];
+    assets.loadClip = async (_asset, motion) => { requested.push(motion); return null; };
+    const actor = new BattleSim({ mode: 'pve', player: [createWildInstance(speciesId, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!;
+    const view = new CombatantView(actor, assets);
+    view.playAnimation('melee', 'immediate', 100);
+    view.playAnimation('recoil', 'after-current-motion', 100);
+    view.update(0.1);
+    assert.equal(requested.at(-1), 'idle', '完整近战后加载中立帧，不切入施法收招');
+    view.refresh({ ...actor, facing: -actor.facing as 1 | -1 });
+    assert.equal(requested.at(-1), 'idle', '收招途中转向仍沿用正确动作族');
+    view.update(0.1);
+    view.playAnimation('projectile', 'immediate', 100);
+    view.playAnimation('recoil', 'after-current-motion', 100);
+    view.update(0.1);
+    assert.equal(requested.at(-1), 'recover', '施法保留专用收招帧');
+    view.destroy({ children: true });
+  }
+  assets.loadClip = async () => null;
+  // 同一动作链在不同渲染帧率下拥有相同结束时间，不逐段积累丢失时间。
+  for (const step of [0.01, 0.037, 0.16, 0.35]) {
+    const actor = new BattleSim({ mode: 'pve', player: [createWildInstance(68, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!;
+    const view = new CombatantView(actor, assets);
+    view.playAnimation('melee', 'immediate', 100);
+    view.playAnimation('recoil', 'after-current-motion', 100);
+    view.playAnimation('projectile', 'after-current-motion', 100);
+    view.playAnimation('recoil', 'after-current-motion', 100);
+    let elapsed = 0;
+    while (elapsed < 0.399) { const dt = Math.min(step, 0.399 - elapsed); view.update(dt); elapsed += dt; }
+    assert.equal(view.getDiagnostics().motion, 'recover', '399ms 仍在最后一段收招');
+    view.update(0.002);
+    assert.equal(view.getDiagnostics().motion, 'idle', '401ms 已完整结束，不受帧步长影响');
+    view.destroy({ children: true });
+  }
+  assert(BATTLE_ART_PROFILES.every(profile => profile.recoverySources?.attack === 'idle'
+    && !profile.recoverySources?.cast && !profile.recoverySources?.channel), '完整 Attack 后中立收招，施法保留专用尾段');
   for (const speciesId of [6, 94]) {
     const actor = new BattleSim({ mode: 'pve', player: [createWildInstance(speciesId, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!;
     const snapshot = JSON.stringify(actor);
