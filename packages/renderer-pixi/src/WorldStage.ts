@@ -3,7 +3,8 @@ import { Application, Container } from 'pixi.js';
 import { PixelGraphics as Graphics } from './PixelGraphics.ts';
 import { CharacterView, type CharacterAppearance, type CharacterBehavior } from './CharacterView.ts';
 import { DrawCallObserver } from './draw-call-observer.ts';
-import { PIXEL_ART_STYLE } from '@pokemon-online/config';
+import { PIXEL_ART_STYLE, type WorldReliefLayout } from '@pokemon-online/config';
+import { drawWorldRelief } from './WorldRelief.ts';
 
 interface ScenePalette {
   backdrop: string;
@@ -36,6 +37,7 @@ export interface WorldStageSceneSpec {
   biome: string;
   ambience: { preset: string; density: number };
   palette: ScenePalette;
+  relief?: WorldReliefLayout;
   landmarks?: readonly Landmark[];
   characters?: readonly SceneCharacter[];
   resources?: { preloadKeys: readonly string[]; ambientParticleLimit: number; entityLimit: number };
@@ -87,6 +89,7 @@ export class WorldStage implements WorldRenderer {
   private transitionGraphic: Graphics | null = null;
   private basePaint: { sky: Graphics; ground: Graphics; shadow: Graphics } | null = null;
   private readonly characterViews = new Map<string, CharacterView>();
+  private reliefObjects: Graphics[] = [];
   private readonly ambientParticles: AmbientParticle[] = [];
   /** Asset keys retained only for the currently entered Scene Pack. Current world
    * packs are procedural, so this tracks the explicit zero-external-asset boundary. */
@@ -127,6 +130,7 @@ export class WorldStage implements WorldRenderer {
     this.root = new Container();
     app.stage.addChild(this.root);
     this.root.addChild(this.terrain, this.scenery, this.entities, this.occlusion, this.foreground, this.overlay);
+    this.entities.sortableChildren = true;
     this.transitionGraphic = new Graphics();
     this.overlay.addChild(this.transitionGraphic);
     app.ticker.add((ticker) => this.update(Math.min(0.05, ticker.deltaTime / 60)));
@@ -150,6 +154,7 @@ export class WorldStage implements WorldRenderer {
     this.ambientParticles.length = 0;
     this.scenePreloadKeys.clear();
     this.characterViews.clear();
+    this.reliefObjects.length = 0;
     this.drawCallObserver?.destroy();
     this.drawCallObserver = null;
     for (const layer of [this.terrain, this.scenery, this.entities, this.occlusion, this.foreground, this.overlay]) {
@@ -180,7 +185,7 @@ export class WorldStage implements WorldRenderer {
       preloadKeyCount: this.scenePreloadKeys.size,
       ambientParticleCount: this.ambientParticles.length,
       entityCount: this.characterViews.size,
-      staticChildCount: this.terrain.children.length + this.scenery.children.length + this.occlusion.children.length + this.foreground.children.length,
+      staticChildCount: this.terrain.children.length + this.scenery.children.length + this.occlusion.children.length + this.foreground.children.length + this.reliefObjects.length - this.ambientParticles.length,
       totalChildCount: this.terrain.children.length + this.scenery.children.length + this.entities.children.length + this.occlusion.children.length + this.foreground.children.length + this.overlay.children.length,
       canvasCount: this.app?.canvas ? 1 : 0,
       canvasPixels: this.app?.canvas ? this.app.canvas.width * this.app.canvas.height : 0,
@@ -269,17 +274,25 @@ export class WorldStage implements WorldRenderer {
         this.entities.addChild(view.container);
       } else view.setStyle(character.appearance, character.behavior);
       view.setWorldPosition(point.x, point.y);
+      view.container.zIndex = point.y;
     }
   }
 
   async playWorldCues(_cues: readonly WorldCue[]): Promise<void> {}
 
   private drawScene(): void {
+    for (const object of this.reliefObjects) { object.removeFromParent(); object.destroy(); }
+    this.reliefObjects.length = 0;
     for (const layer of [this.terrain, this.scenery, this.occlusion, this.foreground]) layer.removeChildren().forEach((child) => child.destroy());
     this.ambientParticles.length = 0;
     const palette = this.activeScene?.palette ?? FALLBACK_PALETTE;
     this.drawBase(palette);
-    if (this.activeScene) this.drawLandmarks(this.activeScene, palette);
+    if (this.activeScene?.relief) {
+      const art = drawWorldRelief(this.activeScene.relief, palette);
+      this.terrain.addChild(art.floor); this.scenery.addChild(art.backdrop); this.foreground.addChild(art.front);
+      this.reliefObjects = art.rows;
+      this.entities.addChild(...art.rows);
+    } else if (this.activeScene) this.drawLandmarks(this.activeScene, palette);
     this.drawAmbience(this.activeScene?.ambience ?? { preset: 'mist', density: 0.3 }, palette);
     this.resize();
   }
@@ -303,6 +316,14 @@ export class WorldStage implements WorldRenderer {
     // Extend the continuous environment, keeping every map entity in the same
     // uniform projection instead of stretching or cropping the playable map.
     this.basePaint.sky.clear().rect(bounds.x, bounds.y, bounds.width, bounds.height).fill({ color: palette.backdrop });
+    if (this.activeScene?.relief) {
+      this.basePaint.ground.clear(); this.basePaint.shadow.clear();
+      if (this.activeScene.relief.style === 'harbor') {
+        this.basePaint.ground.rect(bounds.x,bounds.y,bounds.width,Math.max(0,650-bounds.y)).fill({color:palette.ground});
+        this.basePaint.shadow.rect(bounds.x,650,bounds.width,17).fill({color:palette.shadow});
+      }
+      return;
+    }
     this.basePaint.ground.clear().rect(bounds.x, 410, bounds.width, Math.max(0, bounds.y + bounds.height - 410)).fill({ color: palette.ground });
     this.basePaint.shadow.clear().rect(bounds.x, 408, bounds.width, 8).fill({ color: palette.shadow, alpha: 0.18 });
   }
@@ -415,7 +436,7 @@ export class WorldStage implements WorldRenderer {
     const luminous = ambience.preset === 'pollen' || ambience.preset === 'starlight' || ambience.preset === 'rune';
     for (let index = 0; index < count; index++) {
       const baseX = (index * 101) % (DESIGN_WIDTH + 120) - 60;
-      const baseY = 100 + (index * 53) % 570;
+      const baseY = this.activeScene?.relief?.style === 'harbor' ? 660 + index * 7 : 100 + (index * 53) % 570;
       const graphic = new Graphics({ blendMode: luminous ? 'add' : 'normal' });
       if (ambience.preset === 'pollen') {
         const radius = 1.5 + index % 3;
@@ -426,7 +447,7 @@ export class WorldStage implements WorldRenderer {
         graphic.star(baseX, baseY, ambience.preset === 'rune' ? 5 : 4, radius * 2.4, radius * 0.72).fill({ color: index % 3 === 0 ? palette.accent : palette.fog, alpha: 0.68 })
           .circle(baseX, baseY, radius * 3).fill({ color: palette.accent, alpha: 0.05 });
       } else {
-        graphic.ellipse(baseX, baseY, 35 + index % 3 * 9, 9 + index % 2 * 3).fill({ color: palette.fog, alpha: 0.18 });
+        graphic.ellipse(baseX, baseY, 35 + index % 3 * 9, 5 + index % 2 * 3).fill({ color: palette.fog, alpha: 0.08 });
       }
       this.foreground.addChild(graphic);
       this.ambientParticles.push({ graphic, baseX, baseY, phase: index * 0.71, speed: luminous ? 0.42 + (index % 4) * 0.07 : 0.18 + (index % 4) * 0.035, drift: luminous ? 20 : 32 });

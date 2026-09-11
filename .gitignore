@@ -19,3 +19,5 @@ doc/visual-baselines
 /art-source/resource-audit/
 /art-source/emberwing-v1/
 /art-source/flame-wing-v6/
+# 验证入口的临时编译产物（正常结束自动清理）。
+/.script-*.mjs

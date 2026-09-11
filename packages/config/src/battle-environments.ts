@@ -83,7 +83,7 @@ export const BATTLE_ENVIRONMENTS: Readonly<Record<BattleEnvironmentId, BattleEnv
   },
   water: {
     id: 'water', pixelArt: true,
-    palette: { sky: '#173a57', horizon: '#3c8390', ground: '#225c72', groundDetail: '#72c8dc', accent: '#f7db83', mote: '#d2f8ff' },
+    palette: { sky: '#173a57', horizon: '#3c8390', ground: '#568b8c', groundDetail: '#90c6be', accent: '#f7db83', mote: '#d2f8ff' },
     terrain: 'water', ambience: 'spray', density: 0.56, contactVisual: 'ripples', backdrop: 'tide-cliffs', groundPattern: 'shallow-ripples', foregroundFrame: 'spray', parallax: { far: 0.22, horizon: 0.46, ground: 0.84, foreground: 1.14 }, camera: spectatorCamera(24.8, 50, 930, 442), atmosphere: { keyLight: { x: 930, y: 104, radius: 82, alpha: 0.13 }, horizonHaze: 0.15, groundShade: 0.04 }, overscan: 220, reactions: ['scorch', 'frost', 'spark', 'splash', 'spore', 'rune-pulse'],
   },
   dragon: {

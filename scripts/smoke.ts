@@ -838,6 +838,10 @@ testBattleCamera();
     assert(scene.resources.preloadKeys.join(',') === 'procedural-primitives' && budget.preloadKeyCount === 1, `${mapId} has scene-local procedural preload boundary`);
     assert(WORLD_SCENE_VISUAL_BASELINES[mapId] === worldSceneFingerprintHash(scene), `${mapId} matches reviewed world visual baseline`);
   }
+  for (const map of MAPS) {
+    assert(WORLD_SCENE_BY_MAP_ID[map.id]!.relief?.tiles === map.tiles, `${map.id} terrain uses the authoritative map grid without a second layout`);
+  }
+  assert(new Set(Object.values(WORLD_SCENE_BY_MAP_ID).map(scene => scene.relief?.style)).size === MAPS.length, 'six maps have distinct configured terrain treatments');
   console.log(`✓ Stage 8 world scene budgets and visual baselines: ${GPU_WORLD_MAP_IDS.length}`);
 }
 

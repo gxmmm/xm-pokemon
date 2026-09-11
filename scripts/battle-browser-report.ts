@@ -7,6 +7,7 @@ import type { RendererObservationReport } from '../apps/web/src/visuals/runtime-
 import { checkNaturalBattle } from './battle-natural-browser-checks.ts';
 import { checkSkillShowcases } from './skill-showcase-browser-checks.ts';
 import { checkBattleSpacing } from './battle-spacing-browser-checks.ts';
+import { checkRelief } from './relief-browser-checks.ts';
 
 const PORT = 41775;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
       await new Promise((done) => setTimeout(done, 200));
     }
     assert(ready, `Vite startup timed out: ${serverLog}`);
-    browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle', '--disable-gpu-vsync'] });
+    browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
     // Software-rendered acceptance can contend with Vite's first route compile.
     page.setDefaultNavigationTimeout(60000);
@@ -95,6 +96,14 @@ async function main(): Promise<void> {
     });
 
     await page.goto(`${BASE}/battle-sandbox?renderer-observation=1`, { waitUntil: 'networkidle' });
+    if (process.argv.includes('--relief-only')) {
+      await page.clock.install({ time: new Date('2026-09-11T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-09-11T01:00:00Z'));
+      const size = process.argv.find(arg => arg.startsWith('--relief-size='))?.split('=')[1];
+      await checkRelief(page, OUTPUT, size ? Number(size) : undefined);
+      assert.deepEqual(errors, []);
+      return;
+    }
     if (process.argv.includes('--spacing-only')) {
       await page.clock.install({ time: new Date('2026-09-07T00:00:00Z') });
       await page.clock.pauseAt(new Date('2026-09-07T01:00:00Z'));
@@ -116,7 +125,7 @@ async function main(): Promise<void> {
       await page.clock.pauseAt(new Date('2026-09-05T01:00:00Z'));
       const natural = await checkNaturalBattle(page, OUTPUT);
       assert.deepEqual(errors, []);
-      await writeFile(resolve(OUTPUT, 'natural-report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, natural, errors }, null, 2));
+      await writeFile(resolve(OUTPUT, 'natural-report.json'), JSON.stringify({ runId: process.env.PO_VERIFICATION_RUN_ID, generatedAt: new Date().toISOString(), passed: true, natural, errors }, null, 2));
       console.log('✓ natural body/terrain browser acceptance');
       return;
     }
@@ -367,14 +376,14 @@ async function main(): Promise<void> {
       await page.screenshot({ path: resolve(OUTPUT, `projection-edge-${biome}.png`) });
     }
     await page.evaluate(() => window.__READABILITY_FIXTURE__.destroy());
-    const natural = await checkNaturalBattle(page, OUTPUT);
+    const natural = process.argv.includes('--core-only') ? { separateBatch: 'natural-report.json' } : await checkNaturalBattle(page, OUTPUT);
     console.log('✓ actual browser: concurrent attacks survive repeated damage; real interruption clears charge');
     console.log('✓ actual browser: same-frame camera focus, finisher priority and neutral return');
     assert.equal(errors.length, 0, `readability fixture errors: ${errors.join('\n')}`);
     console.log('✓ actual browser: dense 3v3 spread coverage and layered readability');
     console.log('✓ actual browser: engine-owned allied stops and neutral opening/mid-fight snapshots');
     console.log('✓ actual browser: five-biome projection edges and central small-model visibility');
-    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, natural, spreadSamples, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
+    await writeFile(resolve(OUTPUT, 'report.json'), JSON.stringify({ runId: process.env.PO_VERIFICATION_RUN_ID, generatedAt: new Date().toISOString(), browser: 'Chrome / SwiftShader (not native GPU performance)', cycles: 6, rapidBiomeChanges: 15, sustainedSeconds: 60, natural, spreadSamples, heaps, heapDelta, errors, lifecycle, sustained }, null, 2));
     console.log(`✓ battle browser acceptance: heap delta ${heapDelta} bytes; no leftover frames/observers; no console errors`);
   } finally {
     await browser?.close();

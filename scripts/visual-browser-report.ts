@@ -218,7 +218,7 @@ async function main(): Promise<void> {
   let browser: Browser | undefined;
   try {
     await waitForServer(server);
-    browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle', '--disable-gpu-vsync'] });
+    browser = await chromium.launch({ executablePath: CHROME_PATH, headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
     await playableWorldObservation(browser);
     const entries: MatrixEntry[] = [];

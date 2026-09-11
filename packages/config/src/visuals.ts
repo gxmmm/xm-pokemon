@@ -1,4 +1,5 @@
 import type { BattleActorChoreography, TypeName } from '@pokemon-online/shared';
+import { MAP_MAP } from './maps.ts';
 
 /** One standard composition: spread accents support, rather than bury, actors. */
 export const BATTLE_EFFECT_COMPOSITION = {
@@ -119,9 +120,16 @@ export interface WorldSceneSpec {
   foreground: readonly SceneLayerSpec[];
   ambience: { preset: BiomeVisualSpec['ambience']['particleKind']; density: number };
   palette: WorldScenePalette;
+  relief?: WorldReliefLayout;
   landmarks?: readonly WorldLandmarkSpec[];
   characters?: readonly WorldCharacterSpec[];
   resources: WorldSceneResourceBudget;
+}
+
+/** 只读视觉地面来自权威地图，renderer 不再用自由摆放的大色块代替道路。 */
+export interface WorldReliefLayout {
+  tiles: readonly (readonly number[])[];
+  style: 'harbor' | 'moss' | 'tidal' | 'crystal' | 'forge' | 'astral';
 }
 
 export interface WorldSceneBudgetReport {
@@ -196,11 +204,11 @@ export const ILLUSION_TOWER_SCENE_MAP_IDS = ['illusion-tower-1', 'illusion-tower
 function illusionTowerScene(floor: number): WorldSceneSpec {
   const isSummit = floor === 5;
   const paletteByFloor: readonly WorldScenePalette[] = [
-    { backdrop: '#24113d', ground: '#493069', path: '#7c618f', shadow: '#1a102c', accent: '#7be9ff', fog: '#d4b4ff' },
-    { backdrop: '#291244', ground: '#53316f', path: '#89639c', shadow: '#1c1030', accent: '#a58bff', fog: '#dfc5ff' },
-    { backdrop: '#2e154a', ground: '#613777', path: '#9b6ca8', shadow: '#201137', accent: '#f0a6ff', fog: '#efd0ff' },
-    { backdrop: '#351852', ground: '#6c3d80', path: '#aa779e', shadow: '#25143f', accent: '#ffc27b', fog: '#f5d9ff' },
-    { backdrop: '#3d1a5b', ground: '#79458b', path: '#bd8dac', shadow: '#2b1649', accent: '#fff0a6', fog: '#ffe3ff' },
+    { backdrop: '#172e30', ground: '#64766c', path: '#98a18a', shadow: '#1e3b38', accent: '#b8dd96', fog: '#c2d8c7' },
+    { backdrop: '#183442', ground: '#567a82', path: '#91b1b0', shadow: '#193f4b', accent: '#a1e2dc', fog: '#c5e6df' },
+    { backdrop: '#24273e', ground: '#65657a', path: '#9898a2', shadow: '#24283e', accent: '#c59ceb', fog: '#d0c6e9' },
+    { backdrop: '#30292f', ground: '#786b64', path: '#ad9780', shadow: '#312a33', accent: '#ffc27b', fog: '#d9b3a1' },
+    { backdrop: '#202c48', ground: '#788595', path: '#abb7bd', shadow: '#293655', accent: '#ffe0a0', fog: '#d8e2ed' },
   ];
   const palette = paletteByFloor[floor - 1]!;
   const suffix = `f${floor}`;
@@ -214,6 +222,8 @@ function illusionTowerScene(floor: number): WorldSceneSpec {
     foreground: [{ id: 'front-rune-veil', depth: 6, parallax: 1.08 }],
     ambience: { preset: 'rune', density: 0.44 + floor * 0.035 },
     palette,
+    relief: { tiles: MAP_MAP[ILLUSION_TOWER_SCENE_MAP_IDS[floor - 1]!]!.tiles,
+      style: (['moss', 'tidal', 'crystal', 'forge', 'astral'] as const)[floor - 1]! },
     characters: [{ id: 'player', appearance: 'hero', behavior: 'idle' }],
     /** Generic terrace/crystal/rift grammar. Nothing here identifies a collision
      * cell, encounter species, stair coordinate, or floor-transition rule. */
@@ -245,7 +255,8 @@ export const WORLD_SCENES: readonly WorldSceneSpec[] = [
     occlusion: [{ id: 'harbor-roofs', depth: 5 }],
     foreground: [{ id: 'harbor-fog', depth: 6, parallax: 1.12 }],
     ambience: { preset: 'mist', density: 0.42 },
-    palette: { backdrop: '#8cb6c4', ground: '#5f8079', path: '#76968d', shadow: '#31575c', accent: '#f1cd83', fog: '#e6f8f2' },
+    palette: { backdrop: '#285769', ground: '#65875a', path: '#b5ab82', shadow: '#294a43', accent: '#e0c783', fog: '#c6dfce' },
+    relief: { tiles: MAP_MAP.pallet!.tiles, style: 'harbor' },
     characters: [
       { id: 'player', appearance: 'hero', behavior: 'idle' },
       { id: 'dock-fisher', appearance: 'fisher', behavior: 'sort-nets', x: 3.5, y: 11 },
@@ -274,7 +285,7 @@ export const WORLD_SCENE_PRELOAD_KEY_CATALOG: readonly WorldScenePreloadKey[] = 
 const WORLD_STAGE_AMBIENT_BASE = 17;
 
 function sceneStaticContainerCount(scene: WorldSceneSpec): number {
-  return 3 + (scene.landmarks?.length ?? 0) + 1;
+  return scene.relief ? 6 + scene.relief.tiles.length : 3 + (scene.landmarks?.length ?? 0) + 1;
 }
 
 function sceneAmbientParticleCount(scene: WorldSceneSpec): number {
@@ -287,7 +298,8 @@ function sceneAmbientParticleCount(scene: WorldSceneSpec): number {
 export function worldSceneFingerprint(scene: WorldSceneSpec): string {
   const landmarkSignature = (scene.landmarks ?? []).map((landmark) => `${landmark.id}:${landmark.kind}:${landmark.depth}`).join('|');
   const characterSignature = (scene.characters ?? []).map((character) => `${character.id}:${character.appearance}:${character.behavior}`).join('|');
-  return [scene.id, scene.mapId, scene.biome, scene.ambience.preset, scene.ambience.density, landmarkSignature, characterSignature].join('#');
+  return [scene.id, scene.mapId, scene.biome, scene.ambience.preset, scene.ambience.density, landmarkSignature, characterSignature,
+    scene.relief?.style ?? '', scene.relief?.tiles.map(row=>row.join(',')).join(';') ?? ''].join('#');
 }
 
 /** Compact stable identifier for reportable visual composition baselines. */
@@ -303,12 +315,12 @@ export function worldSceneFingerprintHash(scene: WorldSceneSpec): string {
 /** First config-level visual regression baselines. Update deliberately only after
  * a reviewed visual change; browser screenshots can be layered on later. */
 export const WORLD_SCENE_VISUAL_BASELINES: Readonly<Record<string, string>> = {
-  pallet: '2c999c00',
-  'illusion-tower-1': '921155b7',
-  'illusion-tower-2': '3b91d869',
-  'illusion-tower-3': 'c351f757',
-  'illusion-tower-4': '07b74941',
-  'illusion-tower-5': '5e6e1761',
+  pallet: '290b32cd',
+  'illusion-tower-1': '96de19cc',
+  'illusion-tower-2': '35ffc6c8',
+  'illusion-tower-3': '5be59850',
+  'illusion-tower-4': 'b982ef4f',
+  'illusion-tower-5': 'b3172093',
 };
 
 export function worldSceneBudgetReport(scene: WorldSceneSpec): WorldSceneBudgetReport {
