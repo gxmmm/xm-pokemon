@@ -89,6 +89,29 @@ export function testCombatantMotion(): void {
     view.destroy({ children: true });
   }
   const fallbackPose = { offsetX: 5 };
+  // 验证最终显示的身体位移：横向关键帧拥有前冲，其他角色仍有通用动作。
+  for (const facing of [1, -1] as const) for (const sample of [
+    { species: 6, animation: 'melee', progress: 0.48, expectedX: 21 },
+    { species: 6, animation: 'projectile', progress: 0.54, expectedX: 14 },
+    { species: 6, animation: 'recoil', progress: 0.35, expectedX: -5 },
+    { species: 94, animation: 'projectile', progress: 0.5, expectedX: 10 },
+    { species: 25, animation: 'melee', progress: 0.5, expectedX: 46 },
+  ]) {
+    const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(sample.species, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
+    const before = JSON.stringify(actor);
+    const view = new CombatantView(actor, assets);
+    const root = { x: view.x, y: view.y };
+    view.playAnimation(sample.animation, 'immediate', 1000);
+    view.update(sample.progress);
+    assert(Math.abs(view.children[1]!.x - facing * sample.expectedX) < 1e-9, `${sample.species} ${sample.animation}: authored and generic advances cannot stack`);
+    assert.deepEqual({ x: view.x, y: view.y }, root, 'visual advance cannot move the battle root');
+    view.update(1 - sample.progress - 0.001);
+    assert.notEqual(view.getDiagnostics().motion, 'idle', 'the original action duration is retained');
+    view.update(0.002);
+    assert.equal(view.getDiagnostics().motion, 'idle', 'the action ends on its original clock');
+    assert.equal(JSON.stringify(actor), before, 'motion tuning cannot mutate the snapshot');
+    view.destroy({ children: true });
+  }
   for (const speciesId of [6, 149]) for (const facing of [1, -1] as const) {
     const actor = { ...new BattleSim({ mode: 'pve', player: [createWildInstance(speciesId, 10, { rng: () => 0.5 })], enemy: [], seed: 905 }).state.combatants[0]!, facing };
     const view = new CombatantView(actor, assets);

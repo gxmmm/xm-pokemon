@@ -319,16 +319,17 @@ export class CombatantView extends Container {
       : this.motion === 'charge' || this.motion === 'channel' ? Math.sin(progress * Math.PI * 2) * 0.035
       : 0;
     const recoil = this.motion === 'hit' ? Math.sin(progress * Math.PI) * -12 : 0;
-    // A readable shared action advance makes static-base models visibly commit
-    // to attacks and casts. Profile poses add their own character-specific
-    // offsets on top; renderer code still has no model or skill branches.
-    const actionAdvance = this.motion === 'attack' ? Math.sin(progress * Math.PI) * 22
+    const track = this.presentation.profile.motionTracks?.[this.motion];
+    // 横向轨道已经描述完整的前冲与后坐；再叠加通用位移会使脚点滑动。
+    // 仅有纵向、缩放等轨道的角色仍使用通用横向动作。
+    const authoredAdvance = track?.some((frame) => frame.offsetX !== undefined);
+    const actionAdvance = authoredAdvance ? 0 : this.motion === 'attack' ? Math.sin(progress * Math.PI) * 22
       : this.motion === 'cast' ? Math.sin(progress * Math.PI) * 10
         : this.motion === 'channel' ? 5
           : this.motion === 'recover' ? -Math.sin(progress * Math.PI) * 8
             : 0;
     const faintScale = this.motion === 'faint' || !this.alive ? 1 - Math.min(0.3, progress * 0.3) : 1;
-    const pose = sampleBattleMotionPose(this.presentation.profile.motionPoses[this.motion] ?? {}, this.presentation.profile.motionTracks?.[this.motion], progress);
+    const pose = sampleBattleMotionPose(this.presentation.profile.motionPoses[this.motion] ?? {}, track, progress);
     const choreography = this.choreographyTransform(progress);
     const target: MotionTransform = {
       // The resolver has already selected the source view for facing (+1 back,

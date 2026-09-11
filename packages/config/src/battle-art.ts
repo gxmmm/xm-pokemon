@@ -143,7 +143,8 @@ export interface BattleArtMotionPose {
   glowScale?: number;
 }
 
-/** Normalized, presentation-only poses; omitted fields inherit the motion pose. */
+/** Normalized, presentation-only poses; omitted fields inherit the motion pose.
+ * 轨道声明 offsetX 时接管该动作的横向前冲/后坐，不再叠加通用动作位移。 */
 export interface BattleArtMotionKeyframe extends BattleArtMotionPose { at: number }
 export type BattleArtMotionTracks = Partial<Readonly<Record<BattleArtMotionId, readonly BattleArtMotionKeyframe[]>>>;
 
