@@ -1,5 +1,6 @@
+import { controlRemaining, selectHealingTarget, nearbyBacklineThreat, canUseControlWindow } from './cooperation.ts';
 import type { BattleCombatant, BattleState, Skill, CombatRole } from '@pokemon-online/shared';
-import { PERSONALITY_MAP, SKILL_MAP, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT } from '@pokemon-online/config';
+import { PERSONALITY_MAP, SKILL_MAP, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT, BATTLE_COOPERATION } from '@pokemon-online/config';
 import { skillVictims } from './skill-space.ts';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
@@ -134,10 +135,7 @@ function keySkillWindow(c: BattleCombatant): { remaining: number; power: number 
 
 /** Remaining duration of an action-blocking control effect. Status controls
  * cannot be re-applied while active; flinch can be chained only near expiry. */
-function hardControlRemaining(c: BattleCombatant, now: number): number {
-  if (c.status === 'sleep' || c.status === 'freeze') return Math.max(0, c.statusTimer);
-  return Math.max(0, (c.flinchUntil ?? 0) - now);
-}
+
 
 /**
  * Decide a combatant's plan: target, desired engagement range, and preferred
@@ -170,6 +168,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   let target = enemies[0]!;
   const cur = c.currentTargetUid ? state.combatants.find((x) => x.uid === c.currentTargetUid && x.alive) : null;
   // 性格与定位共同评分，移动成本限制跨场追杀；不再互相覆盖选敌。
+  const guardTarget = nearbyBacklineThreat(c, state);
   const strongest = Math.max(...enemies.map(enemy => effectiveStat(enemy, 'atk')), 1);
   const targetScores = enemies.map(enemy => {
     const distance = dist(c, enemy), hp = enemy.currentHp / enemy.maxHp;
@@ -179,7 +178,11 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     if (p.targetPriority === 'threat') score += effectiveStat(enemy, 'atk') / strongest * 6;
     if (p.targetPriority === 'random') score += rng() * 5;
     if (role === 'tank' || role === 'bruiser') score -= distance * .65;
-    if (role === 'burst') score += (1 - hp) * 3;
+    if (enemy.uid === guardTarget?.uid) score += BATTLE_COOPERATION.guardTargetBonus;
+    if (role === 'burst') {
+      score += (1 - hp) * 3;
+      if (c.activeSkills.some(id => { const skill = SKILL_MAP[id]; return skill && !isHardCc(skill) && canUseControlWindow(c, enemy, skill, now); })) score += BATTLE_COOPERATION.controlTargetBonus;
+    }
     if (role === 'control' && enemy.castProgress) score += 4;
     if (role === 'area') {
       score += Math.max(0, ...c.activeSkills.map(id => {
@@ -196,6 +199,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     ? enemies.find((enemy) => enemy.uid === teamTactic.targetUid)
     : undefined;
   if (interruptTarget) target = interruptTarget;
+  else if (guardTarget) target = guardTarget;
   // A short shared intent coordinates ordinary decisions without overruling
   // interrupts, personal execute logic, or a stubborn combatant's commitment.
   else if (tacticTarget && dist(c, tacticTarget) <= (c.engagementRangeCells ?? 2.5) + 2 && (teamTactic?.kind === 'finish' || teamTactic?.kind === 'protect' || teamTactic?.kind === 'pressure')) target = tacticTarget;
@@ -222,7 +226,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   // target unless a near-dead runner appears (switch to finish it). Stops the
   // flapping where 'weakest' re-picks every tick as HP oscillates by a few %,
   // so focus fire reads cleanly. Current basically-dead is always finished.
-  if (!interruptTarget && cur && cur.uid !== target.uid) {
+  if (!interruptTarget && !guardTarget && cur && cur.uid !== target.uid) {
     const curRatio = cur.currentHp / cur.maxHp;
     const newRatio = target.currentHp / target.maxHp;
     const switchToExecute = newRatio < 0.25 && curRatio > 0.4;
@@ -239,7 +243,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   const allies = state.combatants.filter((ally) => ally.side === c.side && ally.alive && ally.uid !== c.uid);
   const assignments = (enemy: BattleCombatant) => allies.filter((ally) => ally.currentTargetUid === enemy.uid).length;
   const crowded = assignments(target) >= 2;
-  if (!interruptTarget && target.currentHp / target.maxHp >= EXEC_THRESHOLD && crowded && enemies.length > 1) {
+  if (!interruptTarget && !guardTarget && target.currentHp / target.maxHp >= EXEC_THRESHOLD && crowded && enemies.length > 1) {
     const alternatives = enemies.filter((enemy) => enemy.uid !== target.uid);
     target = alternatives.reduce((best, enemy) => {
       const enemyLoad = assignments(enemy);
@@ -264,7 +268,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   const targetRatio = target.currentHp / target.maxHp;
   const targetExec = targetRatio < EXEC_THRESHOLD;
   const targetKeyWindow = keySkillWindow(target);
-  const targetHardControl = hardControlRemaining(target, now);
+  const targetHardControl = controlRemaining(target, now);
   const ccReservationRemaining = Math.max(0, (target.ccIncomingUntil ?? 0) - now);
   // F: dream-eater combo setup - do I have dream-eater ready to follow up a sleep?
   const hasDreamEaterReady = c.activeSkills.includes('dream-eater') && (c.cooldowns['dream-eater'] ?? 0) <= 0;
@@ -281,9 +285,9 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       score = 30; // baseline utility
       const e = skill.effect;
       if (e?.kind === 'heal' && e.target === 'ally') {
-        const patient = state.combatants.filter(a => a.alive && a.side === c.side && a.currentHp < a.maxHp * .97 && dist(c, a) <= rangeInCells(skill) + 3).sort((a, b) => (a.currentHp / a.maxHp + Math.max(0, dist(c,a) - rangeInCells(skill)) * .08) - (b.currentHp / b.maxHp + Math.max(0, dist(c,b) - rangeInCells(skill)) * .08))[0];
-        if (patient) healingTargets.set(skill.id, patient);
-        score = patient ? 40 + (1 - patient.currentHp / patient.maxHp) * 200 : -1;
+        const choice = selectHealingTarget(c, skill, state);
+        if (choice) healingTargets.set(skill.id, choice.patient);
+        score = choice?.score ?? -1;
       } else if (e?.kind === 'heal' && e.target === 'self') {
         score = missingHp < .05 ? -1 : lowHp ? 120 * missingHp : (threatened && missingHp > 0.3 ? 70 * missingHp + 20 : 10);
       } else if (e?.kind === 'shield' && e.target === 'self') {
@@ -359,6 +363,8 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
         ? skillVictims(skill, c, target, enemies).reduce((sum, enemy) => sum + expectedDamage(c, enemy, skill), 0) * (skill.areaMultiplier ?? 0.7)
         : ed;
       score = spreadDamage;
+      // 利用真实控制窗口；无法在控制结束前释放的大招没有额外优先级。
+      if (!isHardCc(skill) && canUseControlWindow(c, target, skill, now)) score *= 1 + BATTLE_COOPERATION.controlDamageBonus;
       // B: execute - finish near-dead targets
       if (targetExec) score *= 1.5;
       // D: focus fire nudge toward the team focus target

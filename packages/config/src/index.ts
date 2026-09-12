@@ -20,3 +20,5 @@ export * from './battle-hud.ts';
 export * from './battle-entry.ts';
 
 export * from './battle-tempo.ts';
+
+export * from './battle-cooperation.ts';

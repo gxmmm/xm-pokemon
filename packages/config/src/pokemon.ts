@@ -446,7 +446,8 @@ function elementalProgression(primary: TypeName, id: number): string[] {
 function buildIntrinsicSkills(primary: TypeName, id: number, role: CombatRole): string[] {
   const progression = elementalProgression(primary, id);
   const technique = roleTechnique(role, id);
-  const elementalBasic = progression[0];
+  // 支援者在友疗距离也要有可用的进攻手段，不能只剩近身技而永久等待。
+  const elementalBasic = role === 'support' ? progression.find(sid => SKILL_MAP[sid]?.range === 'ranged') ?? progression[0] : progression[0];
   // Every species begins with one elemental move and one role technique, so its
   // positioning is present from the first battle rather than arriving too late.
   const out = [elementalBasic, technique];
