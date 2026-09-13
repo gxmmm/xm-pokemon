@@ -1,3 +1,4 @@
+import { BattleEvasion } from './evasion.ts';
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
 import { SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, getSpecies, typeMultiplier, RANGED_ENGAGEMENT_CELLS, BATTLE_MOVEMENT, battleActionTiming, actionGapForSpeed, skillCooldownRate } from '@pokemon-online/config';
@@ -138,6 +139,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
  */
 export class BattleSim {
   private effectSequence = 0;
+  private readonly evasion = new BattleEvasion();
   state: BattleState;
   rng: RNG;
   deployment: 'sequential' | 'simultaneous';
@@ -1047,6 +1049,7 @@ export class BattleSim {
       if (!c.plan) continue;
       const target = this.find(c.plan.targetUid);
       if (!target || !target.alive) { c.plan = null; continue; }
+      if (this.evasion.step(c, this.state, this.stepDelay(c), (unit, cell) => this.canStepTo(unit, cell), this.rng)) continue;
       // movement (grid step)
       const readySkill = c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0 ? SKILL_MAP[c.plan.preferredSkillId] : undefined;
       const preparing = (c.actionReadyRemaining ?? 0) <= 0 && readySkill && (readySkill.power === 0 && readySkill.effect?.target !== 'enemy' || distCells(c.pixel, target.pixel) <= rangeInCells(readySkill));
