@@ -89,13 +89,13 @@ export function isCellInArena(gx: number, gy: number): boolean {
 export function defaultFormation(): { x: number; y: number }[] {
   const cols = BATTLE_GRID.cols;
   const rows = BATTLE_GRID.rows;
-  const gx = Math.floor(cols * 0.2);
+  const gx = Math.floor(cols * 0.25);
   const mid = Math.round(rows / 2);
   const clampRow = (y: number) => Math.max(1, Math.min(rows - 2, y));
   return [
-    { x: gx, y: clampRow(mid - 2) },
+    { x: gx, y: clampRow(mid - 3) },
     { x: gx, y: clampRow(mid) },
-    { x: gx, y: clampRow(mid + 2) },
+    { x: gx, y: clampRow(mid + 3) },
   ];
 }
 

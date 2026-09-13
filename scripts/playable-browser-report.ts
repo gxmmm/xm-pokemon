@@ -56,7 +56,20 @@ try {
   await page.getByRole('button', { name: /就决定是你了/ }).click();
   await page.waitForURL('**/world');
   await page.evaluate(async (url) => { window.__PLAYABLE_FIXTURE__ = await import(/* @vite-ignore */ url); }, '/@fs/' + resolve('scripts/playable-battle-browser-fixture.ts').replaceAll('\\', '/'));
-  if (!process.argv.includes('--hud-only')) await checkFullWindowScene(page, OUTPUT, 'world');
+  if (!process.argv.includes('--hud-only') && !process.argv.includes('--ending-only')) await checkFullWindowScene(page, OUTPUT, 'world');
+  if (process.argv.includes('--ending-only')) {
+    await page.evaluate(() => window.__PLAYABLE_FIXTURE__.prepareEndingDuringCast());
+    await page.locator('.battle-result').waitFor({ timeout: 45000 }).catch(async error => {
+      console.log(JSON.stringify(await page.evaluate(() => ({ state: window.__PLAYABLE_FIXTURE__.read(), url: location.href, text: document.body.innerText.slice(-1000) }))));
+      throw error;
+    });
+    const state = await page.evaluate(() => window.__PLAYABLE_FIXTURE__.read());
+    assert(state.over && state.winner === 'player');
+    assert.deepEqual(errors, []);
+    await writeFile(resolve(OUTPUT, 'ending-report.json'), JSON.stringify({ passed: true, state, errors }, null, 2));
+    console.log('✓ 正式页面蓄力中敌方全灭后自动弹出结算，无需点击结算');
+    return;
+  }
   await checkBattleHud(page, OUTPUT);
   checks.push('战斗HUD：三档桌面尺寸、六只同屏、长昵称、完整技能/CD、濒危施法、灼伤叠眩晕、倒下清理、暂停恢复与状态变化不跳位');
   if (process.argv.includes('--hud-only')) {

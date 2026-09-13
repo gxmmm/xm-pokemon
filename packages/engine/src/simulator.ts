@@ -56,7 +56,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     gx = formPos.x;
     gy = formPos.y;
   } else {
-    gx = side === 'player' ? Math.floor(cols * 0.2) : Math.floor(cols * 0.8);
+    gx = side === 'player' ? Math.floor(cols * 0.25) : cols - 1 - Math.floor(cols * 0.25);
     gy = clamp(Math.round(rows / 2 + (index - (total - 1) / 2) * BATTLE_MOVEMENT.allyDestinationClearance), 1, rows - 2);
   }
   // Active skills start partway through a longer presentation-paced cooldown.
@@ -397,7 +397,6 @@ export class BattleSim {
   private stepMove(c: BattleCombatant, target: BattleCombatant, desiredRangeCells: number): void {
     const plan = c.plan;
     const movementTarget = plan?.movementTargetUid ? this.find(plan.movementTargetUid) ?? target : target;
-    c.facing = target.position.x >= c.position.x ? 1 : -1;
     if ((c.moveCd ?? 0) > 0) return;
 
     // 保护通过选敌和可达接敌位实现；不再强制跑向同一个队友/目标中点。
@@ -427,7 +426,7 @@ export class BattleSim {
         const candidates: { x: number; y: number }[] = [];
         for (let x = Math.ceil(target.position.x - reach); x <= target.position.x + reach; x++)
           for (let y = Math.ceil(target.position.y - reach); y <= target.position.y + reach; y++) if (valid({ x, y })) candidates.push({ x, y });
-        candidates.sort((a, b) => distCells(c.position, a) - distCells(c.position, b) || b.y - a.y);
+        candidates.sort((a, b) => distCells(c.position, a) - distCells(c.position, b) || Math.abs(a.y - c.position.y) - Math.abs(b.y - c.position.y) || a.y - b.y);
         const point = candidates[0];
         if (point) slot = c.attackSlot = { ...point, targetUid: target.uid, until: this.state.time + BATTLE_MOVEMENT.formationHold };
       }
@@ -484,6 +483,8 @@ export class BattleSim {
     if (!skill || (c.actionReadyRemaining ?? 0) > 0 || distCells(c.pixel, c.position) > .05) return false;
     c.castSupportUid = skill.effect?.target === 'ally' ? c.plan?.supportTargetUid : undefined;
     c.castAim = this.find(c.currentTargetUid) ? { ...this.find(c.currentTargetUid)!.pixel } : undefined;
+    const displayTarget = this.find(c.castSupportUid ?? c.currentTargetUid);
+    c.actionAim = displayTarget ? { ...displayTarget.pixel } : undefined;
     const cast = skill.castTime ?? 0;
     if (cast > 0) {
       // 完成当前一步才起手，避免蓄力将角色瞬移到下一落点。
@@ -810,7 +811,7 @@ export class BattleSim {
     c.alive = false;
     c.currentHp = 0;
     c.status = null;
-    c.castProgress = null;
+    c.castProgress = null; c.actionAim = undefined;
     this.emit('faint', c.uid, undefined, undefined, undefined, `${c.name} 倒下了！`, { kind: 'faint' });
   }
 
@@ -828,6 +829,7 @@ export class BattleSim {
     const target = this.find(c.currentTargetUid);
     const aim = c.castAim ?? target?.pixel;
     const targets = skillVictims(skill, c, target, this.state.combatants.filter(x => x.side !== c.side), aim);
+    c.actionAim ??= aim ? { ...aim } : undefined;
     c.castAim = undefined;
     const primary = targets.includes(target as BattleCombatant) ? target : targets[0];
     const targetUids = targets.map((x) => x.uid);
@@ -918,8 +920,17 @@ export class BattleSim {
     if (playerLost || enemyLost) {
       this.ended = true;
       this.state.ended = true;
+      this.clearFinishedActions();
       this.state.winner = playerLost && enemyLost ? 'draw' : !enemyLost ? 'enemy' : 'player';
       this.emit('end', undefined, undefined, undefined, undefined, this.state.winner === 'player' ? '你赢了！' : this.state.winner === 'enemy' ? '你输了...' : '平局');
+    }
+  }
+
+  /** 终局不再推进模拟，撤销尚未释放的动作，允许表现正常收尾。 */
+  private clearFinishedActions(): void {
+    for (const c of this.state.combatants) {
+      c.castProgress = null; c.castAim = undefined; c.actionAim = undefined; c.castSupportUid = undefined;
+      c.plan = null; c.actionLockRemaining = 0; c.actionReadyRemaining = 0;
     }
   }
 
@@ -987,6 +998,7 @@ export class BattleSim {
       }
       for (const id of Object.keys(c.abilityCooldowns ?? {})) c.abilityCooldowns![id] = Math.max(0, c.abilityCooldowns![id]! - dt);
       c.actionLockRemaining = Math.max(0, (c.actionLockRemaining ?? 0) - dt);
+      if (!c.castProgress && c.actionLockRemaining <= 0) c.actionAim = undefined;
       c.actionReadyRemaining = Math.max(0, (c.actionReadyRemaining ?? 0) - dt);
       c.moveCd = Math.max(0, (c.moveCd ?? 0) - dt);
       this.statusTick(c, dt);
@@ -1049,6 +1061,8 @@ export class BattleSim {
       if (!c.plan) continue;
       const target = this.find(c.plan.targetUid);
       if (!target || !target.alive) { c.plan = null; continue; }
+      const facingDelta = target.pixel.x - c.pixel.x;
+      c.facing = Math.abs(facingDelta) > .01 ? (facingDelta > 0 ? 1 : -1) : (c.side === 'player' ? 1 : -1);
       if (this.evasion.step(c, this.state, this.stepDelay(c), (unit, cell) => this.canStepTo(unit, cell), this.rng)) continue;
       // movement (grid step)
       const readySkill = c.plan.preferredSkillId && (c.cooldowns[c.plan.preferredSkillId] ?? 0) <= 0 ? SKILL_MAP[c.plan.preferredSkillId] : undefined;
@@ -1088,6 +1102,7 @@ export class BattleSim {
       const eh = this.state.combatants.filter((c) => c.side === 'enemy').reduce((s, c) => s + c.currentHp / c.maxHp, 0);
       this.ended = true;
       this.state.ended = true;
+      this.clearFinishedActions();
       this.state.winner = ph === eh ? 'draw' : ph > eh ? 'player' : 'enemy';
       this.emit('end', undefined, undefined, undefined, undefined, '时间到');
     }

@@ -45,14 +45,25 @@ export async function createBattleSpacingFixture() {
       return { zoneCount: (stage as unknown as { castZones: { container: { children: unknown[] } } }).castZones.container.children.length,
         release: demo.state.events.findLast(e => e.type === 'skill' && e.vfx?.to) };
     },
+    async finishWhileCasting() {
+      const demo = new BattleSim({ mode: 'pvp', player: team([6,25], 'p'), enemy: team([143], 'e'), seed: 41 });
+      const [actor, ally, enemy] = demo.state.combatants;
+      actor!.castProgress = { skillId: 'hyper-beam', remaining: .6 }; actor!.castAim = { ...enemy!.pixel };
+      await stage.enterBattle({ biomeId: 'grass', combatants: structuredClone(demo.state.combatants) });
+      const engine = demo as unknown as { faint(c: typeof enemy): void; checkWin(): void };
+      enemy!.currentHp = 0; engine.faint(enemy); engine.checkWin();
+      stage.applyBattleSnapshot({ time: demo.state.time, combatants: demo.state.combatants });
+      await stage.playBattleCues(new BattleDirector().direct(demo.state.events.map(toBattlePresentationEvent)).map(c => c.cue));
+      return { ended: demo.isOver, casting: !!actor!.castProgress, allyAlive: ally!.alive };
+    },
     read() {
-      return { ...stage.getDiagnostics(), bodies: [...views()].map(([uid, view]) => {
+      return { ...stage.getDiagnostics(), settled: stage.isSettled(), bodies: [...views()].map(([uid, view]) => {
         const body = view.children[1]!;
         const bounds = body.getBounds();
         const internals = view as unknown as { sprite: CombatantSprite; baseScale: number; presentation: { profile: { scale: number } } };
         const opaque = internals.sprite.getBodyBounds(true);
         const authored = internals.presentation.profile.scale;
-        return { uid, ready: view.getDiagnostics().spriteReady, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+        return { uid, facing: view.getDiagnostics().facing, casting: view.getDiagnostics().casting, ready: view.getDiagnostics().spriteReady, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
           bodyHeight: opaque.height * internals.baseScale, bodyWidth: opaque.width * internals.baseScale,
           small: opaque.height * authored <= originalBudget.maxHeight && opaque.width * authored <= originalBudget.maxWidth,
           sizeRatio: internals.baseScale / authored };

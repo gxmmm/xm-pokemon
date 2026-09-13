@@ -12,7 +12,7 @@ export async function checkBattleSpacing(page: Page, root: string) {
   const samples: unknown[] = [];
   const baseline = new Map<number, unknown>();
   try {
-    const cases = [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }];
+    const cases = [{ width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }];
     for (const size of cases) for (const tick of [0, 60, 120]) {
       await page.setViewportSize(size);
       const facts = await page.evaluate(tick => window.__SPACING_FIXTURE__.show(tick), tick);
@@ -22,6 +22,8 @@ export async function checkBattleSpacing(page: Page, root: string) {
       const state = await page.evaluate(() => window.__SPACING_FIXTURE__.read());
       assert.equal(state.combatantCount, 6);
       for (const body of state.bodies) {
+        const rail = Math.max(252, Math.min(size.width * .19, 292)) + 24;
+        assert(body.x > rail && body.x + body.width < size.width - rail && body.y > 80 && body.y + body.height < size.height - 80, '角色与状态不进入HUD区域');
         assert(body.bodyHeight <= 92.01 && body.bodyWidth <= 100.01, 'opaque bodies respect the common budget');
         assert(!body.small || Math.abs(body.sizeRatio - 1) < 1e-9, 'small bodies retain their authored size');
         assert(body.x >= 0 && body.y >= 0 && body.x + body.width <= size.width && body.y + body.height <= size.height,
@@ -39,6 +41,11 @@ export async function checkBattleSpacing(page: Page, root: string) {
       await page.screenshot({ path: resolve(output, `flame-${phase}.png`) });
       samples.push({ phase, facts });
     }
+    const finished = await page.evaluate(() => window.__SPACING_FIXTURE__.finishWhileCasting());
+    assert(finished.ended && !finished.casting && finished.allyAlive);
+    await page.clock.runFor(3000);
+    assert((await page.evaluate(() => window.__SPACING_FIXTURE__.read())).settled, '全灭时残留蓄力不阻塞表现收尾');
+    samples.push({ finished });
     await writeFile(resolve(output, 'report.json'), JSON.stringify({ generatedAt: new Date().toISOString(), passed: true, samples }, null, 2));
   } finally { await page.evaluate(() => window.__SPACING_FIXTURE__.destroy()); }
 }

@@ -11,7 +11,7 @@ let speedSamples: number[] = [];
 export function resetSpeedSamples(): void { speedSamples = []; }
 
 // Imported only by the isolated Vite browser report, never by production routes.
-export async function prepare(outcome: 'win' | 'loss' | 'long' | 'natural', speed: number): Promise<void> {
+export async function prepare(outcome: 'win' | 'loss' | 'long' | 'natural', speed: number, activeBattle = false): Promise<void> {
   const game = useGameStore();
   const battle = useBattleStore();
   if (!game.save) throw new Error('Fixture requires an authenticated isolated save');
@@ -37,6 +37,7 @@ export async function prepare(outcome: 'win' | 'loss' | 'long' | 'natural', spee
     previousFrame = frameTime;
     tick(dt);
   };
+  if (activeBattle) { battle.phase = 'fighting'; battle.assetsReady = true; }
   await router.push({ name: 'battle' });
 }
 
@@ -45,6 +46,8 @@ export function read() {
   const battle = useBattleStore();
   return {
     time: battle.sim?.state.time,
+    phase: battle.phase,
+    combatants: battle.sim?.state.combatants.map(c => ({ uid: c.uid, hp: c.currentHp, alive: c.alive, cast: c.castProgress, plan: c.plan })),
     observedAt: performance.now(),
     speedSamples: [...speedSamples],
     winner: battle.sim?.state.winner,
@@ -57,6 +60,15 @@ export function read() {
     experience: game.rosterInstances.map((p) => ({ uid: p.uid, exp: p.exp })),
   };
 }
+
+export async function prepareEndingDuringCast(): Promise<void> {
+  await prepare('natural', 1, true);
+  const sim = useBattleStore().sim!, actor = sim.state.combatants[0]!;
+  actor.castProgress = { skillId: 'hyper-beam', remaining: 60 };
+  actor.currentTargetUid = sim.state.combatants.find(c => c.side === 'enemy')!.uid;
+  actor.castAim = { ...sim.state.combatants.find(c => c.side === 'enemy')!.pixel };
+}
+
 
 export async function visit(path: string): Promise<void> { await router.push(path); }
 

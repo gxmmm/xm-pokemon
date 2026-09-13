@@ -31,6 +31,7 @@ function cloneCombatant(combatant: BattlePresentationCombatantInput): BattlePres
     statStages: { ...combatant.statStages },
     buffs: combatant.buffs.map((buff) => ({ ...buff })),
     castProgress: combatant.castProgress ? { ...combatant.castProgress } : null,
+    actionAim: combatant.actionAim ? { ...combatant.actionAim } : undefined,
   };
 }
 

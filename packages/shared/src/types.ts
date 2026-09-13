@@ -198,6 +198,8 @@ export type AbilityKind =
   | 'shieldRecovery' | 'counterInstinct' | 'custom';
 
 export interface AbilityEffect {
+  requiresStatus?: boolean;
+  ignoreBurnAttackPenalty?: boolean;
   kind: AbilityKind;
   stat?: StatKey;
   mult?: number;
@@ -447,6 +449,8 @@ export interface TimedEffect {
 export interface BattleCombatant {
   /** 施法开始时锁定的格坐标，供空间结算与表现读取。 */
   castAim?: { x: number; y: number };
+  /** 当前动作的显示目标，释放后保留至收招结束，不参与命中判定。 */
+  actionAim?: { x: number; y: number };
   uid: string;
   side: 'player' | 'enemy';
   speciesId: number;

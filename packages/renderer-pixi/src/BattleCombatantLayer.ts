@@ -1,6 +1,7 @@
 import { battleEnvironmentFor, resolveBattleArtPresentation, type BattleArtAnchorId } from '@pokemon-online/config';
 import type { BattleCue, BattleRenderSnapshot } from '@pokemon-online/renderer';
 import { Container } from 'pixi.js';
+import { battleDisplayFacing } from './battle-facing.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
 import { battleWorldPositionFromGrid, projectBattleWorldPoint } from './battle-ground.ts';
 import { BattlePositionTracker, type BattlePositionFrame } from './BattlePositionTracker.ts';
@@ -44,7 +45,7 @@ export class BattleCombatantLayer {
 
     const environment = battleEnvironmentFor(biomeId);
     for (const combatant of snapshot.combatants) {
-      const visualCombatant = { ...combatant, stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
+      const visualCombatant = { ...combatant, facing: battleDisplayFacing(combatant, snapshot.combatants, environment.camera), stunActive: (combatant.flinchUntil ?? 0) > snapshot.time };
       const hasContinuousWorldPosition = visualCombatant.worldPosition !== undefined;
       const worldPosition = visualCombatant.worldPosition ?? battleWorldPositionFromGrid(visualCombatant.pixel.x, visualCombatant.pixel.y);
       const projection = projectBattleWorldPoint(worldPosition, environment.camera);

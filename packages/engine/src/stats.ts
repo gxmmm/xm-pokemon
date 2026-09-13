@@ -63,7 +63,7 @@ export function computeStats(instance: Pick<PokemonInstance, 'speciesId' | 'iv' 
   }
   // ability stat mults (huge-power, guts w/ status, marvel-scale w/ status handled in battle)
   const ab = ABILITY_MAP[instance.ability];
-  if (ab?.effect.kind === 'statBoost' && ab.effect.stat && ab.effect.mult) {
+  if (ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && ab.effect.stat && ab.effect.mult) {
     if (out[ab.effect.stat]) out[ab.effect.stat] = Math.floor(out[ab.effect.stat]! * ab.effect.mult);
   }
   return out;
@@ -95,7 +95,7 @@ export function statBreakdown(instance: Pick<PokemonInstance, 'speciesId' | 'iv'
   const raw = baseStat(instance.speciesId, instance.iv, instance.growth, instance.level, key);
   const afterPassive = Math.floor(raw * passiveMult);
   const ab = ABILITY_MAP[instance.ability];
-  const abilityApplies = !!(ab?.effect.kind === 'statBoost' && ab.effect.stat === key && ab.effect.mult);
+  const abilityApplies = !!(ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && ab.effect.stat === key && ab.effect.mult);
   const abilityMult = abilityApplies ? ab!.effect.mult! : 1;
   const final = abilityApplies ? Math.floor(afterPassive * abilityMult) : afterPassive;
   return { key, base, iv, level: instance.level, growth: instance.growth, passiveMult, abilityMult, raw, final };
@@ -115,14 +115,13 @@ export function effectiveStat(c: BattleCombatant, key: StatKey): number {
     v = Math.floor(v * stageMult(stage));
   }
   // status effects
-  if (c.status === 'burn' && key === 'atk') v = Math.floor(v * 0.5);
+  if (c.status === 'burn' && key === 'atk' && !ABILITY_MAP[c.ability]?.effect.ignoreBurnAttackPenalty) v = Math.floor(v * 0.5);
   if (c.status === 'paralyze' && key === 'spd') v = Math.floor(v * 0.5);
   // ability: guts (atk up when statused), marvel-scale (def up when statused)
   const ab = ABILITY_MAP[c.ability];
   if (ab && c.status) {
     if (ab.effect.kind === 'statBoost' && ab.effect.stat === key && ab.effect.mult) {
-      if (c.ability === 'guts' && key === 'atk') v = Math.floor(v * ab.effect.mult);
-      if (c.ability === 'marvel-scale' && key === 'def') v = Math.floor(v * ab.effect.mult);
+      if (ab.effect.requiresStatus) v = Math.floor(v * ab.effect.mult);
     }
   }
   return v;
