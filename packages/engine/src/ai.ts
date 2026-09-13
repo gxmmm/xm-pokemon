@@ -1,6 +1,7 @@
+import { releaseReliability, usefulDamage, interruptChance, canInterruptCast } from './skill-opportunity.ts';
 import { controlRemaining, selectHealingTarget, nearbyBacklineThreat, canUseControlWindow } from './cooperation.ts';
 import type { BattleCombatant, BattleState, Skill, CombatRole } from '@pokemon-online/shared';
-import { PERSONALITY_MAP, SKILL_MAP, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT, BATTLE_COOPERATION } from '@pokemon-online/config';
+import { PERSONALITY_MAP, SKILL_MAP, getSpecies, typeMultiplier, PASSIVE_MAP, ABILITY_MAP, dmgTypeMult, BATTLE_MOVEMENT, BATTLE_COOPERATION, BATTLE_DECISION, skillCooldownRate, battleActionTiming, actionGapForSpeed } from '@pokemon-online/config';
 import { skillVictims } from './skill-space.ts';
 import type { RNG } from './rng.ts';
 import { effectiveStat } from './stats.ts';
@@ -160,7 +161,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     if (!e.castProgress) continue;
     const sk = SKILL_MAP[e.castProgress.skillId];
     const pw = sk?.power ?? 0;
-    const canInterrupt = c.activeSkills.some(id => { const move = SKILL_MAP[id]; return move && isHardCc(move) && (c.cooldowns[id] ?? 0) <= 0 && dist(c, e) <= rangeInCells(move) + 1; });
+    const canInterrupt = c.activeSkills.some(id => { const move = SKILL_MAP[id]; return move && isHardCc(move) && (c.cooldowns[id] ?? 0) <= 0 && canInterruptCast(c, e, move, now); });
     if (canInterrupt && pw >= 80 && pw > interruptPower) { interruptPower = pw; interruptTarget = e; }
   }
 
@@ -187,7 +188,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
     if (role === 'area') {
       score += Math.max(0, ...c.activeSkills.map(id => {
         const move = SKILL_MAP[id];
-        return move?.targetMode === 'all-enemies' ? skillVictims(move, c, enemy, enemies).length * 2 : 0;
+        return move?.targetMode === 'all-enemies' && (c.cooldowns[id] ?? 0) <= 0 ? skillVictims(move, c, enemy, enemies).filter(victim => expectedDamage(c, victim, move) > 0).length * 2 : 0;
       }));
     }
     return { enemy, score };
@@ -279,6 +280,11 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   const healingTargets = new Map<string, BattleCombatant>();
   const offCd = [...new Set([basicId, ...c.activeSkills])].filter((id) => (c.cooldowns[id] ?? 0) <= 0).map((id) => SKILL_MAP[id]).filter(Boolean);
 
+  const finishTimes = offCd.filter(skill => skill.power > 0 && distCells(c.pixel, target.pixel) <= rangeInCells(skill)
+    && expectedDamage(c, target, skill) * (skill.targetMode === 'all-enemies' ? skill.areaMultiplier ?? .7 : 1) >= target.currentHp
+    && releaseReliability(c, target, target, skill, now, p.riskTolerance) === 1).map(skill => skill.castTime ?? 0);
+  const fastestFinish = Math.min(...finishTimes);
+
   for (const skill of offCd) {
     let score: number;
     if (isUtility(skill)) {
@@ -292,6 +298,20 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
         score = missingHp < .05 ? -1 : lowHp ? 120 * missingHp : (threatened && missingHp > 0.3 ? 70 * missingHp + 20 : 10);
       } else if (e?.kind === 'shield' && e.target === 'self') {
         score = lowHp ? 80 : (threatened ? 90 : 15);
+        const shielding = c.shields > 0 && c.buffs.some(buff => buff.kind === 'shield' && buff.remaining > .5 && (buff.magnitude ?? 0) > 0);
+        // 已有保护或只剩低压消耗时，保留出手机会；不因残血循环开盾。
+        const pressure = enemies.reduce((sum, enemy) => {
+          if (distCells(c.pixel, enemy.pixel) > (enemy.engagementRangeCells ?? 2.5) + 1) return sum;
+          const basic = SKILL_MAP[enemy.basicSkillId ?? getSpecies(enemy.speciesId).basicSkillId];
+          if (!basic?.power) return sum;
+          const speed = effectiveStat(enemy, 'spd');
+          const rate = enemy.cooldownRates?.[basic.id] ?? skillCooldownRate(speed, true);
+          const interval = Math.max(getSpecies(enemy.speciesId).basicSkillCooldown / rate,
+            (basic.castTime ?? 0) + battleActionTiming(basic.id, !!enemy.rangedRole).totalMs / 1000 + actionGapForSpeed(speed));
+          return sum + expectedDamage(enemy, c, basic) * Math.max(1, (e.duration ?? 3) / interval);
+        }, 0);
+        if (shielding) score *= BATTLE_DECISION.existingShieldValue;
+        else if (!threatened && pressure < Math.min(c.currentHp, e.magnitude ?? 100) * BATTLE_DECISION.shieldDangerRatio) score = -1;
       } else if (e?.kind === 'ramp' && e.target === 'self') {
         const alreadyRamping = c.buffs.some((b) => b.kind === 'ramp' && b.stat === e.stat && b.remaining > 1);
         score = alreadyRamping ? 8 : (lowHp || threatened ? 12 : 62);
@@ -328,7 +348,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
           else if (hard && targetHardControl > 0 && targetHardControl <= 0.35) score += 52;
           // A: interrupt - hard CC that can cancel a windup is urgent. This
           // dominates other options so the AI visibly "breaks" big casts.
-          if (hard && interruptTarget && target.uid === interruptTarget.uid) score += 160 + interruptPower;
+          if (hard && interruptTarget && target.uid === interruptTarget.uid && canInterruptCast(c, target, skill, now)) score += (160 + interruptPower) * interruptChance(skill);
           // Reserve control for a nuke that is about to become ready, instead of
           // spending it on a harmless filler immediately beforehand.
           if (hard && targetKeyWindow) score += 68 + Math.max(0, KEY_SKILL_WINDOW - targetKeyWindow.remaining) * 24 + targetKeyWindow.power * 0.12;
@@ -358,11 +378,13 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       if (p.skillBias === 'utility') score *= 1.6;
       else if (p.skillBias === 'power') score *= 0.5;
     } else {
-      const ed = expectedDamage(c, target, skill);
-      const spreadDamage = skill.targetMode === 'all-enemies'
-        ? skillVictims(skill, c, target, enemies).reduce((sum, enemy) => sum + expectedDamage(c, enemy, skill), 0) * (skill.areaMultiplier ?? 0.7)
-        : ed;
-      score = spreadDamage;
+      const victims = skill.targetMode === 'all-enemies' ? skillVictims(skill, c, target, enemies) : [target];
+      const areaScale = skill.targetMode === 'all-enemies' ? (skill.areaMultiplier ?? .7) : 1;
+      const covered = victims.filter(victim => expectedDamage(c, victim, skill) > 0);
+      score = covered.reduce((sum, victim) => sum + usefulDamage(expectedDamage(c, victim, skill) * areaScale, victim.currentHp)
+        * releaseReliability(c, target, victim, skill, now, p.riskTolerance), 0);
+      // 长起手占用进攻机会；激进性格更愿意承担这项成本。
+      score /= 1 + (skill.castTime ?? 0) * BATTLE_DECISION.windupCost * (1 - p.riskTolerance * .5);
       // 利用真实控制窗口；无法在控制结束前释放的大招没有额外优先级。
       if (!isHardCc(skill) && canUseControlWindow(c, target, skill, now)) score *= 1 + BATTLE_COOPERATION.controlDamageBonus;
       // B: execute - finish near-dead targets
@@ -374,11 +396,11 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       // personality meaningful. Area users value multi-target pressure, burst
       // users value executes, and bruisers favor melee commitment.
       if (skill.id === signatureSkill) score *= role === 'support' ? 1.12 : 1.2;
-      if (role === 'area' && skill.targetMode === 'all-enemies') score *= 1 + Math.min(0.24, Math.max(0, enemies.length - 1) * 0.12);
+      if (role === 'area' && skill.targetMode === 'all-enemies') score *= 1 + Math.min(0.24, Math.max(0, covered.length - 1) * 0.12);
       if (role === 'burst' && (skill.power >= 90 || (skill.castTime ?? 0) > 0)) score *= targetExec ? 1.35 : 1.12;
       if (role === 'bruiser' && skill.range === 'melee') score *= 1.16;
       if (role === 'tank' && (isHardCc(skill) || skill.range === 'melee')) score *= 1.12;
-      if (role === 'control' && isHardCc(skill)) score *= interruptTarget ? 1.55 : 1.15;
+      if (role === 'control' && isHardCc(skill)) score *= interruptTarget && canInterruptCast(c, target, skill, now) ? 1 + .55 * interruptChance(skill) : 1.15;
       if (isHardCc(skill)) {
         const controlHeld = ccReservationRemaining > 0.45 || targetHardControl > 0.45;
         if (controlHeld) score *= 0.06;
@@ -387,18 +409,22 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
         // cooldown forecast overpower the existing-control reservation.
         if (targetKeyWindow && !controlHeld) score += 66 + Math.max(0, KEY_SKILL_WINDOW - targetKeyWindow.remaining) * 22 + targetKeyWindow.power * 0.1;
       }
+      // 单目标已有更快的收尾方案时，不为溢出伤害承担长蓄力。
+      if (covered.length === 1 && fastestFinish < (skill.castTime ?? 0)) {
+        score *= (fastestFinish + BATTLE_DECISION.finishTimeFloor) / ((skill.castTime ?? 0) + BATTLE_DECISION.finishTimeFloor);
+      }
       // skill bias
       if (p.skillBias === 'power') score *= 1.3;
       else if (p.skillBias === 'speed') score *= skill.cooldown <= 2 ? 1.3 : 0.8;
       else if (p.skillBias === 'utility') score *= 0.85;
       // Low-risk personalities slightly prefer shorter-cooldown damage moves.
       const cdPenalty = skill.cooldown * (1 - p.riskTolerance) * 2;
-      score -= cdPenalty;
+      score /= 1 + cdPenalty / 100;
       // aggression boosts damage scoring vs alternatives
       score *= 0.5 + p.aggression * 0.7;
       // A: a damage skill that also carries hard-CC (e.g. ice-beam freeze,
       // rock-slide flinch) gains interrupt value when aimed at a winding target.
-      if (isHardCc(skill) && interruptTarget && target.uid === interruptTarget.uid) score += 80;
+      if (isHardCc(skill) && interruptTarget && target.uid === interruptTarget.uid && canInterruptCast(c, target, skill, now)) score += 80 * interruptChance(skill);
     }
     // 射手的近身技能作为被突入后的反制，不为冷却或高威力单独冲入人群。
     const hostile = skill.power > 0 || skill.effect?.target === 'enemy';

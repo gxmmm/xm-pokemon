@@ -33,7 +33,7 @@ for (const setup of formations) for (const seed of [11, 22, 33]) {
       if (c.plan) assert(c.plan.desiredRangeCells >= 3.5, '射手不因性格、冷却、优势而强制贴脸');
     }
   }
-  assert(sim.isOver && sim.state.winner !== 'draw', `${setup.id}/${seed} must resolve`);
+  assert(sim.isOver && sim.state.winner !== 'draw', `${setup.id}/${seed} must resolve: ${JSON.stringify(sim.state.combatants.filter(c => c.alive).map(c => ({uid:c.uid,hp:c.currentHp,position:c.position,plan:c.plan,skills:c.activeSkills})))}`);
   meleeDamage = sim.state.combatants.filter(c => !c.rangedRole).reduce((sum, c) => sum + c.damageDealt, 0);
   if (setup.id === 'melee' || setup.id === 'surround') assert(sim.state.combatants.filter(c => c.side === 'player').every(c => c.damageDealt > 0), `${setup.id}/${seed} 每个围攻者都能输出: ${JSON.stringify(sim.state.combatants.map(c => ({uid:c.uid, damage:c.damageDealt, pos:c.position, hp:c.currentHp})))}`);
   if (rangedSamples) assert(rangedCrowded / rangedSamples < .4, `${setup.id} long-term crowding: ${rangedCrowded / rangedSamples}`);

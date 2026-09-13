@@ -1368,8 +1368,8 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   bruiser.position = bruiser.pixel = { x: 7, y: 5 };
   bruiser.personality = 'cool'; ready(bruiserSim.state.combatants);
   const bruiserEnemies = bruiserSim.state.combatants.filter((c) => c.side === 'enemy');
-  bruiserEnemies[0]!.position = { x: 9, y: 5 };
-  bruiserEnemies[1]!.position = { x: 14, y: 5 };
+  bruiserEnemies[0]!.position = bruiserEnemies[0]!.pixel = { x: 9, y: 5 };
+  bruiserEnemies[1]!.position = bruiserEnemies[1]!.pixel = { x: 14, y: 5 };
   const bruiserPlan = decide(bruiser, bruiserSim.state, mulberry32(6))!;
   assert(bruiserPlan.targetUid === bruiserEnemies[0]!.uid, 'bruiser role holds the nearest frontline target');
   assert(bruiserPlan.preferredSkillId === 'dragon-surge', 'bruiser role favors its melee signature');

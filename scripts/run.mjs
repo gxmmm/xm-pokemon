@@ -9,7 +9,7 @@ import { acquireVerificationSlot, applyVerificationBudget, verificationBatches }
 // One runner keeps argument forwarding and temporary-bundle cleanup consistent.
 const [name, ...args] = process.argv.slice(2);
 const browserReports = new Set(['battle-browser-report', 'battle-loading-browser-report', 'visual-browser-report', 'progress-browser-report', 'playable-browser-report']);
-const entries = new Set(['battle-evasion-report', 'battle-cooperation-report', 'battle-tempo-report', 'battle-space-report', 'smoke', 'asset-audit', 'balance-report', 'tactics-report', 'visual-report', 'typecheck', 'build-web', ...browserReports]);
+const entries = new Set(['battle-decision-report', 'battle-evasion-report', 'battle-cooperation-report', 'battle-tempo-report', 'battle-space-report', 'smoke', 'asset-audit', 'balance-report', 'tactics-report', 'visual-report', 'typecheck', 'build-web', ...browserReports]);
 if (!entries.has(name)) throw new Error('Unknown script: ' + name);
 const output = resolve(`.script-${name}-${process.pid}.mjs`);
 let child;

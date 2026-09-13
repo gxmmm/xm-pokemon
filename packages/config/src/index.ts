@@ -24,3 +24,4 @@ export * from './battle-tempo.ts';
 export * from './battle-cooperation.ts';
 
 export * from './battle-evasion.ts';
+export * from './battle-decision.ts';
