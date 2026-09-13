@@ -44,11 +44,11 @@ const TIER_COLOR: Record<number, string> = { 1: '#6b7280', 2: '#3b4cca', 3: '#b8
 // active skill pool: intrinsic (天生必带) first, then full learnset; known first, unlearned dim
 const activeDisplay = computed(() => {
   if (!inst.value || !species.value) return [];
-  const known = new Set(tacticalSkillsForInstance(inst.value));
+  const known = new Set([species.value.basicSkillId, ...tacticalSkillsForInstance(inst.value)]);
   const items: { id: string; owned: boolean; char: string; color: string; level: number; tip: string }[] = [];
   const seen = new Set<string>();
   const push = (sid: string, level: number) => {
-    if (sid === species.value?.basicSkillId || seen.has(sid)) return;
+    if (seen.has(sid)) return;
     seen.add(sid);
     const sk = SKILL_MAP[sid];
     items.push({
@@ -56,9 +56,10 @@ const activeDisplay = computed(() => {
       char: sk?.name?.[0] ?? '?',
       color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A',
       level,
-      tip: skillTip(sk) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
+      tip: skillTip(sk && sid === species.value?.basicSkillId ? { ...sk, cooldown: species.value.basicSkillCooldown } : sk) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
     });
   };
+  push(species.value.basicSkillId, -1);
   for (const id of species.value.intrinsic ?? []) push(id, 0);
   for (const e of species.value.learnset) push(e.skill, e.level);
   items.sort((a, b) => (a.owned === b.owned ? a.level - b.level : a.owned ? -1 : 1));
@@ -230,7 +231,6 @@ async function release(): Promise<void> {
 
       <div class="detail-skills">
         <section class="panel detail-section">
-          <p class="muted">基础招式：{{ SKILL_MAP[species.basicSkillId]?.name }} · {{ species.basicSkillCooldown.toFixed(1) }} 秒基础冷却（受速度影响，不占配招名额）</p>
           <div class="section-title">主动技能 <span class="tiny muted">已学优先 · 未学置灰</span></div>
           <div class="skill-icon-grid large-skill-grid">
             <Tip v-for="s in activeDisplay" :key="s.id" :text="s.tip"><div class="skill-ic" :class="{ dim: !s.owned }" :style="{ background: s.color }"><span>{{ s.char }}</span></div></Tip>

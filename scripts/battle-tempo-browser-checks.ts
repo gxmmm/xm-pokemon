@@ -20,7 +20,7 @@ export async function checkBattleTempo(page: Page, root: string) {
         maxQueued = Math.max(maxQueued, state.actor.queuedMotionCount);
         assert(state.actor.queuedMotionCount <= 3, '完整动作之间不积压旧动画');
         assert(!state.hud.skills.some(s => s.id === '__normal__'));
-        assert(state.hud.skills.some(s => s.basic && s.name.startsWith('基础·')));
+        assert(state.hud.skills[0]?.basic && !state.hud.skills[0].name.startsWith('基础·'), '基础招式作为主动列表首项统一展示');
         if ([6, 18, 54, 100].includes(tick)) await page.screenshot({ path: resolve(output, `${id}-${reverse ? 'reverse-' : ''}${tick}.png`) });
       }
       const result = await page.evaluate(() => window.__TEMPO_FIXTURE__.read());

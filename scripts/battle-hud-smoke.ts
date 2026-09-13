@@ -21,7 +21,10 @@ export function testBattleHud(): void {
   }
   assert(!combatHud(c, 3).critical);
   c.activeSkills = ['recover', 'swords-dance', 'rest', 'surf', 'close-combat', 'silver-wind'];
-  const targets = combatHud(c, 3).skills;
+  const ordered = combatHud(c, 3).skills;
+  assert.equal(ordered[0]?.id, c.basicSkillId, '基础招式固定为主动列表首项');
+  assert(!ordered[0]!.name.startsWith('基础·'), '招式名称统一展示');
+  const targets = ordered.filter(s => !s.basic);
   assert(targets.slice(0, 3).every((s) => s.detail.includes(' · 自身 · ')));
   assert(targets[3]!.detail.includes('覆盖区内敌人'));
   assert(targets.slice(4).every((s) => s.detail.includes('敌方单体')), 'damaging moves with a self effect still attack enemies');

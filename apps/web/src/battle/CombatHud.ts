@@ -17,10 +17,10 @@ export function combatHud(c: BattleCombatant, time: number, interrupted = false)
   if (stun) statuses.push({ id: 'stun', text: `眩晕 ${hudSeconds((c.flinchUntil ?? time) - time)}`, control: true });
   if (c.alive && c.status) statuses.push({ id: c.status, text: `${BATTLE_STATUS_LABELS[c.status]} ${hudSeconds(c.statusTimer)}`, control: c.status === 'sleep' || c.status === 'freeze' });
   const action = !c.alive ? '已倒下' : controlled ? '暂时无法行动' : interrupted ? '施法被打断' : cast ? `施放 · ${castSkill?.name ?? cast.skillId}` : '自动战斗';
-  const skills = [...new Set(c.activeSkills)].map((id) => {
+  const skills = [...new Set([...(c.basicSkillId ? [c.basicSkillId] : []), ...c.activeSkills])].map((id) => {
     const basic = id === c.basicSkillId;
     const skill = SKILL_MAP[id];
-    const name = `${basic ? '基础·' : ''}${skill?.name ?? id}`;
+    const name = skill?.name ?? id;
     const cd = c.cooldowns[id] ?? 0;
     const casting = cast?.skillId === id;
     const state = !c.alive ? '—' : casting ? '施放中' : cd > 0 ? hudSeconds(cd) : '就绪';
