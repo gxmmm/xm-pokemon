@@ -11,7 +11,7 @@ export async function createBattleTempoFixture() {
   const make = (id: number, uid: string, activeSkills: string[]) => ({ ...createWildInstance(id, 50, { rng: () => .5 }), uid, activeSkills, passiveSkills: [], ability: 'keen-eye', personality: 'cool' as const });
   let sim: BattleSim, director: BattleDirector, cursor = 0;
   return {
-    async start(id: number, skill: string) {
+    async start(id: number, skill: string, reverse = false) {
       sim = new BattleSim({ mode: 'pvp', player: [make(id, 'actor', [skill]), ...(id === 113 ? [make(68, 'patient', [])] : [])], enemy: [make(143, 'target', [])], seed: 41 });
       director = new BattleDirector(); cursor = sim.state.events.length;
       const actor = sim.state.combatants[0]!;
@@ -22,6 +22,17 @@ export async function createBattleTempoFixture() {
       target.currentHp = target.maxHp = 100000; target.status = 'sleep'; target.statusTimer = 100;
       const patient = sim.state.combatants.find(c => c.uid === 'patient');
       if (patient) { patient.position = patient.pixel = { x: 8, y: 10 }; patient.currentHp *= .3; patient.status = 'sleep'; patient.statusTimer = 100; }
+      if (reverse) for (const c of sim.state.combatants) {
+        c.side = c.side === 'player' ? 'enemy' : 'player';
+        c.position = c.pixel = { x: 20 - c.position.x, y: c.position.y };
+        c.facing = c.side === 'player' ? 1 : -1;
+      }
+      await stage.enterBattle({ biomeId: 'grass', combatants: sim.state.combatants });
+    },
+    async startMixed() {
+      sim = new BattleSim({ mode: 'pvp', player: [make(6, 'actor', ['flamethrower']), make(68, 'front', ['close-combat']), make(113, 'healer', ['renewal-chant'])], enemy: [make(25, 'spark', ['thunderbolt']), make(65, 'mind', ['psybeam']), make(143, 'tank', ['body-slam'])], seed: 75 });
+      for (const c of sim.state.combatants) { c.maxHp *= 3; c.currentHp = c.maxHp * .7; }
+      director = new BattleDirector(); cursor = sim.state.events.length;
       await stage.enterBattle({ biomeId: 'grass', combatants: sim.state.combatants });
     },
     async step() {

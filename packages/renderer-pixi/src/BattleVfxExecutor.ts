@@ -8,6 +8,7 @@ import { spawnEnvironmentReaction } from './environment-reaction-vfx.ts';
 import { spawnBurst, spawnDive, spawnImpact } from './impact-vfx.ts';
 import { spawnChainLightning, spawnSkyStrike } from './lightning-vfx.ts';
 import { spawnProjectile } from './projectile-vfx.ts';
+import { spawnHealing } from './healing-vfx.ts';
 import { spawnRing } from './ring-vfx.ts';
 
 type PositionResolver = (uid: string) => Point | undefined;
@@ -38,12 +39,16 @@ export class BattleVfxExecutor {
     const actor = plan.actorId ? this.resolvePosition(plan.actorId) : undefined;
     const targets = plan.targetIds.map(this.resolvePosition).filter((point): point is Point => !!point);
     const targetRoot = (plan.aimPoint ? projectBattleWorldPoint(battleWorldPositionFromGrid(plan.aimPoint.x, plan.aimPoint.y), environment.camera) : targets[0]) ?? actor ?? { x: BATTLE_DESIGN_WIDTH / 2, y: BATTLE_DESIGN_HEIGHT * 0.58 };
-    const target = actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 };
+    const body = !plan.aimPoint && plan.primitive !== 'environment' && plan.layer !== 'ground' && plan.targetIds[0] ? this.resolveAnchor?.(plan.targetIds[0], 'body') : undefined;
+    const target = body ?? (actor ? battleContactPoint(targetRoot, actor) : { x: targetRoot.x, y: targetRoot.y - 30 });
     const color = elementColor(plan.element);
     const resolveSource = () => plan.actorId && plan.actorAnchor && this.resolveAnchor
       ? this.resolveAnchor(plan.actorId, plan.actorAnchor) : plan.actorId ? this.resolvePosition(plan.actorId) : undefined;
 
     switch (plan.primitive) {
+      case 'heal':
+        spawnHealing(this.effects, target, plan.intensity);
+        return true;
       case 'projectile': {
         const source = resolveSource();
         if (!actor || !source) return false;

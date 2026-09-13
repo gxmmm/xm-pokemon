@@ -820,7 +820,7 @@ testBattleCamera();
   const fistVfx = fistNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
   const psychicVfx = psychicNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
   const fireVfx = fireNormal.find((entry) => entry.cue.type === 'vfx')?.cue;
-  assert(fistVfx?.type === 'vfx' && fistVfx.recipe.id === 'normal-attack:fist' && fistVfx.recipe.variant === 'fist' && planBattleCue(fistVfx)[0]?.primitive === 'impact', 'fighter normal attacks carry a configuration-owned fist impact motif through presentation into Pixi planning');
+  assert(fistVfx?.type === 'vfx' && fistVfx.recipe.id === 'normal-attack:fist' && fistVfx.recipe.variant === 'fist' && planBattleCue(fistVfx).length === 0, '近战释放保留动作配方，不能提前绘制命中冲击');
   assert(psychicVfx?.type === 'vfx' && psychicVfx.recipe.id === 'normal-attack:psychic-bolt' && psychicVfx.recipe.variant === 'psychic-bolt' && planBattleCue(psychicVfx)[0]?.primitive === 'projectile', 'psychic ranged normals carry a configuration-owned bolt motif through presentation into Pixi planning');
   assert(fireVfx?.type === 'vfx' && fireVfx.recipe.id === 'normal-attack:flame-bolt' && fireVfx.recipe.element === 'fire' && fireVfx.recipe.variant === 'flame-bolt' && planBattleCue(fireVfx)[0]?.primitive === 'projectile', 'elemental ranged normals preserve their model-owned tint and silhouette through presentation into Pixi planning');
   assert(first.every((entry) => entry.id && entry.eventId && Number.isFinite(entry.at)), 'directed cues are serializable envelopes');

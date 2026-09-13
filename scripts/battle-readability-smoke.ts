@@ -1,3 +1,5 @@
+import { toBattlePresentationEvent } from '../packages/presentation/src/battle.ts';
+import { BattleDirector } from '../packages/presentation/src/director.ts';
 import assert from 'node:assert/strict';
 import { BATTLE_EFFECT_COMPOSITION, BATTLE_ENVIRONMENTS } from '@pokemon-online/config';
 import { BattleEffectPool } from '../packages/renderer-pixi/src/BattleEffectPool.ts';
@@ -8,6 +10,30 @@ import { Graphics } from 'pixi.js';
 
 export function testBattleReadability(): void {
   const pool = new BattleEffectPool();
+  for (const outcome of [{ missed: true }, { effectiveness: 0 }]) {
+    const miss = toBattlePresentationEvent({ seq: 99, t: 1, type: 'damage', actor: 'actor', target: 'a', skillId: 'close-combat', amount: 0, vfx: { kind: 'impact', ...outcome } });
+    const cues = new BattleDirector().direct([miss]);
+    assert(!cues.some(({cue}) => cue.type === 'animation' || cue.type === 'vfx' || cue.type === 'environment'), '闪避和免疫不产生成功受击反馈');
+  }
+  const directed = new BattleDirector().direct([
+    { id: 'release', sequence: 1, at: 0, type: 'skill', actorId: 'actor', targetIds: ['a'], skillId: 'close-combat' },
+    { id: 'damage', sequence: 2, at: 0, type: 'damage', actorId: 'actor', targetIds: ['a'], skillId: 'close-combat', outcome: { damage: 25 } },
+  ]);
+  assert.equal(directed.flatMap(({cue}) => planBattleCue(cue)).filter(p => p.primitive === 'impact').length, 1, '一次近战结果只产生一次命中冲击');
+  const healing = new BattleDirector().direct([
+    { id: 'release-heal', sequence: 3, at: 1, type: 'skill', actorId: 'actor', targetIds: ['a'], skillId: 'heal-pulse' },
+    { id: 'heal', sequence: 4, at: 1, type: 'heal', actorId: 'actor', targetIds: ['a'], skillId: 'heal-pulse' },
+  ]).flatMap(({cue}) => planBattleCue(cue));
+  assert.deepEqual(healing.find(p => p.primitive === 'heal')?.targetIds, ['a']);
+  assert.deepEqual(healing.find(p => p.primitive === 'ring')?.targetIds, ['actor'], '起手只在施法者身上，回复在患者身上');
+  const healExecutor = new BattleVfxExecutor(pool, () => ({ x: 500, y: 500 }), () => ({ x: 507, y: 433 }));
+  healExecutor.spawnPlans(healing.filter(p => p.primitive === 'heal'), BATTLE_ENVIRONMENTS.grass);
+  assert.equal(pool.container.children[0]!.x, 507);
+  assert.equal(pool.container.children[0]!.y, 433, '治疗使用真实身体挂点');
+  pool.update(.1);
+  assert(pool.container.children[0]!.getLocalBounds().width < 55, '回复粒子局部可读');
+  pool.update(1);
+  assert.equal(pool.activeCount, 0, '回复效果正常回收');
   const positions = new Map([['actor', { x: 300, y: 440 }], ['a', { x: 680, y: 430 }], ['b', { x: 750, y: 440 }], ['c', { x: 820, y: 430 }]]);
   const executor = new BattleVfxExecutor(pool, (uid) => positions.get(uid), uid => {
     const root = positions.get(uid);

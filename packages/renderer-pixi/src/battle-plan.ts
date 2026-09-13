@@ -2,7 +2,7 @@ import type { BattleCue } from '@pokemon-online/renderer';
 import type { TypeName } from '@pokemon-online/shared';
 import { BATTLE_EFFECT_COMPOSITION, type BattleEffectLayer, type BattleArtAnchorId, type SkillRecipeVariant } from '@pokemon-online/config';
 
-export type BattleStagePrimitive = 'projectile' | 'dive' | 'impact' | 'beam' | 'burst' | 'ring' | 'sky-strike' | 'chain' | 'environment';
+export type BattleStagePrimitive = 'heal' | 'projectile' | 'dive' | 'impact' | 'beam' | 'burst' | 'ring' | 'sky-strike' | 'chain' | 'environment';
 
 export interface BattleStageVfxPlan {
   primitive: BattleStagePrimitive;
@@ -39,6 +39,7 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     variant: cue.recipe.variant as SkillRecipeVariant | undefined,
     particleBudget: cue.recipe.particleBudget,
   };
+  if (cue.recipe.id === 'heal') return [{ ...base, primitive: 'heal' }];
   const isImpact = cue.recipe.id.startsWith('impact:') || cue.recipe.id === 'faint';
   if (!isImpact && base.variant === 'sky-strike') return [{ ...base, primitive: 'sky-strike' }];
   if (!isImpact && base.variant === 'chain') return [{ ...base, primitive: 'chain' }];
@@ -53,7 +54,7 @@ export function planBattleCue(cue: BattleCue): readonly BattleStageVfxPlan[] {
     { ...base, primitive: 'ring', layer: 'ground' },
   ];
   if (isImpact) return [{ ...base, primitive: 'impact' }];
-  if (delivery === 'melee') return [{ ...base, primitive: 'impact' }, { ...base, primitive: 'ring' }];
+  if (delivery === 'melee') return []; // Attack 提供出手姿态，实际冲击由结果事件绘制。
   return [{ ...base, primitive: 'ring' }];
 }
 

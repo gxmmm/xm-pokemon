@@ -12,6 +12,7 @@ export function projectileTimingFor(variant = 'default', intensity = 0.24): { du
 
 /** Contact after a beam's initial opacity ramp, not after its channel ends. */
 export const BEAM_CONTACT_DELAY_MS = 80;
+export const BATTLE_HEALING_VISUAL = { durationMs: 520, count: 6, spread: 18, rise: 19, color: 0xb6ffd0, outline: 0x245c43 } as const;
 
 export interface SkillVisualGrammar {
   element: TypeName;
