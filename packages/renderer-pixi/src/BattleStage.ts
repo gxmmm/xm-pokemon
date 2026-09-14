@@ -1,6 +1,6 @@
 import { type AssetKey, type BattleCue, type BattleRenderInput, type BattleRenderSnapshot, type BattleRenderer, type SceneTransitionRequest } from '@pokemon-online/renderer';
 import { BATTLE_ASSET_BY_ID, battleEnvironmentFor, resolveBattleArtPresentation, battleUiAssetsFor, PIXEL_ART_STYLE } from '@pokemon-online/config';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BattleCastZones } from './BattleCastZones.ts';
 import { planBattleCue } from './battle-plan.ts';
 import { BattleArtAssetLoader } from './BattleArtAssets.ts';
@@ -15,6 +15,7 @@ import { DrawCallObserver } from './draw-call-observer.ts';
 import { TerrainContactEffects } from './TerrainContactEffects.ts';
 
 export interface BattleStageDiagnostics {
+  noticesPlayed: number;
   biomeId: string;
   combatantCount: number;
   activeEffectCount: number;
@@ -31,6 +32,7 @@ export interface BattleStageDiagnostics {
 /** Minimal Stage-3 Pixi battle runtime. It consumes renderer contracts only;
  * engine simulation, Vue HUD, and BattleDirector stay outside this package. */
 export class BattleStage implements BattleRenderer {
+  private noticesPlayed = 0;
   private app: Application | null = null;
   private root: Container | null = null;
   private readonly camera = new BattleCameraController((uid) => this.combatants.getPosition(uid), () => battleEnvironmentFor(this.biomeId).camera);
@@ -136,6 +138,7 @@ export class BattleStage implements BattleRenderer {
     const drawCalls = this.drawCallObserver?.read() ?? { total: 0, sinceLastRead: 0 };
     return {
       biomeId: this.biomeId,
+      noticesPlayed: this.noticesPlayed,
       combatantCount: this.combatants.size,
       activeEffectCount: this.effectPool.activeCount,
       environmentChildCount: this.environmentView.childCount,
@@ -279,7 +282,20 @@ export class BattleStage implements BattleRenderer {
   }
 
   private playReadyCue(cue: BattleCue): void {
-    if (cue.type === 'camera') {
+    if (cue.type === 'notice') {
+      const point = this.combatants.getPosition(cue.subjectId);
+      if (!point) return;
+      this.noticesPlayed++;
+      const label = new Text({ text:cue.text, style:{fontFamily:'monospace',fontSize:15,fontWeight:'bold',fill:cue.active ? 0xffdf83 : 0xc9d3df,stroke:{color:0x142031,width:4}} });
+      label.anchor.set(.5,1);
+      const start = { ...point };
+      this.effectPool.add(label,1.6,progress => {
+        const at = this.combatants.getPosition(cue.subjectId) ?? start;
+        label.position.set(Math.round(at.x),Math.round(at.y - 95 - progress * 22));
+        label.alpha = Math.min(1,(1-progress)*4);
+      });
+      label.position.set(start.x,start.y-95);
+    } else if (cue.type === 'camera') {
       this.camera.focus(cue.plan);
     } else if (cue.type === 'animation') {
       this.playAnimationCue(cue);

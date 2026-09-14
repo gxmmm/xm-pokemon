@@ -73,12 +73,15 @@ export class BattleDirector {
   reset(): void { this.consumed.clear(); }
 
   private cuesFor(event: BattlePresentationEvent, contactDelayMs?: number): DirectedBattleCue[] {
+    if (event.selfCost) return [];
     const score = scoreBattlePresentation(event);
     const recipe = recipeFor(event);
     const targets = event.targetIds ?? [];
     const output: BattleCue[] = [];
 
-    if (event.type === 'cast-start') {
+    if (event.notice) {
+      output.push({type:'notice', subjectId:event.targetIds?.[0] ?? event.actorId ?? '', ...event.notice});
+    } else if (event.type === 'cast-start') {
       output.push(
         { type: 'animation', subjectId: event.actorId ?? '', animation: 'windup', skillId: event.skillId, targetIds: targets, delivery: recipe.delivery },
         { type: 'camera', plan: { style: 'anticipate', focusIds: compactIds([event.actorId, ...targets]), durationMs: 180, zoom: 1.03 } },

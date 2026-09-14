@@ -6,12 +6,14 @@ export type BattlePresentationCombatant = BattleCombatant & { worldPosition: Bat
 /** A short-delayed immutable battle view. The simulator may continue while a
  * renderer consumes an earlier snapshot for readable impact framing. */
 export interface BattlePresentation {
+  weather?: import('@pokemon-online/shared').BattleWeather;
   time: number;
   combatants: BattlePresentationCombatant[];
   events: BattleEvent[];
 }
 
 export interface BattleSnapshot {
+  weather?: import('@pokemon-online/shared').BattleWeather;
   time: number;
   combatants: BattlePresentationCombatant[];
 }
@@ -35,8 +37,8 @@ function cloneCombatant(combatant: BattlePresentationCombatantInput): BattlePres
   };
 }
 
-export function snapshotBattle(time: number, combatants: readonly BattlePresentationCombatantInput[]): BattleSnapshot {
-  return { time, combatants: combatants.map(cloneCombatant) };
+export function snapshotBattle(time: number, combatants: readonly BattlePresentationCombatantInput[], weather?: import('@pokemon-online/shared').BattleWeather): BattleSnapshot {
+  return { time, combatants: combatants.map(cloneCombatant), weather: weather ? { ...weather } : undefined };
 }
 
 /** Interpolates continuous visual fields only. Discrete battle facts remain at

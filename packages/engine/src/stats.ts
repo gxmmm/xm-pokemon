@@ -63,7 +63,7 @@ export function computeStats(instance: Pick<PokemonInstance, 'speciesId' | 'iv' 
   }
   // ability stat mults (huge-power, guts w/ status, marvel-scale w/ status handled in battle)
   const ab = ABILITY_MAP[instance.ability];
-  if (ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && ab.effect.stat && ab.effect.mult) {
+  if (ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && !ab.effect.requiresWeather && ab.effect.stat && ab.effect.mult) {
     if (out[ab.effect.stat]) out[ab.effect.stat] = Math.floor(out[ab.effect.stat]! * ab.effect.mult);
   }
   return out;
@@ -95,7 +95,7 @@ export function statBreakdown(instance: Pick<PokemonInstance, 'speciesId' | 'iv'
   const raw = baseStat(instance.speciesId, instance.iv, instance.growth, instance.level, key);
   const afterPassive = Math.floor(raw * passiveMult);
   const ab = ABILITY_MAP[instance.ability];
-  const abilityApplies = !!(ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && ab.effect.stat === key && ab.effect.mult);
+  const abilityApplies = !!(ab?.effect.kind === 'statBoost' && !ab.effect.requiresStatus && !ab.effect.requiresWeather && ab.effect.stat === key && ab.effect.mult);
   const abilityMult = abilityApplies ? ab!.effect.mult! : 1;
   const final = abilityApplies ? Math.floor(afterPassive * abilityMult) : afterPassive;
   return { key, base, iv, level: instance.level, growth: instance.growth, passiveMult, abilityMult, raw, final };
@@ -111,7 +111,8 @@ export function stageMult(stage: number): number {
 export function effectiveStat(c: BattleCombatant, key: StatKey): number {
   let v = c.stats[key];
   if (key !== 'hp') {
-    const stage = c.statStages[key as 'atk' | 'def' | 'spd'] ?? 0;
+    const temporary = c.buffs.reduce((sum, b) => sum + (b.kind === 'opening-speed' && b.stat === key && b.remaining > 0 ? b.stages ?? 0 : 0), 0);
+    const stage = Math.max(-6, Math.min(6, (c.statStages[key as 'atk' | 'def' | 'spd'] ?? 0) + temporary));
     v = Math.floor(v * stageMult(stage));
   }
   // status effects
@@ -119,6 +120,7 @@ export function effectiveStat(c: BattleCombatant, key: StatKey): number {
   if (c.status === 'paralyze' && key === 'spd') v = Math.floor(v * 0.5);
   // ability: guts (atk up when statused), marvel-scale (def up when statused)
   const ab = ABILITY_MAP[c.ability];
+  if (ab?.effect.requiresWeather && c.effectiveWeather === ab.effect.requiresWeather && ab.effect.stat === key && ab.effect.mult) v = Math.floor(v * ab.effect.mult);
   if (ab && c.status) {
     if (ab.effect.kind === 'statBoost' && ab.effect.stat === key && ab.effect.mult) {
       if (ab.effect.requiresStatus) v = Math.floor(v * ab.effect.mult);

@@ -1,3 +1,4 @@
+import { skillHitChance, damageReduction } from './combat-modifiers.ts';
 import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
 import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, dmgTypeMult } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
@@ -23,24 +24,8 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   const log: string[] = [];
   const result: DamageResult = { damage: 0, effectiveness: 1, crit: false, missed: false, immune: false, log };
 
-  // accuracy / evasion
-  const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
-  let evasion = 0;
-  for (const pid of defender.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'evasion' && p.effect.chance) evasion += p.effect.chance;
-  }
-  const dab = ABILITY_MAP[defender.ability];
-  if (dab?.effect.kind === 'custom' && dab.effect.chance && (defender.ability === 'sand-veil' || defender.ability === 'snow-cloak')) {
-    evasion += dab.effect.chance;
-  }
   const aab = ABILITY_MAP[attacker.ability];
-  if (aab?.effect.kind === 'accuracyBoost') {
-    evasion *= aab.effect.mult ?? 1;
-  }
-  const adjustedAcc = Math.min(1, acc + (aab?.effect.kind === 'accuracyBoost' ? aab.effect.magnitude ?? 0 : 0));
-  const noGuard = ABILITY_MAP[attacker.ability]?.effect.kind === 'custom' && attacker.ability === 'no-guard';
-  if (!noGuard && rng() > adjustedAcc * (1 - evasion)) {
+  if (rng() >= skillHitChance(attacker, defender, skill)) {
     result.missed = true;
     log.push(`${attacker.name} 的攻击没有命中！`);
     return result;
@@ -69,13 +54,6 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
 
   // effectiveness
   let eff = typeMultiplier(t, defender.types as TypeName[]);
-  // passives: typeResist on defender
-  for (const pid of defender.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
-  }
-  // ability: thick-fat halves fire/ice
-  if (defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
   result.effectiveness = eff;
   if (eff === 0) {
     result.immune = true;
@@ -138,7 +116,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.round(dmg * 0.5);
 
   // 属性克制按统一曲线缩放，基础招式同样参与克制与免疫。
-  dmg = Math.round(dmg * dmgTypeMult(eff));
+  dmg = Math.round(dmg * dmgTypeMult(eff) * damageReduction(defender, skill));
   // Counter Instinct empowers only the next damaging active skill. The simulator
   // consumes the flag after a successful hit, keeping this function pure.
   if ((attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.round(dmg * 1.15);

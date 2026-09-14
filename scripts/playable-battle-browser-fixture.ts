@@ -10,6 +10,24 @@ window.requestAnimationFrame = (callback) => originalFrame((now) => { frameTime 
 let speedSamples: number[] = [];
 export function resetSpeedSamples(): void { speedSamples = []; }
 
+export async function prepareWeather(): Promise<void> {
+  const battle = useBattleStore();
+  const player = {...createWildInstance(68,50,{rng:()=>.5}),uid:'weather-player',ability:'guts',passiveSkills:[]};
+  const enemy = {...createWildInstance(10,50,{rng:()=>.5}),uid:'weather-enemy',ability:'keen-eye',passiveSkills:[]};
+  battle.sim = new BattleSim({mode:'pvp',player:[player],enemy:[enemy],seed:4242});
+  battle.mode = 'pvp'; battle.phase = 'fighting'; battle.assetsReady = true;
+  const sim = battle.sim;
+  for (const c of sim.state.combatants) { c.actionLockRemaining = 1000; c.actionReadyRemaining = 1000; c.ability = 'keen-eye'; c.passiveSkills = []; }
+  sim.setWeather('rain','天气验收',120);
+  await router.push({name:'battle'});
+}
+export function weatherSample(kind: 'sun'|'rain'|'snow'|'sand', status: boolean): void {
+  const sim = useBattleStore().sim!;
+  const actor = sim.state.combatants[0]!;
+  actor.ability = 'guts'; actor.status = status ? 'poison' : null; actor.statusTimer = status ? 30 : 0;
+  sim.setWeather(kind,'天气验收',120);
+}
+
 // Imported only by the isolated Vite browser report, never by production routes.
 export async function prepare(outcome: 'win' | 'loss' | 'long' | 'natural', speed: number, activeBattle = false): Promise<void> {
   const game = useGameStore();

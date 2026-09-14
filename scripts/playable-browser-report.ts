@@ -31,6 +31,7 @@ try {
   browser = await chromium.launch({ executablePath: process.env.PO_VISUAL_BROWSER ?? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true, args: ['--use-angle=swiftshader', '--use-gl=angle'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.addInitScript(() => {
+    sessionStorage.setItem('pokemon-online.renderer-observation.v1','1');
     localStorage.setItem('po_token', 'isolated-playable-test');
     // Old device preferences must no longer add visual controls or alter play.
     localStorage.setItem('pokemon-online.visual-runtime-settings.v1', JSON.stringify({ reduceFlicker: true, cameraIntensity: 'off' }));
@@ -56,6 +57,28 @@ try {
   await page.getByRole('button', { name: /就决定是你了/ }).click();
   await page.waitForURL('**/world');
   await page.evaluate(async (url) => { window.__PLAYABLE_FIXTURE__ = await import(/* @vite-ignore */ url); }, '/@fs/' + resolve('scripts/playable-battle-browser-fixture.ts').replaceAll('\\', '/'));
+  if (process.argv.includes('--weather-only')) {
+    await page.setViewportSize({width:1440,height:900});
+    await page.evaluate(() => window.__PLAYABLE_FIXTURE__.prepareWeather());
+    await page.locator('[data-weather="rain"]').waitFor({timeout:45000}).catch(async error => {
+      console.log(JSON.stringify(await page.evaluate(()=>({text:document.body.innerText,state:window.__PLAYABLE_FIXTURE__.read()})))); throw error;
+    });
+    await page.waitForFunction(() => (window.__PO_RENDERER_OBSERVATION__?.().stageMounts.battle ?? 0)>0,undefined,{timeout:60000}).catch(async error => {
+      console.log(JSON.stringify(await page.evaluate(()=>({text:document.body.innerText,observation:window.__PO_RENDERER_OBSERVATION__?.()})))); throw error;
+    });
+    for (const kind of ['sun','rain','snow','sand'] as const) {
+      await page.evaluate(kind => window.__PLAYABLE_FIXTURE__.weatherSample(kind,kind === 'sun'),kind);
+      await page.locator(`[data-weather="${kind}"]`).waitFor({timeout:45000});
+      const badge = await page.locator('.weather-badge').boundingBox();
+      assert(badge && Math.abs(badge.x + badge.width/2 - 720)<2 && badge.y>=0 && badge.y+badge.height<100);
+    }
+    await page.waitForFunction(() => window.__PO_RENDERER_OBSERVATION__?.().samples.some(s=>s.stage==='battle' && Number(s.diagnostics.noticesPlayed)>=2),undefined,{timeout:30000});
+    await page.screenshot({path:resolve(OUTPUT,'weather.png'),timeout:60000});
+    assert.deepEqual(errors,[]);
+    await writeFile(resolve(OUTPUT,'weather-report.json'),JSON.stringify({passed:true,checks:['四种天气切换','顶部中央圆形标识','正式Pixi条件提示无运行异常'],errors},null,2));
+    console.log('✓ 正式战斗四种天气圆标切换、中央上方布局和条件提示运行');
+    return;
+  }
   if (!process.argv.includes('--hud-only') && !process.argv.includes('--ending-only')) await checkFullWindowScene(page, OUTPUT, 'world');
   if (process.argv.includes('--ending-only')) {
     await page.evaluate(() => window.__PLAYABLE_FIXTURE__.prepareEndingDuringCast());

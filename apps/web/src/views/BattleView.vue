@@ -10,6 +10,7 @@ import type { ExpGainResult } from '../stores/game.ts';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
 import BattleCombatantCard from '../components/BattleCombatantCard.vue';
+import BattleWeatherBadge from '../components/BattleWeatherBadge.vue';
 import PixiBattleViewport from '../components/PixiBattleViewport.vue';
 import type { BattlePresentation, DirectedBattleCue } from '@pokemon-online/presentation';
 import { BattlePresentationBridge } from '../game/BattlePresentationBridge.ts';
@@ -348,6 +349,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 
       <!-- ARENA -->
       <div class="arena" :class="{ over: isOver }">
+        <BattleWeatherBadge v-if="battle.phase !== 'loading'" :weather="presentation?.weather" />
         <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" require-assets @ready="onPixiReady" @unavailable="onPixiUnavailable" />
         <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
@@ -462,7 +464,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
 .arena.over { filter: brightness(.85); }
 .gpu-unavailable { position:absolute; inset:0; z-index:6; display:grid; place-items:center; padding:24px; text-align:center; color:#ffe4a6; background:rgba(8,13,24,.88); border:1px solid rgba(255,203,5,.35); }
 .tactic-ribbon { position:absolute; left:50%; transform:translateX(-50%); z-index:4; min-width:132px; max-width:calc(100% - 18px); padding:4px 8px; border-radius:7px; text-align:center; pointer-events:none; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.45); box-shadow:0 2px 8px rgba(0,0,0,.28); background:rgba(62,78,108,.88); }
-.tactic-ribbon.player { top:24px; }.tactic-ribbon.enemy { bottom:24px; }
+.tactic-ribbon.player { top:24px; left:calc(50% - 48px); transform:translateX(-100%); }.tactic-ribbon.enemy { bottom:24px; }
 .tactic-ribbon span { display:block; font-size:10px; font-weight:900; letter-spacing:.4px; }.tactic-ribbon small { display:block; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; opacity:.92; }
 .tactic-ribbon.finish { background:rgba(196,78,64,.91); }.tactic-ribbon.protect { background:rgba(57,119,191,.91); }.tactic-ribbon.pressure { background:rgba(143,80,176,.91); }.tactic-ribbon.split { background:rgba(62,122,111,.91); }
 

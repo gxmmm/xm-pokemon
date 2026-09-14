@@ -197,7 +197,13 @@ export type AbilityKind =
   | 'cooldownPressure' | 'lowHpDefense' | 'cooldownRhythm' | 'openingSpeed'
   | 'shieldRecovery' | 'counterInstinct' | 'custom';
 
+export type WeatherKind = 'sun' | 'rain' | 'snow' | 'sand';
+export interface BattleWeather { kind: WeatherKind; remaining: number; source: string; suppressed: boolean; }
 export interface AbilityEffect {
+  /** 无战场天气时条件不满足，不能退化为常驻加成。 */
+  requiresWeather?: WeatherKind;
+  weather?: WeatherKind;
+  weatherHpLoss?: number;
   requiresStatus?: boolean;
   ignoreBurnAttackPenalty?: boolean;
   kind: AbilityKind;
@@ -447,6 +453,8 @@ export interface TimedEffect {
 }
 
 export interface BattleCombatant {
+  /** 引擎同步的有效天气；被抑制时为空。 */
+  effectiveWeather?: WeatherKind;
   /** 施法开始时锁定的格坐标，供空间结算与表现读取。 */
   castAim?: { x: number; y: number };
   /** 当前动作的显示目标，释放后保留至收招结束，不参与命中判定。 */
@@ -549,6 +557,9 @@ export interface BattleCameraPlan {
  *  spawn the right animation (projectile / burst / aura / floating number ...)
  *  without re-parsing the text log. `from`/`to` are grid-cell coordinates. */
 export interface BattleVfx {
+  /** 自身代价只更新生命，不播放被攻击的冲击动作。 */
+  selfCost?: boolean;
+  notice?: { text: string; active: boolean };
   kind:
     | 'projectile' | 'melee' | 'burst' | 'beam'
     | 'heal' | 'shield' | 'buff' | 'debuff'
@@ -610,6 +621,7 @@ export interface TeamTactic {
 }
 
 export interface BattleState {
+  weather?: BattleWeather;
   mode: 'pve' | 'pvp';
   /** Grid dimensions (cells). Combatants move cell-by-cell on this grid. */
   arena: { cols: number; rows: number };

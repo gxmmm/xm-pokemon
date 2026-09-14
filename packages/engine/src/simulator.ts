@@ -1,3 +1,6 @@
+import { skillHitChance, secondaryEffectChance } from './combat-modifiers.ts';
+import type { WeatherKind } from '@pokemon-online/shared';
+import { BATTLE_WEATHER, BATTLE_WEATHER_DURATION } from '@pokemon-online/config';
 import { BattleEvasion } from './evasion.ts';
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
@@ -12,6 +15,7 @@ import { decide, isHardCc } from './ai.ts';
 import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance, findGridApproachStep } from './grid.ts';
 
 export interface BattleSimOptions {
+  weather?: WeatherKind;
   mode: 'pve' | 'pvp';
   player: PokemonInstance[];
   enemy: PokemonInstance[];
@@ -33,6 +37,7 @@ function clamp(v: number, lo: number, hi: number): number {
 // are distributed over time instead of every cooldown becoming ready together.
 const SKILL_COOLDOWN_SCALE = 1.35;
 const OPENING_SKILL_COOLDOWN_FRACTION = 0.55;
+const STATUS_DURATION: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
 
 /** Seconds per grid cell from the effective speed stat. The expanded curve
  * makes a 15-speed heavy model visibly lumber (0.32s) while a 150-speed model
@@ -100,7 +105,7 @@ function instanceToCombatant(inst: PokemonInstance, side: 'player' | 'enemy', in
     engagementRangeCells,
     rangedRole,
     status: inst.status ?? null,
-    statusTimer: 0,
+    statusTimer: inst.status ? STATUS_DURATION[inst.status] : 0,
     statStages: { atk: 0, def: 0, spd: 0 },
     shields: 0,
     damageDealt: 0,
@@ -184,7 +189,9 @@ export class BattleSim {
       speedMultiplier: opts.speed ?? 1,
       isWild: opts.isWild ?? false,
     };
+    if (opts.weather) this.setWeather(opts.weather, '遭遇天气');
     this.applyOnEnter();
+    this.refreshWeather();
     this.emit('info', undefined, undefined, undefined, undefined, `战斗开始！`);
   }
 
@@ -204,6 +211,55 @@ export class BattleSim {
       flinchUntil: controlled.flinchUntil ?? 0, ...(vfx?.kind === 'interrupt' ? { castProgress: null } : {}) } : undefined;
     this.state.events.push({ t: +this.state.time.toFixed(2), seq: ++this.seqCounter, type, actor, target, skillId, amount, message, vfx, health, control });
     if (this.state.events.length > 400) this.state.events.splice(0, this.state.events.length - 400);
+    if (!vfx?.notice && (type === 'status' || type === 'damage' || type === 'heal' || type === 'faint')) this.refreshWeather();
+  }
+
+  private readonly conditionLabels = new Map<string, string>();
+  private readonly weatherLoss = new Map<string, number>();
+  setWeather(kind: WeatherKind, source = '天气变化', duration = BATTLE_WEATHER_DURATION): void {
+    if (this.ended) return;
+    this.state.weather = { kind, source, remaining: Math.max(0, duration), suppressed: false };
+    this.refreshWeather();
+    this.emit('info', undefined, undefined, undefined, undefined, `${source}：${BATTLE_WEATHER[kind].name}`);
+  }
+
+  private refreshWeather(): void {
+    const weather = this.state.weather;
+    if (weather) weather.suppressed = this.state.combatants.some(c => c.alive && c.ability === 'cloud-nine');
+    for (const c of this.state.combatants) {
+      c.effectiveWeather = c.alive && weather && !weather.suppressed ? weather.kind : undefined;
+      const ab = ABILITY_MAP[c.ability], e = ab?.effect;
+      const active = !this.ended && c.alive && (e?.requiresStatus ? !!c.status : e?.requiresWeather ? e.requiresWeather === c.effectiveWeather : false);
+      const statLabel = e?.stat === 'atk' ? '攻击提升' : e?.stat === 'def' ? '防御提升' : e?.stat === 'spd' ? '速度提升' : e?.kind === 'hpRegen' ? '持续回复' : '闪避提升';
+      const label = active ? `${ab!.name}·${statLabel}` : '';
+      const previous = this.conditionLabels.get(c.uid) ?? '';
+      if (label === previous) continue;
+      this.conditionLabels.set(c.uid, label);
+      if (previous) this.emit('info', c.uid, c.uid, undefined, undefined, `${ab?.name}·效果结束`, { kind:'buff',notice:{text:`${ab?.name}·效果结束`,active:false} });
+      if (label) this.emit('info', c.uid, c.uid, undefined, undefined, label, { kind:'buff',notice:{text:label,active:true} });
+    }
+  }
+
+  private weatherTick(dt: number): void {
+    if (this.state.weather) {
+      this.state.weather.remaining = Math.max(0, this.state.weather.remaining - dt);
+      if (this.state.weather.remaining <= 0) {
+        this.state.weather = undefined;
+        this.emit('info', undefined, undefined, undefined, undefined, '天气恢复平静');
+      }
+    }
+    this.refreshWeather();
+    for (const c of this.state.combatants) {
+      const e = ABILITY_MAP[c.ability]?.effect;
+      if (!c.alive || !e?.weatherHpLoss || c.effectiveWeather !== e.requiresWeather) { this.weatherLoss.delete(c.uid); continue; }
+      const accumulated = (this.weatherLoss.get(c.uid) ?? 0) + c.maxHp * e.weatherHpLoss * dt;
+      const loss = Math.min(c.currentHp, Math.floor(accumulated));
+      this.weatherLoss.set(c.uid, accumulated - loss);
+      if (loss <= 0) continue;
+      c.currentHp -= loss;
+      this.emit('damage', undefined, c.uid, undefined, loss, `${c.name} 受到太阳之力消耗`, {kind:'impact',amount:loss,selfCost:true});
+      if (c.currentHp <= 0) this.faint(c);
+    }
   }
 
   private find(uid?: string): BattleCombatant | undefined {
@@ -232,8 +288,9 @@ export class BattleSim {
         if (e.side !== c.side && e.alive) e.pressureUntil = Math.max(e.pressureUntil ?? 0, until);
       }
       this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的压迫感笼罩战场！`);
+    } else if (ab.effect.kind === 'weather' && ab.effect.weather) {
+      this.setWeather(ab.effect.weather, `${c.name}·${ab.name}`, ab.effect.duration);
     } else if (ab.effect.kind === 'openingSpeed' && ab.effect.stat === 'spd') {
-      this.addStatStage(c, 'spd', ab.effect.stages ?? 1);
       c.buffs.push({ id: 'opening-speed', kind: 'opening-speed', stat: 'spd', stages: ab.effect.stages ?? 1, remaining: ab.effect.duration ?? 6 });
       this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 抢得了先机！`);
     }
@@ -279,7 +336,6 @@ export class BattleSim {
         c.shields = Math.max(0, c.shields - b.magnitude);
       }
       if (b.kind === 'opening-speed' && b.remaining <= 0 && b.stat && b.stages) {
-        this.addStatStage(c, b.stat as 'atk' | 'def' | 'spd', -b.stages);
         this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的先机节奏平复了。`);
       }
     }
@@ -336,7 +392,7 @@ export class BattleSim {
       if (p?.effect.kind === 'hpRegen' && p.effect.magnitude) frac += p.effect.magnitude;
     }
     const ab = ABILITY_MAP[c.ability];
-    if (ab?.effect.kind === 'hpRegen' && ab.effect.magnitude) frac += ab.effect.magnitude;
+    if (ab?.effect.kind === 'hpRegen' && (!ab.effect.requiresWeather || ab.effect.requiresWeather === c.effectiveWeather) && ab.effect.magnitude) frac += ab.effect.magnitude;
     if (frac > 0 && c.alive && c.currentHp > 0) {
       if (c.currentHp >= c.maxHp) { c.regenAccumulator = 0; return; }
       c.regenAccumulator += effectiveStat(c, 'atk') * 4 * frac * dt;
@@ -521,8 +577,7 @@ export class BattleSim {
     if (target.status) return false; // one status at a time
     // All statuses are FINITE now (control nerf): no permanent burn/poison/paralyze.
     // Caller may pass an explicit duration; otherwise use the per-status default.
-    const DEFAULT_DUR: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
-    const appliedDuration = duration > 0 ? duration : DEFAULT_DUR[status];
+    const appliedDuration = duration > 0 ? duration : STATUS_DURATION[status];
     target.status = status;
     target.statusTimer = appliedDuration;
     if (source && source.uid !== target.uid && ['paralyze', 'freeze', 'sleep', 'confuse'].includes(status)) source.controlSeconds += appliedDuration;
@@ -693,7 +748,8 @@ export class BattleSim {
         defender.healingDone += healed;
         this.emit('heal', defender.uid, undefined, undefined, healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: healed });
       }
-      if (defender.ability === 'flash-fire') defender.flashFireBoost = true;
+      if (defender.ability === 'flash-fire' && skill.type === 'fire') defender.flashFireBoost = true;
+      if (defender.ability === 'lightning-rod' && skill.type === 'electric') this.addStatStage(defender, 'atk', 1);
       return { dealt: 0, immune: true };
     }
     attacker.hits += 1;
@@ -708,6 +764,13 @@ export class BattleSim {
     if (defender.shields > 0) {
       const absorbed = Math.min(defender.shields, dmg);
       defender.shields -= absorbed;
+      let remaining = absorbed;
+      // 先消耗最早到期的护盾；到期只移除这一层尚未被消耗的量。
+      for (const shield of defender.buffs.filter(b => b.kind === 'shield').sort((a,b) => a.remaining - b.remaining)) {
+        const used = Math.min(remaining, shield.magnitude ?? 0);
+        shield.magnitude = (shield.magnitude ?? 0) - used; remaining -= used;
+        if (remaining <= 0) break;
+      }
       defender.shieldAbsorbed += absorbed;
       dmg -= absorbed;
     }
@@ -862,14 +925,11 @@ export class BattleSim {
         if (!immune && !missed) { totalDealt += dealt; landed = true; }
         if (skill.effect && victim.alive && !immune && !missed && skill.effect.target !== 'self') {
           const e = skill.effect;
-          const ability = ABILITY_MAP[c.ability];
-          const secondaryChance = ability?.effect.kind === 'secondaryBoost'
-            ? Math.min(ability.effect.magnitude ?? 0.7, (e.chance ?? 1) * (ability.effect.mult ?? 1.75))
-            : e.chance ?? 1;
+          const secondaryChance = secondaryEffectChance(c, skill);
           if (this.rng() < secondaryChance) this.applyEffect(c, e.target === 'self' ? c : victim, skillId, dealt);
         }
       }
-      if (landed && c.alive && skill.effect?.target === 'self' && this.rng() < (skill.effect.chance ?? 1)) this.applyEffect(c, c, skillId, totalDealt);
+      if (landed && c.alive && skill.effect?.target === 'self' && this.rng() < secondaryEffectChance(c, skill)) this.applyEffect(c, c, skillId, totalDealt);
     } else {
       // Status / utility skills remain single-target or self-target.
       const e = skill.effect;
@@ -878,8 +938,8 @@ export class BattleSim {
       c.castSupportUid = undefined;
       this.emit('skill', c.uid, tgt?.uid, skillId, undefined, `${c.name} 使用了 ${skill.name}！`, { kind: 'burst', type: skill.type });
       if (e?.target === 'enemy' && tgt) {
-        const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
-        if (this.rng() > acc) {
+        const acc = skillHitChance(c, tgt, skill);
+        if (this.rng() >= acc) {
           c.misses += 1;
           this.skillRecap(c, skillId).misses += 1;
           this.emit('info', c.uid, tgt.uid, skillId, undefined, `但是没有命中...`, { kind: 'miss', type: skill.type, missed: true });
@@ -928,6 +988,8 @@ export class BattleSim {
 
   /** 终局不再推进模拟，撤销尚未释放的动作，允许表现正常收尾。 */
   private clearFinishedActions(): void {
+    this.state.weather = undefined;
+    this.refreshWeather();
     for (const c of this.state.combatants) {
       c.castProgress = null; c.castAim = undefined; c.actionAim = undefined; c.castSupportUid = undefined;
       c.plan = null; c.actionLockRemaining = 0; c.actionReadyRemaining = 0;
@@ -986,6 +1048,7 @@ export class BattleSim {
     if (this.ended) return;
     if (dt <= 0) return;
     this.state.time += dt;
+    this.weatherTick(dt);
     this.refreshTeamTactics();
     // global cooldown speed-up from passives (灵巧)
     for (const c of this.state.combatants) {
@@ -1002,6 +1065,7 @@ export class BattleSim {
       c.actionReadyRemaining = Math.max(0, (c.actionReadyRemaining ?? 0) - dt);
       c.moveCd = Math.max(0, (c.moveCd ?? 0) - dt);
       this.statusTick(c, dt);
+      this.refreshWeather();
       if ((c.counterInstinctUntil ?? 0) <= this.state.time) c.counterInstinctUntil = 0;
       this.passiveRegen(c, dt);
       this.speedBoost(c, dt);

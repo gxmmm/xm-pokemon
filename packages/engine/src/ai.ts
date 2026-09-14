@@ -1,3 +1,4 @@
+import { skillHitChance, damageReduction } from './combat-modifiers.ts';
 import { releaseReliability, usefulDamage, interruptChance, canInterruptCast } from './skill-opportunity.ts';
 import { controlRemaining, selectHealingTarget, nearbyBacklineThreat, canUseControlWindow } from './cooperation.ts';
 import type { BattleCombatant, BattleState, Skill, CombatRole } from '@pokemon-online/shared';
@@ -37,11 +38,6 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
   // effectiveness + defender typeResist passives + thick-fat
   let eff = typeMultiplier(t, defender.types);
   if (eff === 0) return 0;
-  for (const pid of defender.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'typeResist' && p.effect.type === t && p.effect.mult) eff *= p.effect.mult;
-  }
-  if (defender.ability === 'thick-fat' && (t === 'fire' || t === 'ice')) eff *= 0.5;
   // type-immunity abilities (water/volt absorb, flash fire, levitate, lightning-rod)
   const dab = ABILITY_MAP[defender.ability];
   if (dab?.effect.kind === 'typeImmunity' && dab.effect.type === t) return 0;
@@ -77,22 +73,13 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
     const p = PASSIVE_MAP[pid];
     if (p?.effect.kind === 'crit' && p.effect.chance) critChance += p.effect.chance;
   }
+  if (ABILITY_MAP[defender.ability]?.effect.kind === 'critImmunity') critChance = 0;
   dmg *= 1 + critChance * 0.5;
   // multiscale (defender at full HP halves damage)
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg *= 0.5;
   // Type effectiveness is an active-skill-only modifier.
   dmg *= dmgTypeMult(eff);
-  // accuracy / evasion: expected hit chance (noGuard bypasses evasion)
-  const noGuard = ABILITY_MAP[attacker.ability]?.effect.kind === 'custom' && attacker.ability === 'no-guard';
-  const acc = skill.accuracy === 0 ? 1 : skill.accuracy / 100;
-  let evasion = 0;
-  for (const pid of defender.passiveSkills) {
-    const p = PASSIVE_MAP[pid];
-    if (p?.effect.kind === 'evasion' && p.effect.chance) evasion += p.effect.chance;
-  }
-  if (dab?.effect.kind === 'custom' && dab.effect.chance && (defender.ability === 'sand-veil' || defender.ability === 'snow-cloak')) evasion += dab.effect.chance;
-  const hitChance = noGuard ? 1 : Math.min(1, Math.max(0, acc * (1 - evasion)));
-  return dmg * hitChance;
+  return dmg * damageReduction(defender, skill) * skillHitChance(attacker, defender, skill);
 }
 
 function isUtility(skill: Skill): boolean {

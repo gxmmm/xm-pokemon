@@ -27,6 +27,8 @@ export interface BattlePresentationOutcome {
  * gameplay meaning from localized log text.
  */
 export interface BattlePresentationEvent {
+  selfCost?: boolean;
+  notice?: BattleVfx['notice'];
   aimPoint?: { x: number; y: number };
   id: string;
   sequence: number;
@@ -85,6 +87,7 @@ export interface SoundCue {
 export type AnimationSchedule = 'immediate' | 'after-current-motion';
 
 export type BattleCue = { /** Relative visual delay; never changes simulation timing. */ delayMs?: number } & (
+  | { type: 'notice'; subjectId: string; text: string; active: boolean }
   | { type: 'camera'; plan: CameraPlan }
   | { type: 'vfx'; recipe: VfxRecipeRef; anchors: VfxAnchors; intensity: number; eventType: BattlePresentationEventType; skillId?: string; vfxKind?: BattleVfx['kind']; outcome?: BattlePresentationOutcome; status?: StatusKind }
   | { type: 'animation'; subjectId: string; animation: CombatantAnimation; skillId?: string; targetIds?: readonly string[]; delivery?: VfxRecipeRef['delivery']; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: AnimationSchedule; /** Presentation-only clip hold; never changes simulation timing. */ durationMs?: number }
@@ -120,6 +123,8 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
   return {
     id: `${event.seq ?? 0}:${event.t}:${event.type}:${event.actor ?? ''}:${event.target ?? ''}`,
     sequence: event.seq ?? 0,
+    notice: vfx?.notice,
+    selfCost: vfx?.selfCost,
     type,
     actorId: event.actor,
     aimPoint: event.type === 'skill' ? vfx?.to : undefined,
@@ -135,6 +140,7 @@ export function toBattlePresentationEvent(event: BattleEvent): BattlePresentatio
 }
 
 function presentationTypeFor(event: BattleEvent, vfx?: BattleVfx): BattlePresentationEventType {
+  if (vfx?.notice) return 'status';
   if (vfx?.kind === 'interrupt') return 'cast-interrupt';
   if (event.type === 'attack' || event.type === 'move') return 'move';
   if (event.type === 'skill' && vfx?.kind === 'cast') return 'cast-start';

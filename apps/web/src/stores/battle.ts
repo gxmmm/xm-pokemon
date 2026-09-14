@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 import type { PokemonInstance } from '@pokemon-online/shared';
+import { ENCOUNTER_WEATHER } from '@pokemon-online/config';
 import { BattleSim, createPvpBattle } from '@pokemon-online/engine';
 import { useGameStore, type ExpGainResult } from './game.ts';
 
@@ -35,6 +36,7 @@ export const useBattleStore = defineStore('battle', () => {
     rewardsGranted = false;
     sim.value = BattleSim.fromInstances({
       mode: 'pve',
+      weather: mId ? ENCOUNTER_WEATHER[mId] : undefined,
       player: playerTeam,
       enemy: insts,
       deployment: 'simultaneous',

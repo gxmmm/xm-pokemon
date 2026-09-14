@@ -1231,7 +1231,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
     const foe = make(10, 'keen-eye');
     const sim = new BattleSim({ mode: 'pvp', player: [holder], enemy: [foe], isWild: false, seed: 335 });
     const c = sim.state.combatants.find((x) => x.side === 'player')!;
-    assert(c.statStages.spd === 1, 'initiative grants opening speed');
+    assert(c.buffs.some(b => b.kind === 'opening-speed' && b.stages === 1), 'initiative grants temporary opening speed');
     (sim as unknown as { statusTick: (c: BattleCombatant, dt: number) => void }).statusTick(c, 6.1);
     assert(c.statStages.spd === 0, 'initiative speed expires after six seconds');
   }

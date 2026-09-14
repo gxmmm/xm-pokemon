@@ -25,3 +25,4 @@ export * from './battle-cooperation.ts';
 
 export * from './battle-evasion.ts';
 export * from './battle-decision.ts';
+export * from './battle-weather.ts';

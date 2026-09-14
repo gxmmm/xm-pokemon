@@ -9,6 +9,7 @@ export interface BattlePresentationSource {
   readonly isOver: boolean;
   readonly state: {
     readonly time: number;
+    readonly weather?: import('@pokemon-online/shared').BattleWeather;
     readonly combatants: readonly BattlePresentationCombatantInput[];
     readonly events: readonly BattleEvent[];
   };
@@ -66,7 +67,7 @@ export class BattlePresentationBridge {
     this.outcomes.clear();
     if (!source) return null;
     this.captureSnapshot(source);
-    this.current = { time: 0, combatants: this.presentationCombatants(0), events: [] };
+    this.current = { time: 0, combatants: this.presentationCombatants(0), events: [], weather: source.state.weather ? { ...source.state.weather } : undefined };
     return this.current;
   }
 
@@ -107,6 +108,7 @@ export class BattlePresentationBridge {
     const cues = [...completed.cues, ...dispatched.cues];
     const presentation: BattlePresentation = {
       time: this.presentationTime,
+      weather: [...this.snapshots].reverse().find(snapshot => snapshot.time <= this.presentationTime)?.weather,
       combatants: this.outcomes.apply(this.presentationCombatants(this.presentationTime), this.presentationTime),
       events: this.outcomes.visibleEvents(events),
     };
@@ -129,8 +131,8 @@ export class BattlePresentationBridge {
   private captureSnapshot(source: BattlePresentationSource): void {
     const time = source.state.time;
     const last = this.snapshots[this.snapshots.length - 1];
-    if (!last || time > last.time) this.snapshots.push(snapshotBattle(time, source.state.combatants));
-    else if (last.time === time) this.snapshots[this.snapshots.length - 1] = snapshotBattle(time, source.state.combatants);
+    if (!last || time > last.time) this.snapshots.push(snapshotBattle(time, source.state.combatants, source.state.weather));
+    else if (last.time === time) this.snapshots[this.snapshots.length - 1] = snapshotBattle(time, source.state.combatants, source.state.weather);
     // Never discard snapshots the delayed cursor has not reached. Action
     // windows can deliberately put the simulation far ahead of presentation;
     // pruning by real time alone would force interpolateBattle to jump to the

@@ -56,6 +56,7 @@ export interface BattleRenderSnapshot {
 /** Kept independent from presentation so a renderer package never has to
  * import a director implementation. Presentation is structurally compatible. */
 export type BattleCue = { delayMs?: number } & (
+  | { type: 'notice'; subjectId: string; text: string; active: boolean }
   | { type: 'camera'; plan: BattleCameraPlan }
   | { type: 'vfx'; recipe: { id: string; element?: TypeName; delivery?: string; variant?: string; actorChoreography?: BattleActorChoreography; particleBudget?: number }; anchors: { actorId?: string; actorAnchor?: string; targetIds?: readonly string[]; aimPoint?: { x: number; y: number } }; intensity: number }
   | { type: 'animation'; subjectId: string; animation: string; targetIds?: readonly string[]; actorChoreography?: BattleActorChoreography; element?: TypeName; schedule?: 'immediate' | 'after-current-motion'; durationMs?: number }
