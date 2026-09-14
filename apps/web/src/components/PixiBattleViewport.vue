@@ -88,7 +88,8 @@ onMounted(async () => {
 
 function reportUnavailable(error: unknown): void {
   if (disposed) return;
-  const message = error instanceof Error ? error.message : '无法初始化 GPU 战斗渲染器';
+  console.error(error);
+  const message = '战斗场景加载失败，请稍后重试';
   emit('unavailable', message);
 }
 
@@ -122,7 +123,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="host" class="pixi-battle-viewport" aria-label="GPU battle renderer"></div>
+  <div ref="host" class="pixi-battle-viewport" aria-label="战斗场景"></div>
 </template>
 
 <style scoped>

@@ -44,7 +44,7 @@ async function confirm(): Promise<void> {
           <div>
             <div class="bold">{{ chosen.name }} <span class="chip">#{{ String(chosen.id).padStart(3,'0') }}</span></div>
             <div class="tiny muted">{{ chosen.dex }}</div>
-            <div class="tiny">特性：{{ chosen.abilities.length }} · 成长：{{ chosen.growthRate }}</div>
+            <div class="tiny">特性：{{ chosen.abilities.length }}</div>
           </div>
         </div>
         <button class="gold" :disabled="busy" @click="confirm" style="margin-top:12px;width:100%">

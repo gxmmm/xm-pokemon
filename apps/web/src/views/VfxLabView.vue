@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { getSpecies, SKILL_MAP, SPECIES_LIST, type BattleEnvironmentId } from '@pokemon-online/config';
+import { getSpecies, TYPE_LABELS_CN, SKILL_MAP, SPECIES_LIST, type BattleEnvironmentId } from '@pokemon-online/config';
 import { createWildInstance } from '@pokemon-online/engine';
 import { BattleDirector, snapshotBattle, type BattlePresentation } from '@pokemon-online/presentation';
 import type { BattleCombatant } from '@pokemon-online/shared';
@@ -76,7 +76,7 @@ function playSkillBatch(skillId: string, count: number): void {
   cues.value = buildVfxLabCues(director, { actorId: CASTER_ID, targetId: DUMMY_ID, skillId, sequence }, count, intensity.value);
   sequence += count * 10;
   const skill = SKILL_MAP[skillId];
-  status.value = `${skill?.name ?? skillId} 连播 ${count} 次：${skill?.effect?.target === 'self' || skill?.effect?.kind === 'heal' ? '对自身' : '对训练假人'}，强度 ${intensity.value.toFixed(1)}x。`;
+  status.value = `${skill?.name ?? skillId} 连播 ${count} 次：${skill?.effect?.target === 'self' || skill?.effect?.kind === 'heal' ? '对自身' : '对训练假人'}，强度 ${intensity.value.toFixed(1)} 倍。`;
 }
 
 function startLoop(skillId: string): void {
@@ -100,11 +100,11 @@ onUnmounted(() => { stopLoop(); cues.value = []; });
 
 <template>
   <section class="vfx-lab">
-    <header class="lab-header"><div><p class="eyebrow">VISUAL TEST RANGE</p><h1>技能演示靶场</h1></div><RouterLink to="/battle-sandbox">返回随机战斗</RouterLink></header>
+    <header class="lab-header"><div><p class="eyebrow">技能演示</p><h1>技能演示靶场</h1></div><RouterLink to="/battle-sandbox">返回随机战斗</RouterLink></header>
     <div class="layout">
       <aside class="panel selection"><label>施法宝可梦 <input v-model="search" placeholder="搜索图鉴" /></label><div class="species-list"><button v-for="species in filteredSpecies" :key="species.id" :class="{ active: species.id === casterSpeciesId }" type="button" @click="casterSpeciesId = species.id">#{{ String(species.id).padStart(3, '0') }} {{ species.name }}</button></div></aside>
-      <main class="stage"><div class="toolbar"><label>环境 <select v-model="biome"><option value="grass">草地</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label><span>标准品质</span><label>演出强度 <input v-model.number="intensity" type="range" min="0.5" max="2" step="0.1" /><strong>{{ intensity.toFixed(1) }}x</strong></label><label>连播 <select v-model.number="repeat"><option :value="1">1 次</option><option :value="3">3 次</option><option :value="5">5 次</option></select></label><label>假人状态 <select v-model="forcedDummyStatus"><option value="none">无状态</option><option value="stun">眩晕</option><option value="sleep">睡眠</option><option value="freeze">冰冻</option><option value="paralyze">麻痹</option><option value="confuse">混乱</option><option value="burn">灼伤</option><option value="poison">中毒</option></select></label></div><div class="viewport"><PixiBattleViewport :presentation="presentation ?? undefined" :cues="cues" :biome="biome" @ready="stageReady = true" @unavailable="status = $event" /></div><p class="status">{{ status }}</p></main>
-      <aside class="panel skills"><h2>{{ caster.name }}</h2><p>左侧施法者；右侧为静态训练假人。点击技能连播；右侧循环按钮持续播放。</p><div v-for="skill in selectableSkills" :key="skill.id" class="skill-row"><button type="button" class="skill" @click="playSkill(skill.id)"><span>{{ skill.name }}</span><small>{{ skill.type }} · {{ skill.range }}</small></button><button type="button" class="loop" :title="`${skill.name} 循环播放`" @click="looping ? stopLoop() : startLoop(skill.id)">{{ looping ? '■' : '↻' }}</button></div></aside>
+      <main class="stage"><div class="toolbar"><label>环境 <select v-model="biome"><option value="grass">草地</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label><span>标准品质</span><label>演出强度 <input v-model.number="intensity" type="range" min="0.5" max="2" step="0.1" /><strong>{{ intensity.toFixed(1) }} 倍</strong></label><label>连播 <select v-model.number="repeat"><option :value="1">1 次</option><option :value="3">3 次</option><option :value="5">5 次</option></select></label><label>假人状态 <select v-model="forcedDummyStatus"><option value="none">无状态</option><option value="stun">眩晕</option><option value="sleep">睡眠</option><option value="freeze">冰冻</option><option value="paralyze">麻痹</option><option value="confuse">混乱</option><option value="burn">灼伤</option><option value="poison">中毒</option></select></label></div><div class="viewport"><PixiBattleViewport :presentation="presentation ?? undefined" :cues="cues" :biome="biome" @ready="stageReady = true" @unavailable="status = $event" /></div><p class="status">{{ status }}</p></main>
+      <aside class="panel skills"><h2>{{ caster.name }}</h2><p>左侧施法者；右侧为静态训练假人。点击技能连播；右侧循环按钮持续播放。</p><div v-for="skill in selectableSkills" :key="skill.id" class="skill-row"><button type="button" class="skill" @click="playSkill(skill.id)"><span>{{ skill.name }}</span><small>{{ TYPE_LABELS_CN[skill.type] }} · {{ skill.range === 'melee' ? '近战' : '远程' }}</small></button><button type="button" class="loop" :title="`${skill.name} 循环播放`" @click="looping ? stopLoop() : startLoop(skill.id)">{{ looping ? '■' : '↻' }}</button></div></aside>
     </div>
   </section>
 </template>

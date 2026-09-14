@@ -14,9 +14,9 @@ export const SKILLS: Skill[] = [
   { id: 'heal-pulse', name: '治愈波动', type: 'psychic', category: 'status', power: 0, accuracy: 0, cooldown: 2.8, range: 'ranged', rangeTiles: 320, space: { shape: 'single', reach: 6 }, effect: { kind: 'heal', target: 'ally', healingPower: 60 }, description: '' },
   // ── Normal ──
   { id: 'body-slam', name: '泰山压顶', type: 'normal', category: 'physical', power: 65, accuracy: 100, cooldown: 3, range: 'melee', rangeTiles: 60, effect: { kind: 'status', target: 'enemy', status: 'paralyze', chance: 0.3 }, description: '可能使对手麻痹。' },
-  { id: 'take-down', name: '舍身冲撞', type: 'normal', category: 'physical', power: 90, accuracy: 95, cooldown: 5, range: 'melee', rangeTiles: 70, description: '强力冲撞，有反作用力。' },
-  { id: 'double-edge', name: '舍身一击', type: 'normal', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 70, castTime: 0.4, description: '全力一击，反伤较多。' },
-  { id: 'swift', name: '高速星星', type: 'normal', category: 'special', power: 60, accuracy: 0, cooldown: 2.5, range: 'ranged', rangeTiles: 400, priority: 1, targetMode: 'all-enemies', areaMultiplier: 0.70, description: '必中星光散射敌方全体；每个目标承受70%伤害。' },
+  { id: 'take-down', name: '舍身冲撞', type: 'normal', category: 'physical', power: 90, accuracy: 95, cooldown: 5, range: 'melee', rangeTiles: 70, description: '向近处敌人发动强力冲撞。' },
+  { id: 'double-edge', name: '舍身一击', type: 'normal', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 70, castTime: 0.4, description: '蓄力后对近处敌人发动全力一击。' },
+  { id: 'swift', name: '高速星星', type: 'normal', category: 'special', power: 60, accuracy: 0, cooldown: 2.5, range: 'ranged', rangeTiles: 400, priority: 1, targetMode: 'all-enemies', areaMultiplier: 0.70, description: '星光散射覆盖范围内的敌人，无视命中率与闪避；每个目标承受70%伤害。' },
   { id: 'hyper-beam', name: '破坏光线', type: 'normal', category: 'special', power: 150, accuracy: 90, cooldown: 10, range: 'ranged', rangeTiles: 450, castTime: 0.6, description: '强力光束，冷却很长。' },
 
   // ── Fire ──
@@ -54,7 +54,7 @@ export const SKILLS: Skill[] = [
 
   // ── Fighting ──
   { id: 'karate-chop', name: '空手劈', type: 'fighting', category: 'physical', power: 50, accuracy: 100, cooldown: 2.5, range: 'melee', rangeTiles: 60, priority: 1, description: '手刀劈砍。' },
-  { id: 'brick-break', name: '瓦割', type: 'fighting', category: 'physical', power: 75, accuracy: 100, cooldown: 4, range: 'melee', rangeTiles: 70, description: '破坏护盾的掌击。' },
+  { id: 'brick-break', name: '瓦割', type: 'fighting', category: 'physical', power: 75, accuracy: 100, cooldown: 4, range: 'melee', rangeTiles: 70, description: '向近处敌人发动有力的掌击。' },
   { id: 'close-combat', name: '近身战', type: 'fighting', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 70, castTime: 0.4, effect: { kind: 'debuff', target: 'self', stat: 'def', stages: -1, chance: 1 }, description: '猛攻但降低自身防御。' },
 
   // ── Poison ──
@@ -72,7 +72,7 @@ export const SKILLS: Skill[] = [
   { id: 'wing-attack', name: '翅膀攻击', type: 'flying', category: 'physical', power: 60, accuracy: 100, cooldown: 2.5, range: 'melee', rangeTiles: 90, description: '用翅膀拍击。' },
   { id: 'drill-peck', name: '啄钻', type: 'flying', category: 'physical', power: 80, accuracy: 100, cooldown: 4, range: 'melee', rangeTiles: 80, description: '旋转喙啄击。' },
   { id: 'air-cutter', name: '空气利刃', type: 'flying', category: 'special', power: 75, accuracy: 95, cooldown: 4, range: 'ranged', rangeTiles: 340, targetMode: 'all-enemies', areaMultiplier: 0.70, effect: { kind: 'status', chance: 0.1 }, description: '风刃横扫敌方全体；每个目标承受70%伤害，且易击中要害。' },
-  { id: 'brave-bird', name: '勇鸟猛击', type: 'flying', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 100, castTime: 0.4, description: '猛烈俯冲，有反伤。' },
+  { id: 'brave-bird', name: '勇鸟猛击', type: 'flying', category: 'physical', power: 120, accuracy: 100, cooldown: 7, range: 'melee', rangeTiles: 100, castTime: 0.4, description: '蓄力后向近处敌人猛烈俯冲。' },
 
   // ── Psychic ──
   { id: 'confusion', name: '念力', type: 'psychic', category: 'special', power: 50, accuracy: 100, cooldown: 2.5, range: 'ranged', rangeTiles: 320, description: '念力攻击。' },

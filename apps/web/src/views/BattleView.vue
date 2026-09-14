@@ -32,7 +32,7 @@ const totalExp = ref(0);
 const pixiRef = ref<InstanceType<typeof PixiBattleViewport> | null>(null);
 // BattleStage is the only gameplay renderer for wild and PvP battles.
 const gpuUnavailable = ref<string | null>(null);
-const pixiStatus = ref(enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId) ? 'GPU world-to-battle transition' : '正在初始化 GPU battle renderer…');
+const pixiStatus = ref(enteredFromGpuWorld && isGpuWorldMapId(enteredFromGpuWorld.mapId) ? '正在进入战斗…' : '正在初始化 战斗场景…');
 const returningToWorld = ref(false);
 let raf = 0;
 
@@ -40,11 +40,11 @@ const sim = computed<BattleSim | null>(() => battle.sim);
 function onPixiReady(): void {
   if (battle.phase === 'loading') battle.assetsReady = true;
   gpuUnavailable.value = null;
-  pixiStatus.value = 'GPU 标准品质 renderer';
+  pixiStatus.value = '战斗场景已就绪';
 }
 function onPixiUnavailable(message: string): void {
   gpuUnavailable.value = message;
-  pixiStatus.value = `GPU 战斗渲染不可用：${message}`;
+  pixiStatus.value = `战斗场景加载失败：${message}`;
 }
 function activeRendererSettled(): boolean {
   return !!gpuUnavailable.value || (pixiRef.value?.isPresentationSettled() ?? false);
@@ -335,7 +335,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
     <div class="battle-toolbar" v-if="battle.phase === 'fighting'">
       <span class="bold tiny">{{ running ? '自动战斗中' : ended ? '战斗结束' : '战斗已暂停' }}</span>
       <div class="arena-controls">
-        <button class="sm ghost" :disabled="ended" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }}x</button>
+        <button class="sm ghost" :disabled="ended" @click="speed = speed === 1 ? 2 : speed === 2 ? 3 : 1">{{ speed }} 倍</button>
         <button class="sm ghost" :disabled="ended" @click="running = !running">{{ running ? '暂停' : '继续' }}</button>
         <button class="sm ghost" :disabled="ended" @click="skip">跳过</button>
       </div>
@@ -351,7 +351,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
       <div class="arena" :class="{ over: isOver }">
         <BattleWeatherBadge v-if="battle.phase !== 'loading'" :weather="presentation?.weather" />
         <PixiBattleViewport v-if="!skipped" ref="pixiRef" :presentation="presentation ?? undefined" :cues="presentationCues" :biome="biome" require-assets @ready="onPixiReady" @unavailable="onPixiUnavailable" />
-        <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
+        <div v-if="gpuUnavailable" class="gpu-unavailable">战斗场景加载失败：{{ gpuUnavailable }}</div>
         <div class="tactic-ribbon player" v-if="playerTactic" :class="playerTactic.tone" :title="playerTactic.description"><span>我方 · {{ playerTactic.label }}</span><small>{{ playerTactic.description }}</small></div>
         <div class="tactic-ribbon enemy" v-if="enemyTactic" :class="enemyTactic.tone" :title="enemyTactic.description"><span>敌方 · {{ enemyTactic.label }}</span><small>{{ enemyTactic.description }}</small></div>
       </div>
@@ -373,20 +373,20 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
               <div class="damage-side-head">
                 <span>{{ summary.side === 'player' ? '我方' : '敌方' }}</span>
                 <strong>{{ summary.total }} 伤害</strong>
-                <span>{{ summary.dps.toFixed(1) }} DPS</span>
+                <span>{{ summary.dps.toFixed(1) }} 每秒伤害</span>
               </div>
               <div v-for="(member, rank) in summary.members" :key="member.uid" class="damage-member">
                 <div class="damage-member-top">
                   <span class="damage-rank">{{ rank + 1 }}</span>
                   <span class="ell">{{ member.name }}</span>
-                  <b>{{ member.damage }}</b><small>{{ member.dps.toFixed(1) }}/s</small>
+                  <b>{{ member.damage }}</b><small>{{ member.dps.toFixed(1) }}/秒</small>
                 </div>
                 <div class="contribution-line"><span class="role-pill">{{ member.roleLabel }}</span><span>{{ member.contribution }}</span></div>
                 <div class="damage-bar"><span :style="{ width: `${Math.round(member.share * 100)}%` }"></span></div>
                 <div class="recap-metrics">
                   <span>基础 {{ member.basicDamage }}</span><span>技 {{ member.skillDamage }}</span>
                   <span>承 {{ member.damageTaken }}</span><span>疗 {{ member.healing }}</span>
-                  <span v-if="member.shield">盾 {{ member.shield }}</span><span v-if="member.control">控 {{ member.control.toFixed(1) }}s</span>
+                  <span v-if="member.shield">盾 {{ member.shield }}</span><span v-if="member.control">控 {{ member.control.toFixed(1) }} 秒</span>
                   <span v-if="member.interrupts">断 {{ member.interrupts }}</span><span v-if="member.knockouts">击倒 {{ member.knockouts }}</span>
                   <span>命中 {{ hitRate(member) }}</span>
                 </div>
@@ -411,7 +411,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
                 <div class="row center" style="gap:4px">
                   <TypeBadge v-for="t in getSpecies(w.speciesId).types" :key="t" :type="t" size="sm" />
                 </div>
-                <div class="tiny muted">Lv.{{ w.level }} · {{ PERSONALITY_MAP[w.personality ?? 'cool']?.name }}型</div>
+                <div class="tiny muted">等级 {{ w.level }} · {{ PERSONALITY_MAP[w.personality ?? 'cool']?.name }}型</div>
               </div>
               <button class="gold sm" :disabled="game.rosterFull" @click="capture(w.uid)">捕捉</button>
             </div>
@@ -419,7 +419,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           <div v-if="expResults.length" class="exp-list">
             <div v-for="r in expResults" :key="r.uid" class="tiny">
               {{ instanceName(r.uid) }}：
-              <span v-if="r.toLevel>r.fromLevel">Lv.{{ r.fromLevel }} -> Lv.{{ r.toLevel }} 🎉</span>
+              <span v-if="r.toLevel>r.fromLevel">等级 {{ r.fromLevel }} -> 等级 {{ r.toLevel }} 🎉</span>
               <span v-else>获得经验</span>
               <span v-if="r.learnedSkills.length"> · 学会了 {{ r.learnedSkills.map(skillName).join('、') }}</span>
             </div>
@@ -434,7 +434,7 @@ const showCapture = computed(() => ended.value && battle.mode === 'pve' && sim.v
           <div v-if="expResults.length" class="exp-list" style="margin:10px 0">
             <div v-for="r in expResults" :key="r.uid" class="tiny">
               {{ instanceName(r.uid) }}：
-              <span v-if="r.toLevel>r.fromLevel">Lv.{{ r.fromLevel }} -> Lv.{{ r.toLevel }} 🎉</span>
+              <span v-if="r.toLevel>r.fromLevel">等级 {{ r.fromLevel }} -> 等级 {{ r.toLevel }} 🎉</span>
               <span v-else>获得经验</span>
             </div>
           </div>

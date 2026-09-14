@@ -164,6 +164,7 @@ export type PassiveKind =
   | 'hpRegen' | 'lifesteal' | 'cdReduction' | 'evasion' | 'accuracy';
 
 export interface PassiveEffect {
+  sameTypeOnly?: boolean;
   kind: PassiveKind;
   stat?: StatKey;
   mult?: number; // e.g. 1.1 = +10%
@@ -195,11 +196,12 @@ export type AbilityKind =
   | 'statusRecovery' | 'critImmunity' | 'flinchImmunity' | 'endure' | 'accuracyBoost'
   | 'contactShield' | 'secondaryBoost' | 'indirectImmunity' | 'statusReflect'
   | 'cooldownPressure' | 'lowHpDefense' | 'cooldownRhythm' | 'openingSpeed'
-  | 'shieldRecovery' | 'counterInstinct' | 'custom';
+  | 'shieldRecovery' | 'counterInstinct' | 'hitWeaken' | 'targetBoost' | 'basicTempo' | 'custom';
 
 export type WeatherKind = 'sun' | 'rain' | 'snow' | 'sand';
 export interface BattleWeather { kind: WeatherKind; remaining: number; source: string; suppressed: boolean; }
 export interface AbilityEffect {
+  contactOnly?: boolean;
   /** 无战场天气时条件不满足，不能退化为常驻加成。 */
   requiresWeather?: WeatherKind;
   weather?: WeatherKind;

@@ -1,5 +1,6 @@
 import { DEFAULT_SKILL_CAST_PRESENTATION, SKILL_CAST_PRESENTATION_BY_SKILL_ID } from './battle-art.ts';
 import { SKILL_VISUAL_RECIPE_MAP } from './skill-visuals.ts';
+export const TACTICAL_COOLDOWN_SCALE = 1.35;
 
 /** 引擎与表现共用动作占用，不允许高速省略起手、释放和收招。 */
 export function battleActionTiming(skillId?: string, normalRanged = false) {

@@ -41,7 +41,7 @@ async function resetBattle(): Promise<void> {
   sim = nextSim;
   stage.applyBattleSnapshot(presentation);
   simulationTime.value = 0;
-  status.value = `${biomeId.value} 环境样板就绪：3v1 自动战斗，Pixi 仅消费 presentation snapshot 与 directed cues。`;
+  status.value = '场景已就绪：三对一自动战斗。';
 }
 
 function toggle(): void { running.value = !running.value; }
@@ -59,7 +59,7 @@ function frame(now: number): void {
     simulationTime.value = sim.state.time;
     if (sim.isOver && presentationFrame.isCaughtUp && stage.isSettled()) {
       running.value = false;
-      status.value = '战斗已结束；规则结果由 BattleSim 决定，Pixi 仅完成了对应演出。';
+      status.value = '战斗已结束。';
     }
   }
   raf = requestAnimationFrame(frame);
@@ -88,25 +88,25 @@ onUnmounted(() => {
 <template>
   <section class="battle-stage-page">
     <header>
-      <p class="eyebrow">VISUAL RUNTIME · STAGE 3</p>
-      <h1>Pixi BattleStage 垂直切片</h1>
-      <p>独立样板页：不替换正式 BattleView，不接触 Pinia 或 engine 内部状态。Vue 只提供控制与说明。</p>
+      <p class="eyebrow">战斗演示</p>
+      <h1>战斗场景预览</h1>
+      <p>观察自动战斗与技能效果，可切换场景、暂停或调整播放速度。</p>
     </header>
 
     <div class="controls">
       <button type="button" @click="toggle">{{ running ? '暂停' : '开始' }}</button>
-      <button type="button" @click="resetBattle">重置 3v1</button>
-      <label>速度 <select v-model.number="speed"><option :value="1">1x</option><option :value="2">2x</option><option :value="3">3x</option></select></label>
-      <label>环境 <select v-model="biomeId"><option value="grass">grass</option><option value="cave">cave</option><option value="water">water</option><option value="dragon">dragon</option><option value="arena">arena</option></select></label>
-      <span>模拟时间 {{ simulationTime.toFixed(1) }}s · 标准品质</span>
+      <button type="button" @click="resetBattle">重置三对一</button>
+      <label>速度 <select v-model.number="speed"><option :value="1">1 倍</option><option :value="2">2 倍</option><option :value="3">3 倍</option></select></label>
+      <label>环境 <select v-model="biomeId"><option value="grass">草地</option><option value="cave">洞窟</option><option value="water">水域</option><option value="dragon">龙穴</option><option value="arena">竞技场</option></select></label>
+      <span>模拟时间 {{ simulationTime.toFixed(1) }} 秒 · 标准品质</span>
     </div>
 
-    <div ref="viewport" class="viewport" aria-label="Pixi BattleStage vertical slice"></div>
+    <div ref="viewport" class="viewport" aria-label="战斗场景预览"></div>
     <p class="status">{{ status }}</p>
     <ul>
-      <li>已实现：grass / cave / water / dragon / arena 配置化 biome、CombatantView、camera rig、presentation-only hit-stop。</li>
-      <li>程序化 primitives：projectile/trail、impact、beam、burst、ring，以及 config-gated scorch / frost / spark / splash / spore / debris / rune-pulse。</li>
-      <li>该页面隔离验证正式 Pixi BattleStage，不读取或改写玩家存档。</li>
+      <li>可预览草地、洞窟、水域、龙穴与竞技场。</li>
+      <li>观察角色出招、技能飞行与命中效果。</li>
+      <li>此处战斗不影响玩家存档。</li>
     </ul>
   </section>
 </template>

@@ -6,11 +6,11 @@ import type { Item } from '@pokemon-online/shared';
  * helps training without being a forced grind.
  */
 export const ITEMS: Item[] = [
-  { id: 'potion', name: '伤药', description: '回复一只宝可梦50HP。', kind: 'consumable', effect: { kind: 'heal', magnitude: 50, target: 'pokemon' }, price: 100 },
-  { id: 'super-potion', name: '好伤药', description: '回复一只宝可梦120HP。', kind: 'consumable', effect: { kind: 'heal', magnitude: 120, target: 'pokemon' }, price: 300 },
-  { id: 'hyper-potion', name: '厉害伤药', description: '回复一只宝可梦200HP。', kind: 'consumable', effect: { kind: 'heal', magnitude: 200, target: 'pokemon' }, price: 800 },
-  { id: 'max-potion', name: '全满药', description: '回满一只宝可梦HP。', kind: 'consumable', effect: { kind: 'heal', magnitude: 9999, target: 'pokemon' }, price: 1500 },
-  { id: 'revive', name: '活力碎片', description: '回复濒死宝可梦一半HP。', kind: 'consumable', effect: { kind: 'revive', magnitude: 0.5, target: 'pokemon' }, price: 500 },
+  { id: 'potion', name: '伤药', description: '回复一只宝可梦50生命。', kind: 'consumable', effect: { kind: 'heal', magnitude: 50, target: 'pokemon' }, price: 100 },
+  { id: 'super-potion', name: '好伤药', description: '回复一只宝可梦120生命。', kind: 'consumable', effect: { kind: 'heal', magnitude: 120, target: 'pokemon' }, price: 300 },
+  { id: 'hyper-potion', name: '厉害伤药', description: '回复一只宝可梦200生命。', kind: 'consumable', effect: { kind: 'heal', magnitude: 200, target: 'pokemon' }, price: 800 },
+  { id: 'max-potion', name: '全满药', description: '回复一只宝可梦9999点生命。', kind: 'consumable', effect: { kind: 'heal', magnitude: 9999, target: 'pokemon' }, price: 1500 },
+  { id: 'revive', name: '活力碎片', description: '回复濒死宝可梦一半生命。', kind: 'consumable', effect: { kind: 'revive', magnitude: 0.5, target: 'pokemon' }, price: 500 },
   { id: 'antidote', name: '解毒药', description: '治愈中毒。', kind: 'consumable', effect: { kind: 'cure', statusCured: 'poison', target: 'pokemon' }, price: 50 },
   { id: 'paralyze-heal', name: '麻痹治愈药', description: '治愈麻痹。', kind: 'consumable', effect: { kind: 'cure', statusCured: 'paralyze', target: 'pokemon' }, price: 100 },
   { id: 'burn-heal', name: '灼伤治愈药', description: '治愈灼伤。', kind: 'consumable', effect: { kind: 'cure', statusCured: 'burn', target: 'pokemon' }, price: 100 },

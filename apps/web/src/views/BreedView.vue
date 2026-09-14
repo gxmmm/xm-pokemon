@@ -41,8 +41,8 @@ function nameOf(inst: PokemonInstance | null | undefined): string {
 /** Tags showing which battle teams a mon is in (warns before breeding it away). */
 function teamTags(uid: string): string[] {
   const tags: string[] = [];
-  if (game.save!.pveTeam.includes(uid)) tags.push('PVE');
-  if (game.save!.pvpTeam.includes(uid)) tags.push('PVP');
+  if (game.save!.pveTeam.includes(uid)) tags.push('探索阵容');
+  if (game.save!.pvpTeam.includes(uid)) tags.push('对战阵容');
   return tags;
 }
 
@@ -163,7 +163,7 @@ const IV_LABEL: Record<keyof IV, string> = { hp: '生命', atk: '攻击', def: '
         <div class="center col" style="margin:8px 0;gap:4px">
           <PokemonSprite :species-id="result.offspring.speciesId" :size="84" />
           <div class="bold">{{ getSpecies(result.offspring.speciesId).name }}</div>
-          <span class="chip">Lv.{{ result.offspring.level }} · {{ PERSONALITY_MAP[result.offspring.personality]?.name }}型 · 成长 ×{{ result.offspring.growth }}</span>
+          <span class="chip">等级 {{ result.offspring.level }} · {{ PERSONALITY_MAP[result.offspring.personality]?.name }}型 · 成长 ×{{ result.offspring.growth }}</span>
           <div class="tiny" v-if="overCeilingStats(result.offspring).length">
             <span class="gold-txt">资质超限：{{ overCeilingStats(result.offspring).map(k=>IV_LABEL[k]).join('、') }}</span>
           </div>

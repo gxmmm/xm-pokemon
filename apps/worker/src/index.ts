@@ -58,7 +58,7 @@ export default {
           return json(ok({ status: 'ok', app: env.APP_NAME ?? 'Pokemon Online', time: Date.now() }));
 
         case '/api/register': {
-          if (request.method !== 'POST') return fail('Method not allowed', 405);
+          if (request.method !== 'POST') return fail('不支持此操作', 405);
           const body = await readBody<{ username?: string; password?: string }>(request);
           if (!body || !validUsername(body.username ?? '') || !validPassword(body.password ?? '')) {
             return fail('用户名或密码不合法（用户名2-20位，密码至少4位）');
@@ -75,7 +75,7 @@ export default {
         }
 
         case '/api/login': {
-          if (request.method !== 'POST') return fail('Method not allowed', 405);
+          if (request.method !== 'POST') return fail('不支持此操作', 405);
           const body = await readBody<{ username?: string; password?: string }>(request);
           if (!body || !body.username || !body.password) return fail('缺少用户名或密码');
           const row = await getPlayerByUsername(env.DB, body.username);
@@ -111,14 +111,14 @@ export default {
             const body = await readBody<{ save?: PlayerSave }>(request);
             if (!body || !body.save) return fail('缺少存档数据');
             const save = body.save;
-            if (save.version !== SAVE_VERSION) return fail('存档版本已更新，请开始新游戏');
+            if (save.version !== SAVE_VERSION) return fail('此存档无法使用，请开始新游戏');
             save.playerId = player.id;
             save.username = player.username;
             save.updatedAt = Date.now();
             await upsertSave(env.DB, player.id, JSON.stringify(save), save.updatedAt);
             return json(ok({ savedAt: save.updatedAt }));
           }
-          return fail('Method not allowed', 405);
+          return fail('不支持此操作', 405);
         }
 
         case '/api/opponent': {
@@ -126,7 +126,7 @@ export default {
           const player = await authPlayer(env, request);
           if (!player) return fail('未登录', 401);
           const username = url.searchParams.get('username');
-          if (!username) return fail('缺少 username 参数');
+          if (!username) return fail('请填写用户名');
           const target = await getPlayerByUsername(env.DB, username);
           if (!target) return fail('找不到该玩家', 404);
           const saveRow = await getSave(env.DB, target.id);
@@ -149,7 +149,7 @@ export default {
           if (!player) return fail('未登录', 401);
           if (request.method === 'POST') {
             const body = await readBody<{ username?: string }>(request);
-            if (!body?.username) return fail('缺少 username');
+            if (!body?.username) return fail('请填写用户名');
             const target = await getPlayerByUsername(env.DB, body.username);
             if (!target) return fail('找不到该玩家', 404);
             await addFriend(env.DB, player.id, target.username);
@@ -159,15 +159,15 @@ export default {
             const friends = await getFriends(env.DB, player.id);
             return json(ok({ friends }));
           }
-          return fail('Method not allowed', 405);
+          return fail('不支持此操作', 405);
         }
 
         default:
-          return fail('Not found', 404);
+          return fail('未找到请求的内容', 404);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'internal error';
-      return fail('服务器错误: ' + msg, 500);
+      console.error(err);
+      return fail('服务器暂时无法处理请求，请稍后重试', 500);
     }
   },
 };

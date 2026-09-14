@@ -46,17 +46,17 @@ export const PASSIVE_SKILLS: PassiveSkill[] = [
   { id: 'p-fireres', name: '炎之抗', description: '受到火属性伤害 -20%。', tier: 2, effect: { kind: 'typeResist', type: 'fire', mult: 0.8 } },
   { id: 'p-waterres', name: '水之抗', description: '受到水属性伤害 -20%。', tier: 2, effect: { kind: 'typeResist', type: 'water', mult: 0.8 } },
   ...MISSING_ELEMENTAL_PASSIVES,
-  { id: 'p-crit', name: '锐利', description: '要害率 +10%。', tier: 2, effect: { kind: 'crit', mult: 1.1, chance: 0.1 } },
+  { id: 'p-crit', name: '锐利', description: '暴击概率提高10个百分点。', tier: 2, effect: { kind: 'crit', mult: 1.1, chance: 0.1 } },
   { id: 'p-cdr', name: '灵巧', description: '技能冷却速度 +12%。', tier: 2, effect: { kind: 'cdReduction', mult: 0.88 } },
-  { id: 'p-regen', name: '回复', description: '每秒回复少量生命。', tier: 2, effect: { kind: 'hpRegen', magnitude: 0.01 } },
+  { id: 'p-regen', name: '回复', description: '每秒回复相当于自身攻击4%的生命。', tier: 2, effect: { kind: 'hpRegen', magnitude: 0.01 } },
   { id: 'p-lifesteal', name: '吸血', description: '造成伤害的6%转化为生命。', tier: 2, effect: { kind: 'lifesteal', mult: 0.06 } },
-  { id: 'p-evasion', name: '闪避', description: '闪避率 +8%。', tier: 2, effect: { kind: 'evasion', chance: 0.08 } },
+  { id: 'p-evasion', name: '闪避', description: '闪避概率提高8个百分点。', tier: 2, effect: { kind: 'evasion', chance: 0.08 } },
   // tier 3 - powerful
-  { id: 'p-might', name: '蛮力', description: '攻击 +16%，但速度 -5%。', tier: 3, effect: { kind: 'stat', stat: 'atk', mult: 1.16 } },
+  { id: 'p-might', name: '蛮力', description: '攻击提高16%。', tier: 3, effect: { kind: 'stat', stat: 'atk', mult: 1.16 } },
   { id: 'p-fortress', name: '要塞', description: '防御 +16%。', tier: 3, effect: { kind: 'stat', stat: 'def', mult: 1.16 } },
   { id: 'p-vitality', name: '生机', description: '生命上限 +16%。', tier: 3, effect: { kind: 'stat', stat: 'hp', mult: 1.16 } },
   { id: 'p-omnielement', name: '万灵', description: '所有属性招式威力 +10%。', tier: 3, effect: { kind: 'typeBoost', mult: 1.1 } },
-  { id: 'p-adapt', name: '适应', description: '同属性招式威力 +20%。', tier: 3, effect: { kind: 'typeBoost', mult: 1.2 } },
+  { id: 'p-adapt', name: '适应', description: '与自身属性相同的招式威力提高20%。', tier: 3, effect: { kind: 'typeBoost', mult: 1.2, sameTypeOnly: true } },
 ];
 
 export const PASSIVE_MAP: Record<string, PassiveSkill> = Object.fromEntries(

@@ -126,7 +126,7 @@ try {
 
   // Change a setting then immediately exit: the debounce must be flushed once.
   const beforeExit = puts.length;
-  await page.getByRole('button', { name: '2x', exact: true }).click();
+  await page.getByRole('button', { name: '2 倍', exact: true }).click();
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await page.getByRole('button', { name: '确定', exact: true }).click();
   await page.waitForURL('**/login');
@@ -145,7 +145,7 @@ try {
   await page.getByRole('button', { name: '重新读取' }).click();
   await page.waitForURL('**/world');
   await page.goto(`${BASE}/settings`);
-  assert(await page.getByRole('button', { name: '2x', exact: true }).evaluate((el) => el.classList.contains('gold')));
+  assert(await page.getByRole('button', { name: '2 倍', exact: true }).evaluate((el) => el.classList.contains('gold')));
   checks.push('重新登录读取失败可重试；退出前设置从云端恢复');
 
   let releaseWrite!: () => void;
@@ -155,7 +155,7 @@ try {
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await page.getByRole('button', { name: '确定', exact: true }).click();
   await started;
-  await page.getByRole('button', { name: '3x', exact: true }).click();
+  await page.getByRole('button', { name: '3 倍', exact: true }).click();
   releaseWrite();
   await page.waitForURL('**/login');
   await page.waitForTimeout(1400);

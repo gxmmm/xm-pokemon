@@ -22,7 +22,7 @@ const hpColor = computed(() => hpRatio.value > 0.5 ? '#4caf50' : hpRatio.value >
       <div class="pcard-info">
         <div class="between">
           <span class="bold" :style="{ fontSize: compact ? '13px' : undefined }">{{ instance.nickname || species.name }}</span>
-          <span class="chip sm-chip">Lv.{{ instance.level }}</span>
+          <span class="chip sm-chip">等级 {{ instance.level }}</span>
         </div>
         <div class="row" style="gap:4px;margin:2px 0;flex-wrap:wrap">
           <TypeBadge v-for="t in species.types" :key="t" :type="t" size="sm" />
@@ -32,7 +32,7 @@ const hpColor = computed(() => hpRatio.value > 0.5 ? '#4caf50' : hpRatio.value >
           <div class="bar hp-bar" style="height:8px"><span :style="{ width: (hpRatio*100)+'%', background: hpColor }"></span></div>
           <div class="tiny muted between">
             <span>{{ instance.currentHp }}/{{ maxHp(instance) }}</span>
-            <span>EXP {{ expPct }}%</span>
+            <span>经验 {{ expPct }}%</span>
           </div>
         </template>
         <div v-else-if="compact && showHp !== false" class="bar hp-bar" style="height:5px;margin-top:2px"><span :style="{ width: (hpRatio*100)+'%', background: hpColor }"></span></div>

@@ -57,6 +57,35 @@ try {
   await page.getByRole('button', { name: /就决定是你了/ }).click();
   await page.waitForURL('**/world');
   await page.evaluate(async (url) => { window.__PLAYABLE_FIXTURE__ = await import(/* @vite-ignore */ url); }, '/@fs/' + resolve('scripts/playable-battle-browser-fixture.ts').replaceAll('\\', '/'));
+  if (process.argv.includes('--copy-only')) {
+    const uid = await page.evaluate(()=>window.__PLAYABLE_FIXTURE__.prepareCollection());
+    await page.setViewportSize({width:1366,height:768});
+    const visited: string[] = [];
+    for (const path of ['/team','/breed','/pokedex','/settings','/pvp',`/pokemon/${uid}`]) {
+      await page.evaluate(path=>window.__PLAYABLE_FIXTURE__.visit(path),path);
+      const headings: Record<string,string> = {'/team':'队伍 / 阵容','/breed':'炼妖（梦幻式）','/pokedex':'宝可梦图鉴','/settings':'设置','/pvp':'三对三友谊切磋'};
+      if(headings[path]) await page.getByRole('heading',{name:headings[path],exact:true}).waitFor();
+      else await page.locator('.pokemon-detail-page').waitFor();
+      const text = await page.locator('body').innerText();
+      assert(!/\b(?:HP|EXP|DPS|PVE|PVP|CD)\b|旧版|新版|迭代|改为|已取消/.test(text),path+' 只展示当前中文说明');
+      visited.push(path);
+    }
+    const icons=page.locator('.large-skill-grid .tip-wrap');
+    await icons.first().waitFor();
+    assert(await icons.count()>1);
+    for (const index of [0,1]) {
+      await icons.nth(index).hover();
+      const tip=page.getByRole('tooltip'); await tip.waitFor();
+      const text=await tip.innerText(); assert(text.includes('基础冷却') && !/\bCD\b/.test(text));
+      const box=await tip.boundingBox(); assert(box && box.x>=0 && box.y>=0 && box.x+box.width<=1366 && box.y+box.height<=768);
+      if(index===1) await page.screenshot({path:resolve(OUTPUT,'current-copy.png'),timeout:60000});
+      await page.mouse.move(0,0); await tip.waitFor({state:'hidden'});
+    }
+    assert.deepEqual(errors,[]);
+    await writeFile(resolve(OUTPUT,'copy-report.json'),JSON.stringify({passed:true,visited,errors},null,2));
+    console.log('✓ 队伍、炼妖、图鉴、设置、切磋与详情中文文案及悬停边界');
+    return;
+  }
   if (process.argv.includes('--weather-only')) {
     await page.setViewportSize({width:1440,height:900});
     await page.evaluate(() => window.__PLAYABLE_FIXTURE__.prepareWeather());
@@ -128,8 +157,8 @@ try {
   await page.getByRole('button', { name: '继续', exact: true }).click();
   checks.push('世界与战斗在1366×768、1440×900、1920×1080连续调整窗口后铺满四边，画布真实尺寸更新且仅一个实例');
   console.log('playable: checking controls and real simulation speed');
-  await page.getByRole('button', { name: '3x', exact: true }).waitFor();
-  await page.getByRole('button', { name: '3x', exact: true }).click();
+  await page.getByRole('button', { name: '3 倍', exact: true }).waitFor();
+  await page.getByRole('button', { name: '3 倍', exact: true }).click();
   const speedDeltas: number[] = [];
   for (const speed of [1, 2, 3]) {
     await page.evaluate(() => window.__PLAYABLE_FIXTURE__.resetSpeedSamples());
@@ -140,8 +169,8 @@ try {
     speedDeltas.push(rate);
     await page.getByRole('button', { name: `${speed}x`, exact: true }).click();
   }
-  await page.getByRole('button', { name: '1x', exact: true }).click();
-  await page.getByRole('button', { name: '2x', exact: true }).waitFor();
+  await page.getByRole('button', { name: '1 倍', exact: true }).click();
+  await page.getByRole('button', { name: '2 倍', exact: true }).waitFor();
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   const paused = (await read()).time;
   await page.waitForTimeout(350);
@@ -164,7 +193,7 @@ try {
     console.log('playable: ' + action);
     await prepare(action === 'loss' ? 'loss' : 'win', 2);
     const before = await read();
-    await page.getByRole('button', { name: '2x', exact: true }).waitFor();
+    await page.getByRole('button', { name: '2 倍', exact: true }).waitFor();
     await page.getByRole('button', { name: '跳过', exact: true }).click();
     await page.locator('.modal-backdrop').waitFor({ timeout: 3000 });
     const finished = await read();

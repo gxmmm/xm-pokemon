@@ -3,7 +3,7 @@ import { rangeInCells, tacticalSkillsForInstance } from '@pokemon-online/engine'
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
+import { TACTICAL_COOLDOWN_SCALE, getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from './PokemonSprite.vue';
 import TypeBadge from './TypeBadge.vue';
@@ -79,7 +79,7 @@ const activeDisplay = computed(() => {
       char: sk?.name?.[0] ?? '?',
       color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A',
       level,
-      tip: skillTip(sk && sid === species.value?.basicSkillId ? { ...sk, cooldown: species.value.basicSkillCooldown } : sk) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
+      tip: skillTip(sk, sk && sid === species.value?.basicSkillId ? species.value.basicSkillCooldown : undefined) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
     });
   };
   push(species.value.basicSkillId, -1);
@@ -114,7 +114,7 @@ const passiveDisplay = computed(() => {
 const RANGE_LABEL: Record<string, string> = { melee: '近战', ranged: '远程', adaptive: '自适应' };
 const TARGET_LABEL: Record<string, string> = { nearest: '最近', weakest: '最弱', threat: '威胁', random: '随机' };
 const BIAS_LABEL: Record<string, string> = { power: '重威力', speed: '重速攻', utility: '重辅助', balanced: '均衡' };
-const TRIGGER_LABEL: Record<string, string> = { onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时', onTurnStart: '回合开始时', onFaint: '击倒对手时', onSwitch: '撤退时' };
+const TRIGGER_LABEL: Record<string, string> = { onLowHp: '生命不高于三分之一时', onHit: '被击中时', onAttack: '攻击命中时', passive: '持续生效', onEnter: '登场时', onTurnStart: '战斗中定时触发', onFaint: '击倒对手时', onSwitch: '撤退时' };
 
 function personalityTip(p: Personality): string {
   return [p.description,
@@ -124,13 +124,13 @@ function personalityTip(p: Personality): string {
   ].join('\n');
 }
 function abilityTip(a: Ability): string { return `${a.description}\n触发：${TRIGGER_LABEL[a.trigger] ?? a.trigger}`; }
-function skillTip(s: Skill | undefined): string {
+function skillTip(s: Skill | undefined, cooldown = s ? s.cooldown * TACTICAL_COOLDOWN_SCALE : 0): string {
   if (!s) return '';
   const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
   const target = s.targetMode === 'all-enemies'
     ? `覆盖区域内敌人 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
-    : '敌方单体';
-  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格 · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
+    : s.effect?.target === 'ally' ? '友方单体（含自身）' : s.category === 'status' && s.effect?.target === 'self' ? '自身' : '敌方单体';
+  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · 基础冷却 ${Number(cooldown.toFixed(2))} 秒（实际受速度、被动与特性影响）\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格 · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + ' 秒' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 </script>
 
@@ -142,18 +142,18 @@ function skillTip(s: Skill | undefined): string {
       <div class="grow">
         <div class="between">
           <span class="bold" style="font-size:15px">{{ inst.nickname || species.name }}</span>
-          <span class="tiny muted">Lv.{{ inst.level }} · #{{ String(species.id).padStart(3,'0') }}</span>
+          <span class="tiny muted">等级 {{ inst.level }} · #{{ String(species.id).padStart(3,'0') }}</span>
         </div>
         <div class="row" style="gap:4px;margin:3px 0;flex-wrap:wrap">
           <TypeBadge v-for="t in species.types" :key="t" :type="t" size="sm" />
           <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip sm-chip">{{ personality?.name }}型</span></Tip>
           <span class="chip sm-chip">{{ isBred?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
           <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip sm-chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
-          <span class="chip sm-chip" v-if="game.save!.pveTeam.includes(inst.uid)">PVE</span>
-          <span class="chip sm-chip" v-if="game.save!.pvpTeam.includes(inst.uid)">PVP</span>
+          <span class="chip sm-chip" v-if="game.save!.pveTeam.includes(inst.uid)">探索</span>
+          <span class="chip sm-chip" v-if="game.save!.pvpTeam.includes(inst.uid)">对战</span>
         </div>
         <div class="bar exp-bar" style="height:6px"><span :style="{width:expPct+'%'}"></span></div>
-        <div class="tiny muted">HP {{ inst.currentHp }}/{{ maxHp(inst) }} · EXP {{ expPct }}%</div>
+        <div class="tiny muted">生命 {{ inst.currentHp }}/{{ maxHp(inst) }} · 经验 {{ expPct }}%</div>
       </div>
     </div>
 
@@ -176,7 +176,7 @@ function skillTip(s: Skill | undefined): string {
         </div>
       </div>
       <div style="flex:1;min-width:0">
-        <div class="sect">属性 <span class="muted" style="font-weight:400">当前值·hover看计算</span></div>
+        <div class="sect">属性 <span class="muted" style="font-weight:400">当前值·悬停查看计算</span></div>
         <div class="stat-mini">
           <div v-for="r in statRows" :key="r.key">
             <span class="muted">{{ r.label }}</span>
@@ -189,7 +189,7 @@ function skillTip(s: Skill | undefined): string {
     </div>
 
     <!-- 主动技能池（图标网格，已学优先，未学置灰） -->
-          <div class="sect">主动技能 <span class="muted" style="font-weight:400">（已学优先·未学置灰·hover看效果）</span></div>
+          <div class="sect">主动技能 <span class="muted" style="font-weight:400">（已学优先·未学置灰·悬停查看效果）</span></div>
     <div class="skill-icon-grid">
       <Tip v-for="s in activeDisplay" :key="s.id" :text="s.tip">
         <div class="skill-ic" :class="{ dim: !s.owned }" :style="{ background: s.color }"><span>{{ s.char }}</span></div>

@@ -1,4 +1,4 @@
-import { skillHitChance, damageReduction } from './combat-modifiers.ts';
+import { skillHitChance, damageReduction, targetDamageBoost } from './combat-modifiers.ts';
 import type { BattleCombatant, Skill, TypeName } from '@pokemon-online/shared';
 import { typeMultiplier, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, dmgTypeMult } from '@pokemon-online/config';
 import type { RNG } from './rng.ts';
@@ -45,7 +45,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     if (immuneAbility.effect.magnitude && immuneAbility.effect.magnitude > 0 && immuneAbility.effect.magnitude <= 1) {
       // absorb: heal defender by fraction of maxHp
       result.healed = roundCombatAmount(defender.maxHp * immuneAbility.effect.magnitude);
-      log.push(`${defender.name} 吸收了${t}属性攻击，回复了HP！`);
+      log.push(`${defender.name} 吸收了${t}属性攻击，回复了生命！`);
     } else {
       log.push(`${defender.name} 免疫了${t}属性攻击！`);
     }
@@ -76,7 +76,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
     for (const pid of attacker.passiveSkills) {
       const p = PASSIVE_MAP[pid];
       if (!p) continue;
-      if (p.effect.kind === 'typeBoost') {
+      if (p.effect.kind === 'typeBoost' && (!p.effect.sameTypeOnly || attacker.types.includes(t))) {
         if (!p.effect.type || p.effect.type === t) typeBoost *= p.effect.mult ?? 1;
       }
     }
@@ -116,7 +116,7 @@ export function computeDamage(attacker: BattleCombatant, defender: BattleCombata
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg = Math.round(dmg * 0.5);
 
   // 属性克制按统一曲线缩放，基础招式同样参与克制与免疫。
-  dmg = Math.round(dmg * dmgTypeMult(eff) * damageReduction(defender, skill));
+  dmg = Math.round(dmg * dmgTypeMult(eff) * damageReduction(defender, skill) * targetDamageBoost(attacker, defender));
   // Counter Instinct empowers only the next damaging active skill. The simulator
   // consumes the flag after a successful hit, keeping this function pure.
   if ((attacker.counterInstinctUntil ?? 0) > 0) dmg = Math.round(dmg * 1.15);

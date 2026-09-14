@@ -74,8 +74,8 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
 
         <div v-if="tab==='roster'">
           <div class="tabs sub-tabs">
-            <button :class="{ active: activeTeam==='pve' }" @click="activeTeam='pve'">PVE</button>
-            <button :class="{ active: activeTeam==='pvp' }" @click="activeTeam='pvp'">PVP</button>
+            <button :class="{ active: activeTeam==='pve' }" @click="activeTeam='pve'">探索</button>
+            <button :class="{ active: activeTeam==='pvp' }" @click="activeTeam='pvp'">对战</button>
           </div>
           <div class="row" style="gap:8px;margin:10px 0">
             <div v-for="i in TEAM_SIZE" :key="i" class="slot" @click="sel[i-1] && select(sel[i-1]!)">
@@ -83,7 +83,7 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
               <template v-if="sel[i-1] && instanceOf(sel[i-1])">
                 <PokemonSprite :species-id="instanceOf(sel[i-1])!.speciesId" :size="44" />
                 <div class="tiny bold">{{ nameOf(sel[i-1]) }}</div>
-                <div class="tiny muted">Lv.{{ instanceOf(sel[i-1])!.level }}</div>
+                <div class="tiny muted">等级 {{ instanceOf(sel[i-1])!.level }}</div>
                 <button class="sm ghost" @click.stop="toggle(sel[i-1]!)">移除</button>
               </template>
               <template v-else><div class="empty-slot tiny muted">空位</div></template>
@@ -96,7 +96,7 @@ function resetFormation(): void { game.setFormation(defaultFormation()); }
         </div>
 
         <div v-else>
-          <p class="tiny muted">选槽位→点起始区格子摆放（PVE/PVP 共用）。</p>
+          <p class="tiny muted">选槽位→点起始区格子摆放（探索与对战共用）。</p>
           <div class="row" style="gap:8px;margin:8px 0">
             <button v-for="i in TEAM_SIZE" :key="i" class="form-slot-btn" :class="{ active: formSlot===i-1 }" @click="formSlot=i-1">
               <span class="ord">{{ i }}</span>

@@ -1,5 +1,8 @@
 /** 仅影响 AI 选择，不改变伤害、动作时间或命中事实。 */
 export const BATTLE_DECISION = {
+  abilityReadyHorizon: 2,
+  immuneTargetPenalty: 40,
+  targetAbilityWeight: 12,
   motionHorizon: .45,
   movingCoverageFloor: .35,
   riskCoverageAllowance: .35,

@@ -37,8 +37,8 @@ const map = computed(() => getMap(game.save!.currentMapId));
 const gpuUnavailable = ref<string | null>(null);
 const pixiStatus = ref(
   returnedFromGpuBattle && isGpuWorldMapId(returnedFromGpuBattle.mapId)
-    ? '正在恢复 GPU 世界 renderer…'
-    : isGpuWorldMapId(map.value.id) ? `正在初始化 GPU ${map.value.name} renderer…` : 'GPU 世界场景不可用',
+    ? '正在返回世界…'
+    : isGpuWorldMapId(map.value.id) ? `正在加载${map.value.name}…` : '世界场景无法加载',
 );
 const pixiWorldRef = ref<InstanceType<typeof PixiWorldViewport> | null>(null);
 const gpuWorldScene = computed(() => isGpuWorldMapId(map.value.id) ? WORLD_SCENE_BY_MAP_ID[map.value.id] : undefined);
@@ -47,7 +47,7 @@ const worldEntities = computed<WorldEntityRenderSnapshot[]>(() => [
 ]);
 async function onPixiWorldReady(): Promise<void> {
   gpuUnavailable.value = null;
-  pixiStatus.value = `GPU ${map.value.name} 标准品质 renderer`;
+  pixiStatus.value = `${map.value.name}已就绪`;
   if (returnedFromGpuBattle?.mapId === map.value.id && isGpuWorldMapId(map.value.id)) {
     await nextTick();
     await pixiWorldRef.value?.playTransition({ kind: 'biome-crossfade', durationMs: 260, color: '#0b2430' });
@@ -55,7 +55,7 @@ async function onPixiWorldReady(): Promise<void> {
 }
 function onPixiWorldUnavailable(message: string): void {
   gpuUnavailable.value = message;
-  pixiStatus.value = `GPU 世界渲染不可用：${message}`;
+  pixiStatus.value = `世界场景加载失败：${message}`;
 }
 async function enterBattleRoute(): Promise<void> {
   // Route handoff transports visual intent only. Battle facts have already been
@@ -74,11 +74,11 @@ const visitedSet = computed(() => new Set(game.save?.visitedMaps ?? []));
 watch(gpuWorldScene, (scene) => {
   gpuUnavailable.value = null;
   if (scene) {
-    pixiStatus.value = `正在初始化 GPU ${map.value.name} renderer…`;
+    pixiStatus.value = `正在加载${map.value.name}…`;
     return;
   }
-  gpuUnavailable.value = '当前地图缺少 GPU Scene Pack';
-  pixiStatus.value = `GPU 世界渲染不可用：${gpuUnavailable.value}`;
+  gpuUnavailable.value = '当前地图资源不可用';
+  pixiStatus.value = `世界场景加载失败：${gpuUnavailable.value}`;
 });
 
 // Render-time float position, interpolated between tiles for smooth walking.
@@ -259,8 +259,8 @@ watch(() => game.save?.position, () => {
 
     <div class="canvas-wrap">
       <PixiWorldViewport v-if="gpuWorldScene" ref="pixiWorldRef" :scene="gpuWorldScene" :entities="worldEntities" @ready="onPixiWorldReady" @unavailable="onPixiWorldUnavailable" />
-      <div v-else class="gpu-unavailable">GPU 世界场景不可用。</div>
-      <div v-if="gpuUnavailable" class="gpu-unavailable">GPU 世界渲染不可用：{{ gpuUnavailable }}</div>
+      <div v-else class="gpu-unavailable">世界场景无法加载。</div>
+      <div v-if="gpuUnavailable" class="gpu-unavailable">世界场景加载失败：{{ gpuUnavailable }}</div>
     </div>
 
     <!-- crossing transition overlay -->

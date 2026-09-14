@@ -13,7 +13,7 @@ const hud = computed(() => combatHud(props.combatant, props.time, props.interrup
     <div class="mc-head">
       <span class="mc-avatar" :style="avatarStyle"><PokemonSprite :species-id="combatant.speciesId" :size="30" :faded="!combatant.alive" /></span>
       <strong class="ell" :title="combatant.name">{{ combatant.name }}</strong>
-      <span class="mc-level">Lv.{{ combatant.level }}</span>
+      <span class="mc-level">等级 {{ combatant.level }}</span>
     </div>
     <div class="mc-health">
       <span :class="{ danger: hud.critical }">{{ !combatant.alive ? '已倒下' : hud.critical ? '濒危' : '生命' }}</span>

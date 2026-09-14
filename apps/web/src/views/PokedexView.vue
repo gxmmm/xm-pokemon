@@ -2,7 +2,7 @@
 import { rangeInCells } from '@pokemon-online/engine';
 import { ref, computed } from 'vue';
 import { useGameStore } from '../stores/game.ts';
-import { SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
+import { TACTICAL_COOLDOWN_SCALE, SPECIES_LIST, getSpecies, SKILL_MAP, ABILITY_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, MAPS, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { ivCeiling, growthCeiling, ivFloor, growthFloor } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
@@ -37,9 +37,9 @@ type DexLevelFilter = 'all' | 'low' | 'mid' | 'high';
 const levelFilter = ref<DexLevelFilter>('all');
 const DEX_LEVEL_TABS: { id: DexLevelFilter; label: string; min?: number; max?: number }[] = [
   { id: 'all', label: '全部' },
-  { id: 'low', label: 'Lv.1–20', min: 1, max: 20 },
-  { id: 'mid', label: 'Lv.21–40', min: 21, max: 40 },
-  { id: 'high', label: 'Lv.41–55', min: 41, max: 55 },
+  { id: 'low', label: '等级 1–20', min: 1, max: 20 },
+  { id: 'mid', label: '等级 21–40', min: 21, max: 40 },
+  { id: 'high', label: '等级 41–55', min: 41, max: 55 },
 ];
 const filteredSpecies = computed(() => {
   const tab = DEX_LEVEL_TABS.find((item) => item.id === levelFilter.value)!;
@@ -62,21 +62,21 @@ const encounterMaps = computed(() => {
 function mapsOf(id: number) { return encounterMaps.value[id] ?? []; }
 
 const TRIGGER_LABEL: Record<string, string> = {
-  onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时',
-  onTurnStart: '回合开始时', onFaint: '击倒对手时', onSwitch: '撤退时',
+  onLowHp: '生命不高于三分之一时', onHit: '被击中时', onAttack: '攻击命中时', passive: '持续生效', onEnter: '登场时',
+  onTurnStart: '战斗中定时触发', onFaint: '击倒对手时', onSwitch: '撤退时',
 };
 function abilityTip(a: Ability): string { return `${a.description}\n触发：${TRIGGER_LABEL[a.trigger] ?? a.trigger}`; }
 function passiveTip(p: PassiveSkill | undefined, intrinsic = false): string {
   if (!p) return '';
   return `${p.name}（${PASSIVE_TIER_LABEL[p.tier] ?? '?'}${intrinsic ? '·必带' : ''}）\n${p.description}`;
 }
-function skillTip(s: Skill | undefined): string {
+function skillTip(s: Skill | undefined, cooldown = s ? s.cooldown * TACTICAL_COOLDOWN_SCALE : 0): string {
   if (!s) return '';
   const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
   const target = s.targetMode === 'all-enemies'
     ? `覆盖区域内敌人 · 单目标伤害 ${Math.round((s.areaMultiplier ?? 0.7) * 100)}%`
-    : '敌方单体';
-  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格 · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
+    : s.effect?.target === 'ally' ? '友方单体（含自身）' : s.category === 'status' && s.effect?.target === 'self' ? '自身' : '敌方单体';
+  return `${s.description}\n威力 ${s.power} · 命中 ${acc} · 基础冷却 ${Number(cooldown.toFixed(2))} 秒（实际受速度、被动与特性影响）\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格 · ${target}${s.castTime ? ' · 蓄力 ' + s.castTime + ' 秒' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 </script>
 
@@ -149,19 +149,19 @@ function skillTip(s: Skill | undefined): string {
 
         <div class="sub bold">出现地图</div>
         <div v-if="mapsOf(species.id).length" class="tiny row" style="gap:4px;flex-wrap:wrap">
-          <span v-for="m in mapsOf(species.id)" :key="m.map + m.min" class="chip sm-chip">{{ m.map }} Lv.{{ m.min }}-{{ m.max }}</span>
+          <span v-for="m in mapsOf(species.id)" :key="m.map + m.min" class="chip sm-chip">{{ m.map }} 等级 {{ m.min }}-{{ m.max }}</span>
         </div>
         <div v-else class="tiny muted">不可野外捕获（可通过炼妖/进化获得）</div>
 
         <div class="sub bold">全部可能技能 <span class="tiny muted" style="font-weight:400">（天生必带·升级习得）</span></div>
         <div v-for="s in [...new Set([species.basicSkillId, ...species.intrinsic])]" :key="'in-'+s" class="tiny skill-row">
           <span class="lv-chip" style="background:var(--gold);color:#333">天生</span>
-          <Tip :text="skillTip(s === species.basicSkillId ? { ...SKILL_MAP[s]!, cooldown: species.basicSkillCooldown } : SKILL_MAP[s])"><span class="bold">{{ SKILL_MAP[s]?.name }}</span></Tip>
+          <Tip :text="skillTip(SKILL_MAP[s], s === species.basicSkillId ? species.basicSkillCooldown : undefined)"><span class="bold">{{ SKILL_MAP[s]?.name }}</span></Tip>
           <TypeBadge :type="SKILL_MAP[s]?.type ?? 'normal'" size="sm" />
           <span class="muted">威力{{ SKILL_MAP[s]?.power || 0 }} · {{ SKILL_MAP[s]?.range==='melee'?'近战':'远程' }}</span>
         </div>
         <div v-for="e in species.learnset.filter(e => e.skill !== species?.basicSkillId)" :key="e.level + '-' + e.skill" class="tiny skill-row">
-          <span class="lv-chip" :class="{ signature: species.signatureSkill === e.skill }">{{ species.signatureSkill === e.skill ? `专属 Lv.${e.level}` : `Lv.${e.level}` }}</span>
+          <span class="lv-chip" :class="{ signature: species.signatureSkill === e.skill }">{{ species.signatureSkill === e.skill ? `专属 等级 ${e.level}` : `等级 ${e.level}` }}</span>
           <Tip :text="skillTip(SKILL_MAP[e.skill])"><span class="bold">{{ SKILL_MAP[e.skill]?.name }}</span></Tip>
           <TypeBadge :type="SKILL_MAP[e.skill]?.type ?? 'normal'" size="sm" />
           <span class="muted">威力{{ SKILL_MAP[e.skill]?.power || 0 }} · {{ SKILL_MAP[e.skill]?.range==='melee'?'近战':'远程' }}</span>
@@ -187,7 +187,7 @@ function skillTip(s: Skill | undefined): string {
         <div v-if="species.evolution && species.evolution.length" class="tiny row" style="gap:6px;flex-wrap:wrap;align-items:center">
           <template v-for="(e, i) in species.evolution" :key="e.to">
             <span v-if="i>0">/</span>
-            <span class="chip">{{ getSpecies(e.to).name }}（Lv.{{ e.level }}）</span>
+            <span class="chip">{{ getSpecies(e.to).name }}（等级 {{ e.level }}）</span>
           </template>
         </div>
 

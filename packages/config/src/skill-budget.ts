@@ -13,7 +13,7 @@ export interface SkillBudget {
 }
 
 export const SKILL_BUDGETS: Record<SkillRole, SkillBudget> = {
-  fill: { label: '填充', summary: '低威力、短冷却；与普攻共同填补技能空档。' },
+  fill: { label: '速攻', summary: '低威力、短冷却，用于保持进攻节奏。' },
   main: { label: '主力', summary: '稳定输出；在伤害、冷却与射程之间保持均衡。' },
   burst: { label: '爆发', summary: '高威力或蓄力技能；以更长冷却、命中风险或前摇换取单次爆发。' },
   area: { label: '群攻', summary: '同时压制敌方多人；以单目标伤害折减交换总压制力。' },

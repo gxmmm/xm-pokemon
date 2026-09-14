@@ -1,6 +1,6 @@
-import { skillHitChance, secondaryEffectChance } from './combat-modifiers.ts';
+import { skillHitChance, secondaryEffectChance, basicTempoMultiplier } from './combat-modifiers.ts';
 import type { WeatherKind } from '@pokemon-online/shared';
-import { BATTLE_WEATHER, BATTLE_WEATHER_DURATION } from '@pokemon-online/config';
+import { BATTLE_WEATHER, BATTLE_WEATHER_DURATION, TACTICAL_COOLDOWN_SCALE } from '@pokemon-online/config';
 import { BattleEvasion } from './evasion.ts';
 import type { BattleState, BattleCombatant, BattleEvent, BattleVfx, PokemonInstance, StatusKind, TeamTactic } from '@pokemon-online/shared';
 import { BATTLE_GRID, BATTLE_TICK } from '@pokemon-online/shared';
@@ -35,7 +35,7 @@ function clamp(v: number, lo: number, hi: number): number {
 // Presentation-paced combat: skills are deliberate beats rather than a constant
 // stream. Taking a hit advances only the next skill in line, so reactive casts
 // are distributed over time instead of every cooldown becoming ready together.
-const SKILL_COOLDOWN_SCALE = 1.35;
+const SKILL_COOLDOWN_SCALE = TACTICAL_COOLDOWN_SCALE;
 const OPENING_SKILL_COOLDOWN_FRACTION = 0.55;
 const STATUS_DURATION: Record<StatusKind, number> = { burn: 5, poison: 5, paralyze: 3, freeze: 2.5, sleep: 2, confuse: 2.5 };
 
@@ -287,12 +287,12 @@ export class BattleSim {
       for (const e of this.state.combatants) {
         if (e.side !== c.side && e.alive) e.pressureUntil = Math.max(e.pressureUntil ?? 0, until);
       }
-      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的压迫感笼罩战场！`);
+      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的${ab.name}影响了敌方冷却！`);
     } else if (ab.effect.kind === 'weather' && ab.effect.weather) {
       this.setWeather(ab.effect.weather, `${c.name}·${ab.name}`, ab.effect.duration);
     } else if (ab.effect.kind === 'openingSpeed' && ab.effect.stat === 'spd') {
       c.buffs.push({ id: 'opening-speed', kind: 'opening-speed', stat: 'spd', stages: ab.effect.stages ?? 1, remaining: ab.effect.duration ?? 6 });
-      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 抢得了先机！`);
+      this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的${ab.name}提升了速度！`);
     }
   }
 
@@ -336,7 +336,7 @@ export class BattleSim {
         c.shields = Math.max(0, c.shields - b.magnitude);
       }
       if (b.kind === 'opening-speed' && b.remaining <= 0 && b.stat && b.stages) {
-        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的先机节奏平复了。`);
+        this.emit('info', c.uid, undefined, undefined, undefined, `${c.name} 的临时速度强化结束了。`);
       }
     }
     c.buffs = c.buffs.filter((b) => b.remaining > 0);
@@ -377,7 +377,7 @@ export class BattleSim {
             c.currentHp += healed;
             c.healingDone += healed;
             cds['natural-cure'] = ab.effect.cooldown ?? 8;
-            this.emit('heal', c.uid, c.uid, undefined, healed, `${c.name} 的自然回复恢复了HP！`, { kind: 'heal', amount: healed });
+            this.emit('heal', c.uid, c.uid, undefined, healed, `${c.name} 的自然回复恢复了生命！`, { kind: 'heal', amount: healed });
           }
         }
       }
@@ -614,7 +614,7 @@ export class BattleSim {
           const amt = clampCombatAmount(requested, self.maxHp - self.currentHp);
           self.currentHp += amt;
           caster.healingDone += amt;
-          this.emit('heal', caster.uid, self.uid, skillId, amt, `${self.name} 回复了HP`, { kind: 'heal', amount: amt });
+          this.emit('heal', caster.uid, self.uid, skillId, amt, `${self.name} 回复了生命`, { kind: 'heal', amount: amt });
           if (e.status === 'sleep') this.inflictStatus(self, 'sleep', e.duration ?? 2, caster, skillId);
         }
         break;
@@ -689,11 +689,22 @@ export class BattleSim {
   }
 
   private applyOnHitAbilities(attacker: BattleCombatant, defender: BattleCombatant, contact: boolean): void {
-    if (!contact) return;
+    if (!attacker.alive || !defender.alive) return;
     const ab = ABILITY_MAP[defender.ability];
     if (!ab || ab.trigger !== 'onHit') return;
+    if (ab.effect.kind === 'hitWeaken') {
+      const e = ab.effect, key = e.stat as 'atk'|'def'|'spd';
+      if (!key || e.contactOnly && !contact || (defender.abilityCooldowns?.['hit-weaken'] ?? 0) > 0 || attacker.statStages[key] <= -6) return;
+      if (this.rng() >= (e.chance ?? 1)) return;
+      this.addStatStage(attacker, key, e.stages ?? -1);
+      (defender.abilityCooldowns ??= {})['hit-weaken'] = e.cooldown ?? 6;
+      const text = `${ab.name}·${key === 'atk' ? '攻击' : key === 'def' ? '防御' : '速度'}下降`;
+      this.emit('info', defender.uid, attacker.uid, undefined, undefined, text, {kind:'debuff',notice:{text,active:false}});
+      return;
+    }
+    if (!contact) return;
     const chance = ab.effect.chance ?? 0;
-    if (this.rng() > chance) return;
+    if (this.rng() >= chance) return;
     if (ab.effect.kind === 'custom') {
       if (defender.ability === 'static') this.inflictStatus(attacker, 'paralyze', -1, defender);
       else if (defender.ability === 'flame-body') this.inflictStatus(attacker, 'burn', -1, defender);
@@ -746,7 +757,7 @@ export class BattleSim {
         const healed = clampCombatAmount(res.healed, defender.maxHp - defender.currentHp);
         defender.currentHp += healed;
         defender.healingDone += healed;
-        this.emit('heal', defender.uid, undefined, undefined, healed, `${defender.name} 回复了HP`, { kind: 'heal', amount: healed });
+        this.emit('heal', defender.uid, undefined, undefined, healed, `${defender.name} 回复了生命`, { kind: 'heal', amount: healed });
       }
       if (defender.ability === 'flash-fire' && skill.type === 'fire') defender.flashFireBoost = true;
       if (defender.ability === 'lightning-rod' && skill.type === 'electric') this.addStatStage(defender, 'atk', 1);
@@ -782,7 +793,7 @@ export class BattleSim {
         defender.currentHp += healed;
         defender.healingDone += healed;
         cds['shield-recovery'] = defenderAbilityBeforeHit.effect.cooldown ?? 6;
-        this.emit('heal', defender.uid, defender.uid, undefined, healed, `${defender.name} 的余韧恢复了HP！`, { kind: 'heal', amount: healed });
+        this.emit('heal', defender.uid, defender.uid, undefined, healed, `${defender.name} 的余韧恢复了生命！`, { kind: 'heal', amount: healed });
       }
     }
     const sturdy = ABILITY_MAP[defender.ability]?.effect.kind === 'endure';
@@ -864,7 +875,7 @@ export class BattleSim {
     } else {
       // Contact on-hit abilities apply only to melee skill delivery.
       const contact = skill.range === 'melee';
-      this.applyOnHitAbilities(attacker, defender, contact);
+      if (dmg > 0) this.applyOnHitAbilities(attacker, defender, contact);
     }
     return { dealt: dmg, immune: false };
   }
@@ -967,7 +978,7 @@ export class BattleSim {
       const effect = PASSIVE_MAP[id]?.effect;
       if (effect?.kind === 'cdReduction' && effect.mult) passive *= effect.mult;
     }
-    return Math.min(2.5, skillCooldownRate(effectiveStat(c, 'spd'), basic) * (2 - passive)) * ((c.pressureUntil ?? 0) > this.state.time ? .85 : 1);
+    return Math.min(2.5, skillCooldownRate(effectiveStat(c, 'spd'), basic) * (2 - passive) * basicTempoMultiplier(c,basic)) * ((c.pressureUntil ?? 0) > this.state.time ? .85 : 1);
   }
 
   private checkWin(): void {

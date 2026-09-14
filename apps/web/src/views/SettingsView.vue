@@ -49,13 +49,13 @@ async function manualSave(): Promise<void> {
         <h2 class="h-title" style="margin:0">设置</h2>
         <BackHub />
       </div>
-      <div class="tiny muted">账号：{{ auth.username }} · 玩家ID：{{ auth.playerId }}</div>
+      <div class="tiny muted">账号：{{ auth.username }} · 玩家编号：{{ auth.playerId }}</div>
     </div>
 
     <div class="panel" style="margin-bottom:12px">
       <div class="bold" style="margin-bottom:8px">战斗速度</div>
       <div class="row">
-        <button v-for="s in [1,2,3]" :key="s" :class="{ gold: game.save.settings.battleSpeed===s }" @click="setSpeed(s)">{{ s }}x</button>
+        <button v-for="s in [1,2,3]" :key="s" :class="{ gold: game.save.settings.battleSpeed===s }" @click="setSpeed(s)">{{ s }} 倍</button>
       </div>
     </div>
 

@@ -206,9 +206,9 @@ onUnmounted(() => cancelAnimationFrame(raf));
   <section class="battle-sandbox">
     <header class="sandbox-header">
       <div>
-        <p class="eyebrow">BATTLE ACCEPTANCE SANDBOX</p>
-        <h1>自由战斗验收沙盒</h1>
-        <p>无需登录、不会读写存档。双方各选 {{ BATTLE_SANDBOX_MIN_TEAM_SIZE }}～{{ BATTLE_SANDBOX_MAX_TEAM_SIZE }} 只，支持 1v1 至 3v3；每次开战都会重新随机生成满级野生式个体。</p>
+        <p class="eyebrow">自由战斗</p>
+        <h1>自由战斗</h1>
+        <p>无需登录、不会读写存档。双方各选 {{ BATTLE_SANDBOX_MIN_TEAM_SIZE }}～{{ BATTLE_SANDBOX_MAX_TEAM_SIZE }} 只，支持一对一至三对三；每次开战都会重新随机生成满级野生式个体。</p>
       </div>
       <div class="sandbox-actions">
         <button v-if="sim" class="ghost" type="button" @click="resetToSetup">返回选队</button>
@@ -251,12 +251,12 @@ onUnmounted(() => cancelAnimationFrame(raf));
 
     <template v-else>
       <div class="sandbox-battle">
-        <div class="battle-meta"><span>环境：{{ biome }}</span><span>标准品质</span><span>演绎时间：{{ simulationTime.toFixed(1) }}s</span><span v-if="result" class="result">{{ result }}</span></div>
+        <div class="battle-meta"><span>环境：{{ biome }}</span><span>标准品质</span><span>演绎时间：{{ simulationTime.toFixed(1) }} 秒</span><span v-if="result" class="result">{{ result }}</span></div>
         <div class="sandbox-stage">
           <aside class="sandbox-side player">
             <header>我方状态</header>
             <article v-for="combatant in playerCombatants" :key="combatant.uid" class="sandbox-mon" :class="{ fainted: !combatant.alive, casting: !!combatant.castProgress }">
-              <div class="mon-line"><b>{{ combatant.name }}</b><span>Lv.{{ combatant.level }}</span></div>
+              <div class="mon-line"><b>{{ combatant.name }}</b><span>等级 {{ combatant.level }}</span></div>
               <div class="hp-track"><span :style="{ width: `${hpPercent(combatant)}%`, background: hpColor(combatant) }"></span></div>
               <small>{{ Math.max(0, Math.ceil(combatant.currentHp)) }} / {{ combatant.maxHp }}</small>
               <div class="mon-detail"><span v-for="skill in skillChips(combatant)" :key="skill.id" class="skill-chip" :class="{ ready: skill.cd <= 0 }" :style="{ '--skill-color': skill.color }">{{ skill.cd > 0 ? Math.ceil(skill.cd) : skill.label }}</span><em v-if="combatant.status" class="status-tag">{{ STATUS_TAG[combatant.status] }}</em></div>
@@ -267,12 +267,12 @@ onUnmounted(() => cancelAnimationFrame(raf));
           <div class="arena">
             <PixiBattleViewport ref="pixiRef" :presentation="presentation ?? undefined" :cues="cues" :biome="biome" @ready="onPixiReady" @unavailable="onPixiUnavailable" />
             <div class="action-feed" aria-live="polite"><span v-for="action in actionFeed" :key="action.id" :class="action.tone">{{ action.text }}</span></div>
-            <div v-if="gpuUnavailable" class="gpu-error">GPU 战斗渲染不可用：{{ gpuUnavailable }}</div>
+            <div v-if="gpuUnavailable" class="gpu-error">战斗场景加载失败：{{ gpuUnavailable }}</div>
           </div>
           <aside class="sandbox-side enemy">
             <header>敌方状态</header>
             <article v-for="combatant in enemyCombatants" :key="combatant.uid" class="sandbox-mon" :class="{ fainted: !combatant.alive, casting: !!combatant.castProgress }">
-              <div class="mon-line"><b>{{ combatant.name }}</b><span>Lv.{{ combatant.level }}</span></div>
+              <div class="mon-line"><b>{{ combatant.name }}</b><span>等级 {{ combatant.level }}</span></div>
               <div class="hp-track"><span :style="{ width: `${hpPercent(combatant)}%`, background: hpColor(combatant) }"></span></div>
               <small>{{ Math.max(0, Math.ceil(combatant.currentHp)) }} / {{ combatant.maxHp }}</small>
               <div class="mon-detail"><span v-for="skill in skillChips(combatant)" :key="skill.id" class="skill-chip" :class="{ ready: skill.cd <= 0 }" :style="{ '--skill-color': skill.color }">{{ skill.cd > 0 ? Math.ceil(skill.cd) : skill.label }}</span><em v-if="combatant.status" class="status-tag">{{ STATUS_TAG[combatant.status] }}</em></div>

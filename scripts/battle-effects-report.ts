@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
-import { SKILL_MAP, PASSIVE_MAP } from '@pokemon-online/config';
+import { SKILL_MAP, PASSIVE_MAP, ABILITIES } from '@pokemon-online/config';
+import { decide } from '../packages/engine/src/ai.ts';
 import type { BattleCombatant, Skill } from '@pokemon-online/shared';
 import { computeDamage } from '../packages/engine/src/damage.ts';
 import { computeStats, effectiveStat, statBreakdown } from '../packages/engine/src/stats.ts';
@@ -136,3 +137,59 @@ console.log('✓ 减伤比例、双向无防守、追加概率、避雷针、分
   assert.equal(director.direct(notices.map(toBattlePresentationEvent)).length,0,'同一提示不重复播放');
 }
 console.log('✓ 天气覆盖/刷新/到期、气象台倒下恢复、真实增益代价、终局清理、条件启停文字及去重');
+
+{
+  const supportedCustom = new Set(['static','flame-body','poison-point','sand-veil','snow-cloak','cloud-nine','limber','immunity','no-guard']);
+  assert(ABILITIES.filter(a=>a.effect.kind==='custom').every(a=>supportedCustom.has(a.id)),'没有未实现的空特性');
+  const battle = new BattleSim({mode:'pvp',player:[make('a')],enemy:[make('b')],seed:4});
+  const [actor,foe] = battle.state.combatants as [BattleCombatant,BattleCombatant];
+  const test = battle as unknown as typeof internals & {cooldownRate(c:BattleCombatant,basic:boolean):number};
+  test.rng=()=>.1; actor.types=['normal']; foe.types=['normal']; foe.maxHp=foe.currentHp=10000;
+  actor.ability='illuminate'; assert.equal(skillHitChance(actor,foe,{...fire,accuracy:60}),.7);
+  actor.ability='keen-eye'; foe.ability='damp';
+  const damp=computeDamage(actor,foe,fire,()=>.5).damage;
+  foe.ability='keen-eye'; const plain=computeDamage(actor,foe,fire,()=>.5).damage;
+  assert(Math.abs(damp-plain*.8)<=1);
+  actor.ability='magnet-pull'; foe.types=['steel'];
+  const magnet=computeDamage(actor,foe,fire,()=>.5).damage;
+  actor.ability='keen-eye'; const steel=computeDamage(actor,foe,fire,()=>.5).damage;
+  assert(Math.abs(magnet-steel*1.2)<=1);
+  actor.ability='skill-link'; const base=test.cooldownRate(actor,true), tactical=test.cooldownRate(actor,false);
+  actor.ability='keen-eye'; assert(Math.abs(base/test.cooldownRate(actor,true)-1.15)<1e-9); assert.equal(tactical,test.cooldownRate(actor,false));
+  assert.equal(computeStats(make('adaptive','imposter')).def,Math.floor(computeStats(make('plain')).def*1.2));
+  for (const [ability,key,skill] of [['cute-charm','atk','tackle'],['cursed-body','spd','flamethrower']] as const) {
+    foe.ability=ability; foe.types=['normal']; foe.currentHp=10000; foe.abilityCooldowns={};
+    actor.statStages={atk:0,def:0,spd:0};
+    if(ability==='cute-charm') {test.dealDamage(actor,foe,'flamethrower');assert.equal(actor.statStages.atk,0,'迷人之躯不反制远程');}
+    test.dealDamage(actor,foe,skill); assert.equal(actor.statStages[key],-1);
+    test.dealDamage(actor,foe,skill); assert.equal(actor.statStages[key],-1,'冷却防重复触发');
+    foe.abilityCooldowns={}; actor.statStages[key]=-6; test.dealDamage(actor,foe,skill); assert.equal(actor.statStages[key],-6);
+    actor.statStages[key]=0; foe.shields=10000; test.dealDamage(actor,foe,skill); assert.equal(actor.statStages[key],0,'护盾完全吸收不触发'); foe.shields=0;
+  }
+  const entry=new BattleSim({mode:'pvp',player:[make('n','unnerve'),make('r','run-away')],enemy:[make('e')],seed:1});
+  assert.equal(entry.state.combatants[2]!.pressureUntil,8);
+  const runner=entry.state.combatants[1]!; assert.equal(effectiveStat(runner,'spd'),Math.floor(runner.stats.spd*1.5));
+  actor.ability='keen-eye'; foe.ability='sand-veil'; foe.effectiveWeather='sand';
+  assert.equal(skillHitChance(actor,foe,SKILL_MAP.swift!),1,'必中仍服从覆盖，但不受闪避影响');
+  actor.types=['fire']; actor.passiveSkills=['p-adapt'];
+  const matching=computeDamage(actor,foe,fire,()=>.5).damage;
+  const notMatching=computeDamage(actor,foe,SKILL_MAP.tackle!,()=>.5).damage;
+  actor.passiveSkills=[];
+  assert(matching>computeDamage(actor,foe,fire,()=>.5).damage);
+  assert.equal(notMatching,computeDamage(actor,foe,SKILL_MAP.tackle!,()=>.5).damage);
+}
+{
+  const battle = new BattleSim({mode:'pvp',player:[make('a')],enemy:[make('immune','flash-fire'),make('open')],seed:9});
+  const [actor,immune,open] = battle.state.combatants as [BattleCombatant,BattleCombatant,BattleCombatant];
+  actor.rangedRole=true; actor.engagementRangeCells=6; actor.activeSkills=['flamethrower'];actor.basicSkillId='flamethrower';actor.cooldowns={flamethrower:0};
+  actor.position=actor.pixel={x:7,y:7}; immune.position=immune.pixel={x:10,y:6}; open.position=open.pixel={x:10,y:8};
+  actor.currentTargetUid=immune.uid; actor.targetCommitUntil=100;
+  battle.state.teamTactics.player={kind:'pressure',targetUid:immune.uid,expiresAt:100};
+  const plan=decide(actor,battle.state,()=>.5)!;
+  assert.equal(plan.targetUid,open.uid,'免疫不被目标黏性与集火覆盖'); assert(plan.desiredRangeCells>=3.5);
+  actor.ability='solar-power'; actor.currentHp=1; actor.activeSkills=['ember','hyper-beam'];actor.basicSkillId='ember';actor.cooldowns={ember:0,'hyper-beam':0};
+  battle.setWeather('sun'); open.types=['normal'];immune.types=['normal'];
+  const urgent=decide(actor,battle.state,()=>.5)!;
+  assert.notEqual(urgent.preferredSkillId,'hyper-beam','生命代价致命时不选赶不上的长蓄力');
+}
+console.log('✓ 九项简单特性、触发冷却与上限、免疫目标调整、合理作战距离和天气生命代价选招');

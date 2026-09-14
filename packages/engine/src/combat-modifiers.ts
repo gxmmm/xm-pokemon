@@ -3,7 +3,7 @@ import { ABILITY_MAP, PASSIVE_MAP } from '@pokemon-online/config';
 
 /** 命中与 AI 共用同一概率；无防守对交战双方有效。 */
 export function skillHitChance(attacker: BattleCombatant, defender: BattleCombatant, skill: Skill): number {
-  if (attacker.ability === 'no-guard' || defender.ability === 'no-guard') return 1;
+  if (skill.accuracy === 0 || attacker.ability === 'no-guard' || defender.ability === 'no-guard') return 1;
   const ability = ABILITY_MAP[attacker.ability]?.effect, defense = ABILITY_MAP[defender.ability]?.effect;
   let evasion = defender.passiveSkills.reduce((sum,id) => sum + (PASSIVE_MAP[id]?.effect.kind === 'evasion' ? PASSIVE_MAP[id]!.effect.chance ?? 0 : 0), 0);
   if (defense?.kind === 'custom' && (!defense.requiresWeather || defense.requiresWeather === defender.effectiveWeather) && (defender.ability === 'sand-veil' || defender.ability === 'snow-cloak')) evasion += defense.chance ?? 0;
@@ -21,7 +21,19 @@ export function damageReduction(defender: BattleCombatant, skill: Skill): number
   }
   if (defender.ability === 'thick-fat' && (skill.type === 'fire' || skill.type === 'ice')) multiplier *= .5;
   if (defender.ability === 'dry-skin' && defender.effectiveWeather === 'sun') multiplier *= 1.25;
+  const defense = ABILITY_MAP[defender.ability]?.effect;
+  if (defense?.kind === 'damageReduction' && defense.type === skill.type) multiplier *= defense.mult ?? 1;
   return multiplier;
+}
+
+export function targetDamageBoost(attacker: BattleCombatant, defender: BattleCombatant): number {
+  const e = ABILITY_MAP[attacker.ability]?.effect;
+  return e?.kind === 'targetBoost' && e.type && defender.types.includes(e.type) ? e.mult ?? 1 : 1;
+}
+
+export function basicTempoMultiplier(c: BattleCombatant, basic: boolean): number {
+  const e = ABILITY_MAP[c.ability]?.effect;
+  return basic && e?.kind === 'basicTempo' ? e.mult ?? 1 : 1;
 }
 
 export function secondaryEffectChance(caster: BattleCombatant, skill: Skill): number {

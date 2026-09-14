@@ -66,10 +66,10 @@ async function startBattle(): Promise<void> {
   <div v-if="game.save">
     <div class="panel" style="margin-bottom:12px">
       <div class="between" style="margin-bottom:4px">
-        <h2 class="h-title" style="margin:0">3v3 友谊切磋</h2>
+        <h2 class="h-title" style="margin:0">三对三友谊切磋</h2>
         <BackHub />
       </div>
-      <p class="tiny muted">双方各出3只宝可梦，全部由AI自动对战。你只需设置好队伍，挑战朋友的存档队伍即可。</p>
+      <p class="tiny muted">双方各出3只宝可梦，自动进行对战。你只需设置好队伍，挑战朋友的存档队伍即可。</p>
     </div>
 
     <div class="panel" style="margin-bottom:12px">
@@ -103,7 +103,7 @@ async function startBattle(): Promise<void> {
         <div class="grid grid-3" style="margin-top:6px">
           <div v-for="p in opponentTeam" :key="p.uid" class="opp-cell">
             <div class="bold tiny">{{ getSpecies(p.speciesId).name }}</div>
-            <div class="tiny muted">Lv.{{ p.level }}</div>
+            <div class="tiny muted">等级 {{ p.level }}</div>
           </div>
         </div>
         <button class="gold" style="width:100%;margin-top:10px" @click="startBattle">开始切磋！</button>

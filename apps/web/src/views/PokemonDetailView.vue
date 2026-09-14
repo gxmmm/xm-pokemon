@@ -4,7 +4,7 @@ import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGameStore } from '../stores/game.ts';
 import { useMessage } from '../stores/message.ts';
-import { getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, expToNext, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
+import { TACTICAL_COOLDOWN_SCALE, getSpecies, PERSONALITY_MAP, ABILITY_MAP, SKILL_MAP, PASSIVE_MAP, PASSIVE_TIER_LABEL, TYPE_COLORS, levelProgress, expToNext, skillBudgetLabel, COMBAT_ROLE_LABEL, combatRoleTooltipText } from '@pokemon-online/config';
 import { getAvailableEvolutions, computeStats, maxHp, ivCeiling, growthCeiling, statBreakdown } from '@pokemon-online/engine';
 import PokemonSprite from '../components/PokemonSprite.vue';
 import TypeBadge from '../components/TypeBadge.vue';
@@ -56,7 +56,7 @@ const activeDisplay = computed(() => {
       char: sk?.name?.[0] ?? '?',
       color: TYPE_COLORS[sk?.type ?? 'normal'] ?? '#A8A77A',
       level,
-      tip: skillTip(sk && sid === species.value?.basicSkillId ? { ...sk, cooldown: species.value.basicSkillCooldown } : sk) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
+      tip: skillTip(sk, sk && sid === species.value?.basicSkillId ? species.value.basicSkillCooldown : undefined) + (level === 0 ? '\n(天生必带)' : species.value?.signatureSkill === sid ? '\n(种族专属)' : ''),
     });
   };
   push(species.value.basicSkillId, -1);
@@ -91,8 +91,8 @@ const RANGE_LABEL: Record<string, string> = { melee: '近战', ranged: '远程',
 const TARGET_LABEL: Record<string, string> = { nearest: '最近', weakest: '最弱', threat: '威胁', random: '随机' };
 const BIAS_LABEL: Record<string, string> = { power: '重威力', speed: '重速攻', utility: '重辅助', balanced: '均衡' };
 const TRIGGER_LABEL: Record<string, string> = {
-  onLowHp: 'HP低于1/3时', onHit: '被击中时', passive: '持续生效', onEnter: '登场时',
-  onTurnStart: '回合开始时', onFaint: '击倒对手时', onSwitch: '撤退时',
+  onLowHp: '生命不高于三分之一时', onHit: '被击中时', onAttack: '攻击命中时', passive: '持续生效', onEnter: '登场时',
+  onTurnStart: '战斗中定时触发', onFaint: '击倒对手时', onSwitch: '撤退时',
 };
 
 function personalityTip(p: Personality): string {
@@ -110,10 +110,10 @@ function abilityTip(a: Ability): string {
   return `${a.description}\n触发：${TRIGGER_LABEL[a.trigger] ?? a.trigger}`;
 }
 
-function skillTip(s: Skill | undefined): string {
+function skillTip(s: Skill | undefined, cooldown = s ? s.cooldown * TACTICAL_COOLDOWN_SCALE : 0): string {
   if (!s) return '';
   const acc = s.accuracy === 0 ? '必中' : s.accuracy + '%';
-  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · CD ${s.cooldown}s\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格${s.castTime ? ' · 蓄力 ' + s.castTime + 's' : ''}\n定位：${skillBudgetLabel(s)}`;
+  return `${s.name}\n${s.description}\n威力 ${s.power} · 命中 ${acc} · 基础冷却 ${Number(cooldown.toFixed(2))} 秒（实际受速度、被动与特性影响）\n${s.range === 'melee' ? '近战' : '远程'} · 射程 ${rangeInCells(s)} 格${s.castTime ? ' · 蓄力 ' + s.castTime + ' 秒' : ''}\n定位：${skillBudgetLabel(s)}`;
 }
 
 const STAT_FULL: Record<StatKey, string> = { hp: '生命', atk: '攻击', def: '防御', spd: '速度' };
@@ -175,7 +175,7 @@ async function release(): Promise<void> {
         </div>
         <div class="row hero-tags">
           <TypeBadge v-for="t in species.types" :key="t" :type="t" />
-          <span class="chip">Lv.{{ inst.level }}</span>
+          <span class="chip">等级 {{ inst.level }}</span>
           <Tip :text="personality ? personalityTip(personality) : ''"><span class="chip">{{ personality?.name }}型</span></Tip>
           <span class="chip" :class="{faded: inst.currentHp<=0}">{{ inst.origin==='bred'?'炼妖':inst.origin==='gift'?'礼物':'捕获' }}</span>
           <Tip v-if="species.combatRole" :text="combatRoleTooltipText(species.combatRole)" :clickable="false"><span class="chip role-chip">{{ COMBAT_ROLE_LABEL[species.combatRole] }}</span></Tip>
@@ -183,7 +183,7 @@ async function release(): Promise<void> {
         <div class="tiny muted">{{ species.dex }}</div>
       </div>
       <div class="hero-progress">
-        <div class="between tiny"><span>EXP</span><span>{{ expPct }}%</span></div>
+        <div class="between tiny"><span>经验</span><span>{{ expPct }}%</span></div>
         <div class="bar exp-bar"><span :style="{width:expPct+'%'}"></span></div>
         <div class="tiny muted">{{ inst.exp }} / 下一级 {{ expToNext(species.growthRate, inst.level) }}</div>
       </div>
@@ -192,11 +192,11 @@ async function release(): Promise<void> {
     <div class="detail-columns">
       <div class="detail-main">
         <section class="panel detail-section">
-          <div class="section-title">当前属性 <span class="tiny muted">hover 查看计算</span></div>
+          <div class="section-title">当前属性 <span class="tiny muted">悬停查看计算</span></div>
           <div class="stat-dashboard">
             <div v-for="key in ['hp', 'atk', 'def', 'spd'] as StatKey[]" :key="key" class="stat-card"><span>{{ STAT_FULL[key] }}</span><Tip :text="statTip(key)"><b>{{ stats[key] }}</b></Tip></div>
           </div>
-          <div class="current-hp tiny muted">当前 HP：{{ inst.currentHp }}/{{ maxHp(inst) }}</div>
+          <div class="current-hp tiny muted">当前生命：{{ inst.currentHp }}/{{ maxHp(inst) }}</div>
         </section>
 
         <section class="panel detail-section">
@@ -221,8 +221,8 @@ async function release(): Promise<void> {
         <section class="panel detail-section action-section">
           <div class="section-title">操作</div>
           <div class="row wrap" style="align-items:center;gap:8px">
-            <span class="chip" v-if="game.save!.pveTeam.includes(uid)">在 PVE 阵容</span>
-            <span class="chip" v-if="game.save!.pvpTeam.includes(uid)">在 PVP 阵容</span>
+            <span class="chip" v-if="game.save!.pveTeam.includes(uid)">在探索阵容</span>
+            <span class="chip" v-if="game.save!.pvpTeam.includes(uid)">在对战阵容</span>
             <span class="chip muted" v-if="!game.save!.pveTeam.includes(uid) && !game.save!.pvpTeam.includes(uid)">未编入阵容</span>
             <button class="sm danger" @click="release">放生</button>
           </div>

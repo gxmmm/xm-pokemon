@@ -45,7 +45,8 @@ onMounted(async () => {
     emit('ready');
   } catch (error) {
     if (disposed) return;
-    const message = error instanceof Error ? error.message : '无法初始化 GPU 世界渲染器';
+    console.error(error);
+    const message = '世界场景加载失败，请稍后重试';
     emit('unavailable', message);
   }
 });
@@ -74,7 +75,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="host" class="pixi-world-viewport" aria-label="GPU world renderer"></div>
+  <div ref="host" class="pixi-world-viewport" aria-label="世界场景"></div>
 </template>
 
 <style scoped>

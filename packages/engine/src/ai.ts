@@ -1,4 +1,4 @@
-import { skillHitChance, damageReduction } from './combat-modifiers.ts';
+import { skillHitChance, damageReduction, targetDamageBoost, basicTempoMultiplier } from './combat-modifiers.ts';
 import { releaseReliability, usefulDamage, interruptChance, canInterruptCast } from './skill-opportunity.ts';
 import { controlRemaining, selectHealingTarget, nearbyBacklineThreat, canUseControlWindow } from './cooperation.ts';
 import type { BattleCombatant, BattleState, Skill, CombatRole } from '@pokemon-online/shared';
@@ -57,7 +57,7 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
     // attacker typeBoost passives
     for (const pid of attacker.passiveSkills) {
       const p = PASSIVE_MAP[pid];
-      if (p?.effect.kind === 'typeBoost' && (!p.effect.type || p.effect.type === t) && p.effect.mult) dmg *= p.effect.mult;
+      if (p?.effect.kind === 'typeBoost' && (!p.effect.type || p.effect.type === t) && (!p.effect.sameTypeOnly || attacker.types.includes(t)) && p.effect.mult) dmg *= p.effect.mult;
     }
     // attacker ability typeBoost at low HP (blaze/overgrow/torrent/swarm)
     const aab = ABILITY_MAP[attacker.ability];
@@ -79,7 +79,7 @@ function expectedDamage(attacker: BattleCombatant, defender: BattleCombatant, sk
   if (defender.ability === 'multiscale' && defender.currentHp >= defender.maxHp) dmg *= 0.5;
   // Type effectiveness is an active-skill-only modifier.
   dmg *= dmgTypeMult(eff);
-  return dmg * damageReduction(defender, skill) * skillHitChance(attacker, defender, skill);
+  return dmg * damageReduction(defender, skill) * targetDamageBoost(attacker, defender) * skillHitChance(attacker, defender, skill);
 }
 
 function isUtility(skill: Skill): boolean {
@@ -158,9 +158,14 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
   // 性格与定位共同评分，移动成本限制跨场追杀；不再互相覆盖选敌。
   const guardTarget = nearbyBacklineThreat(c, state);
   const strongest = Math.max(...enemies.map(enemy => effectiveStat(enemy, 'atk')), 1);
+  const attackKit = c.activeSkills.map(id=>SKILL_MAP[id]).filter(skill=>skill?.power > 0);
+  const readyAttacks = attackKit.filter(skill=>(c.cooldowns[skill.id] ?? 0)<=BATTLE_DECISION.abilityReadyHorizon);
+  const viableAttack = (enemy: BattleCombatant) => (readyAttacks.length ? readyAttacks : attackKit).some(skill=>expectedDamage(c,enemy,skill)>0);
   const targetScores = enemies.map(enemy => {
     const distance = dist(c, enemy), hp = enemy.currentHp / enemy.maxHp;
     let score = -Math.max(0, distance - (c.engagementRangeCells ?? 2.5)) * (1.6 - p.riskTolerance);
+    if (attackKit.length && !viableAttack(enemy)) score -= BATTLE_DECISION.immuneTargetPenalty;
+    score += (targetDamageBoost(c,enemy)-1)*BATTLE_DECISION.targetAbilityWeight;
     if (p.targetPriority === 'nearest') score -= distance * 1.4;
     if (p.targetPriority === 'weakest') score += (1 - hp) * 9;
     if (p.targetPriority === 'threat') score += effectiveStat(enemy, 'atk') / strongest * 6;
@@ -240,6 +245,12 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       return dist(c, enemy) < dist(c, best) ? enemy : best;
     });
   }
+  // 免疫不能被集火、护卫或目标黏性覆盖；仅在附近可达目标中调整。
+  if (attackKit.length && !viableAttack(target)) {
+    const alternative = targetScores.filter(({enemy})=>viableAttack(enemy) && dist(c,enemy)<=(c.engagementRangeCells ?? 2.5)+2)
+      .sort((a,b)=>b.score-a.score)[0];
+    if (alternative) target = alternative.enemy;
+  }
   if (target.uid !== c.currentTargetUid) c.targetCommitUntil = now + BATTLE_MOVEMENT.targetCommitment * (c.personality === 'stubborn' ? 2 : 1);
   const focus = enemies.reduce((a, b) => (b.currentHp / b.maxHp < a.currentHp / a.maxHp ? b : a));
   let focusBoost = target.uid === focus.uid ? 1.08 : 1;
@@ -292,7 +303,7 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
           const basic = SKILL_MAP[enemy.basicSkillId ?? getSpecies(enemy.speciesId).basicSkillId];
           if (!basic?.power) return sum;
           const speed = effectiveStat(enemy, 'spd');
-          const rate = enemy.cooldownRates?.[basic.id] ?? skillCooldownRate(speed, true);
+          const rate = enemy.cooldownRates?.[basic.id] ?? Math.min(2.5,skillCooldownRate(speed, true)*basicTempoMultiplier(enemy,true));
           const interval = Math.max(getSpecies(enemy.speciesId).basicSkillCooldown / rate,
             (basic.castTime ?? 0) + battleActionTiming(basic.id, !!enemy.rangedRole).totalMs / 1000 + actionGapForSpeed(speed));
           return sum + expectedDamage(enemy, c, basic) * Math.max(1, (e.duration ?? 3) / interval);
@@ -422,10 +433,21 @@ export function decide(c: BattleCombatant, state: BattleState, rng: RNG): AiPlan
       if (skill.effect?.kind === 'status' && ((skill.effect.status === 'paralyze' && target.ability === 'limber') || (skill.effect.status === 'poison' && target.ability === 'immunity'))) {
         if (!skill.power) score = -1;
       }
-      const contactRisk = ABILITY_MAP[target.ability]?.trigger === 'onHit';
-      if (skill.range === 'melee' && contactRisk) score *= .65 + p.riskTolerance * .3;
+      if (!skill.power && skill.effect?.kind === 'status' && !isHardCc(skill) && ABILITY_MAP[target.ability]?.effect.requiresStatus && !target.status) score *= .15;
+      if (!skill.power && ABILITY_MAP[target.ability]?.effect.kind === 'indirectImmunity'
+        && (skill.effect?.kind === 'dot' || skill.effect?.kind === 'status' && ['burn','poison'].includes(skill.effect.status ?? ''))) score = -1;
+      const retaliation = ABILITY_MAP[target.ability];
+      const contactRisk = retaliation?.trigger === 'onHit' && (retaliation.effect.kind === 'hitWeaken'
+        ? (!retaliation.effect.contactOnly || skill.range === 'melee') && (target.abilityCooldowns?.['hit-weaken'] ?? 0)<=0 && c.statStages[retaliation.effect.stat as 'atk'|'def'|'spd']>-6
+        : retaliation.effect.kind === 'custom' && !!retaliation.effect.status && !c.status && skill.range === 'melee');
+      if (contactRisk) score *= .65 + p.riskTolerance * .3;
       const ownContact = ABILITY_MAP[c.ability]?.effect.kind === 'contactShield';
       if (skill.range === 'melee' && ownContact && dist(c, target) <= rangeInCells(skill)) score *= 1.18;
+    }
+    const weatherEffect = ABILITY_MAP[c.ability]?.effect;
+    if (weatherEffect?.weatherHpLoss && c.effectiveWeather === weatherEffect.requiresWeather) {
+      const cost = c.maxHp * weatherEffect.weatherHpLoss * Math.min(state.weather?.remaining ?? 0, skill.castTime ?? 0);
+      if (cost >= c.currentHp && (skill.castTime ?? 0)>0) score = -1;
     }
     candidates.push({ skill, score });
   }

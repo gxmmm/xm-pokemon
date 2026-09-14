@@ -10,7 +10,7 @@ const visualRegressionMode = new URLSearchParams(window.location.search).get('vi
 const requestedScene = new URLSearchParams(window.location.search).get('visual-scene');
 const running = ref(!visualRegressionMode);
 const sceneMapId = ref(MAPS.some((map) => map.id === requestedScene) ? requestedScene! : 'pallet');
-const status = ref('正在挂载 WorldStage…');
+const status = ref('正在加载场景…');
 const time = ref(0);
 const scene = computed(() => WORLD_SCENE_BY_MAP_ID[sceneMapId.value]!);
 const stage = new WorldStage();
@@ -24,7 +24,7 @@ function snapshot(at: number): readonly WorldEntityRenderSnapshot[] {
 async function syncScene(): Promise<void> {
   await stage.enterScene({ sceneId: scene.value.id, biomeId: scene.value.biome }, scene.value);
   stage.applyWorldSnapshot({ time: time.value, entities: snapshot(time.value) });
-  status.value = `${MAPS.find((map) => map.id === sceneMapId.value)!.name}均来自 WorldSceneSpec，WorldStage 已挂载。`;
+  status.value = `${MAPS.find((map) => map.id === sceneMapId.value)!.name}已就绪。`;
 }
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -58,17 +58,17 @@ onUnmounted(() => {
 
 <template>
   <section class="world-stage-page">
-    <header><p class="eyebrow">VISUAL REGRESSION</p><h1>WorldStage sandbox</h1><p>独立 Scene Pack 验证页：不接管 WorldView 的移动、碰撞、warp 或 encounter。</p></header>
+    <header><p class="eyebrow">场景演示</p><h1>世界场景预览</h1><p>预览城镇与塔层中的地形、建筑和人物。</p></header>
     <div class="controls">
       <button type="button" @click="running = !running">{{ running ? '暂停人物行为' : '继续人物行为' }}</button>
       <label>场景 <select v-model="sceneMapId"><option v-for="map in MAPS" :key="map.id" :value="map.id">{{ map.name }}</option></select></label>
-      <span>{{ scene.biome }} · {{ scene.relief.tiles[0]?.length }} × {{ scene.relief.tiles.length }} 地图格</span>
+      <span>{{ scene.relief.tiles[0]?.length }} × {{ scene.relief.tiles.length }} 地图格</span>
     </div>
-    <div ref="viewport" class="viewport" :class="sceneMapId" aria-label="WorldStage sandbox" data-testid="world-stage-viewport"></div>
+    <div ref="viewport" class="viewport" :class="sceneMapId" aria-label="世界场景预览" data-testid="world-stage-viewport"></div>
     <p class="status">{{ status }}</p>
     <ul>
-      <li>该页面只验证 Scene Pack 与 WorldStage，不接管移动、碰撞、遭遇或存档。</li>
-      <li>世界场景统一使用标准品质与固定表现预算；所有正式地图统一使用 Pixi。</li>
+      <li>此处仅展示场景，不会遇敌或修改存档。</li>
+      <li>可切换城镇与五层幻境之塔，观察人物行走与环境细节。</li>
     </ul>
   </section>
 </template>

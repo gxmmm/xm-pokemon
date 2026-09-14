@@ -25,7 +25,7 @@ const towerVisited = computed(() => [...props.visited].some((id) => id.startsWit
         <text x="450" y="215" class="hint">{{ inTower ? getMap(currentMapId).name : towerVisited ? '已探索 · 五层训练区域' : '从城镇塔门进入' }}</text>
       </g>
     </svg>
-    <p>步行连接城镇与训练塔 · 塔内 Lv.5–55，覆盖全部 151 种宝可梦</p>
+    <p>步行连接城镇与训练塔 · 塔内 等级 5–55，覆盖全部 151 种宝可梦</p>
   </div>
 </template>
 

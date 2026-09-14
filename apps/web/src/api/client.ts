@@ -18,11 +18,13 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json', ...(opts.headers as Record<string, string> | undefined) };
   const token = getToken();
   if (token) headers['authorization'] = 'Bearer ' + token;
-  const res = await fetch(path, { ...opts, headers });
+  let res: Response;
+  try { res = await fetch(path, { ...opts, headers }); }
+  catch { throw new ApiError('网络连接失败，请检查网络后重试', 0); }
   let body: ApiResponse<T> | null = null;
   try { body = await res.json() as ApiResponse<T>; } catch { /* non-json */ }
   if (!res.ok || !body || body.ok === false) {
-    throw new ApiError(body?.error ?? `请求失败 (${res.status})`, res.status);
+    throw new ApiError(body?.error && /[\u3400-\u9fff]/.test(body.error) ? body.error : `请求失败（${res.status}）`, res.status);
   }
   return body.data as T;
 }
