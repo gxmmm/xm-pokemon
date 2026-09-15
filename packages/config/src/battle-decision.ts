@@ -12,4 +12,7 @@ export const BATTLE_DECISION = {
   finishTimeFloor: .25,
   shieldDangerRatio: .35,
   existingShieldValue: .1,
+  immediateActionRatio: .8,
+  aimSwitchRatio: 1.2,
+  controlReservationChance: .65,
 } as const;

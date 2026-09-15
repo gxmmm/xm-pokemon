@@ -1,8 +1,10 @@
-import type { BattleCombatant, Skill } from '@pokemon-online/shared';
+import type { BattleCombatant, BattleState, Skill } from '@pokemon-online/shared';
 import { ABILITY_MAP, typeMultiplier, BATTLE_DECISION as D } from '@pokemon-online/config';
 import { controlRemaining } from './cooperation.ts';
 import { distCells } from './grid.ts';
-import { skillCovers } from './skill-space.ts';
+import { skillCovers, skillVictims } from './skill-space.ts';
+import { SKILL_MAP } from '@pokemon-online/config';
+import { skillHitChance, secondaryEffectChance } from './combat-modifiers.ts';
 
 /** 只观察已开始的这一格移动，不读取对方计划，也不预测下一步或随机避让。 */
 export function releaseReliability(caster: BattleCombatant, target: BattleCombatant, victim: BattleCombatant, skill: Skill, _now: number, risk: number): number {
@@ -18,15 +20,33 @@ export function usefulDamage(damage: number, hp: number): number {
   return Math.min(damage, hp) + Math.max(0, damage - hp) * D.overkillValue;
 }
 
-export function interruptChance(skill: Skill): number {
-  return Math.min(1, Math.max(0, skill.effect?.chance ?? 1)) * (skill.accuracy === 0 ? 1 : skill.accuracy / 100);
+export function interruptChance(skill: Skill, caster: BattleCombatant, target: BattleCombatant): number {
+  const effect = skill.effect;
+  if (!effect || (effect.kind !== 'stun' && !(effect.kind === 'status' && ['sleep', 'freeze'].includes(effect.status ?? '')))) return 0;
+  const ability = ABILITY_MAP[target.ability]?.effect;
+  if (effect.kind === 'stun' && ability?.kind === 'flinchImmunity' || effect.kind === 'status' && target.status) return 0;
+  if (skill.power > 0 && (typeMultiplier(skill.type, target.types) === 0 || ability?.kind === 'typeImmunity' && ability.type === skill.type)) return 0;
+  return skillHitChance(caster, target, skill) * (skill.power > 0 ? secondaryEffectChance(caster, skill) : 1);
+}
+
+/** 仅认可队友正在释放、覆盖有效且成功率足够的控制；中断后自然失效。 */
+export function incomingControl(caster: BattleCombatant, target: BattleCombatant, state: BattleState): number {
+  return state.combatants.reduce((remaining, ally) => {
+    if (!ally.alive || ally.uid === caster.uid || ally.side !== caster.side || !ally.castProgress || controlRemaining(ally, state.time) > 0) return remaining;
+    const skill = SKILL_MAP[ally.castProgress.skillId];
+    if (!skill || interruptChance(skill, ally, target) < D.controlReservationChance) return remaining;
+    if (target.castProgress && ally.castProgress.remaining + D.interruptMargin >= target.castProgress.remaining) return remaining;
+    const primary = state.combatants.find(unit => unit.uid === ally.currentTargetUid);
+    if (!skillVictims(skill, ally, primary, [target], ally.castAim).length) return remaining;
+    return Math.max(remaining, ally.castProgress.remaining + (skill.effect?.duration ?? 2));
+  }, 0);
 }
 
 /** 已站稳、动作可衔接，且本招实际前摇赶得上，才算一次打断机会。 */
 export function canInterruptCast(caster: BattleCombatant, target: BattleCombatant, skill: Skill, now: number): boolean {
   const effect = skill.effect;
   if (!effect || (effect.kind !== 'stun' && !(effect.kind === 'status' && (effect.status === 'sleep' || effect.status === 'freeze')))) return false;
-  if (effect.chance === 0 || effect.kind === 'status' && target.status) return false;
+  if (interruptChance(skill, caster, target) <= 0) return false;
   const ability = ABILITY_MAP[target.ability]?.effect;
   if (effect.kind === 'stun' && ability?.kind === 'flinchImmunity') return false;
   if (skill.power > 0 && (typeMultiplier(skill.type, target.types) === 0 || ability?.kind === 'typeImmunity' && ability.type === skill.type)) return false;

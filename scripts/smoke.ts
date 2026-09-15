@@ -1544,6 +1544,7 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   const nuke = windowSim.state.combatants.find((combatant) => combatant.uid === nukeInst.uid)!;
   controller.position = { x: 5, y: 7 };
   nuke.position = { x: 8, y: 7 };
+  controller.pixel = { ...controller.position }; nuke.pixel = { ...nuke.position };
   controller.personality = 'cool';
   for (const combatant of windowSim.state.combatants) for (const id of Object.keys(combatant.cooldowns)) combatant.cooldowns[id] = 0;
   nuke.cooldowns['psyonic-annihilation'] = 0.8;
@@ -1554,7 +1555,6 @@ console.log('✓ structured damage outcomes: ko=', outcomeEvents.filter((e) => e
   assert(windowSim.state.events.some((event) => event.type === 'skill' && event.actor === controller.uid && event.skillId === 'mind-lock'), 'planned hard CC produces a concrete battle skill event');
 
   nuke.flinchUntil = windowSim.state.time + 0.9;
-  nuke.ccIncomingUntil = windowSim.state.time + 0.9;
   const heldPlan = decide(controller, windowSim.state, mulberry32(54))!;
   assert(heldPlan.preferredSkillId !== 'mind-lock', 'controller avoids overlapping an already-secured control window');
   console.log('✓ control and cooldown windows');

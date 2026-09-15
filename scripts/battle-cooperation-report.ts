@@ -26,6 +26,19 @@ assert.equal(selectHealingTarget(heal!, move, sim.state)?.patient.uid, 'front', 
 other!.castProgress = { skillId: 'heal-pulse', remaining: .2 }; other!.alive = false;
 assert.equal(selectHealingTarget(heal!, move, sim.state)?.patient.uid, 'front', '倒下施法者不再占用治疗');
 other!.alive = true; other!.castProgress = null;
+// 自疗也是实际治疗预约；只有先到且可兑现的治疗才抵扣需求。
+other!.currentHp = 850; front!.currentHp = 850;
+front!.castProgress = { skillId: 'recover', remaining: .2 };
+assert.equal(selectHealingTarget(heal!, move, sim.state)?.patient.uid, 'other', '即将完成自疗者让给其他患者');
+front!.currentHp = 100; front!.stats.atk = 1000;
+assert.equal(selectHealingTarget(heal!, move, sim.state)?.patient.uid, 'front', '濒危者先获得即时救援，不等后续自疗');
+front!.currentHp = 850; front!.stats.atk = 100;
+front!.castProgress.remaining = 1;
+assert.equal(selectHealingTarget(heal!, { ...move, castTime: 1.2 }, sim.state)?.patient.uid, 'other', '慢治疗计入更早兑现的自疗');
+front!.castProgress = null;
+assert.equal(selectHealingTarget(heal!, { ...move, castTime: 1.2 }, sim.state)?.patient.uid, 'other', '相同缺血按稳定顺序分配');
+front!.currentHp = 800;
+assert.equal(selectHealingTarget(heal!, move, sim.state)?.patient.uid, 'front', '自疗中断后重新救援');
 // 基础友疗即时结算，下一名治疗者直接看到真实的新血量。
 heal!.currentHp = heal!.maxHp; other!.currentHp = 960; front!.currentHp = 960;
 for (const c of sim.state.combatants) { c.activeSkills = [c.basicSkillId!]; c.cooldowns = {}; }

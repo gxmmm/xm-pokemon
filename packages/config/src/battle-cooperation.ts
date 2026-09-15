@@ -2,6 +2,7 @@
 export const BATTLE_COOPERATION = {
   healSearchExtra: 3,
   healReservationWindow: .5,
+  healEmergencyRatio: .25,
   healMinimumMissingRatio: .03,
   healUrgencyWeight: 100,
   healEfficiencyWeight: 75,

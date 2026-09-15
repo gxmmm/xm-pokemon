@@ -10,17 +10,20 @@ function pressureOn(patient: BattleCombatant, state: BattleState): number {
   return state.combatants.filter(enemy => enemy.alive && enemy.side !== patient.side && enemy.currentTargetUid === patient.uid
     && controlRemaining(enemy, state.time) <= .1 && distCells(enemy.pixel, patient.pixel) <= (enemy.engagementRangeCells ?? 2.5) + 1).length;
 }
-function incomingHealing(caster: BattleCombatant, patient: BattleCombatant, state: BattleState): number {
+function incomingHealing(caster: BattleCombatant, patient: BattleCombatant, skillToCast: Skill, state: BattleState): number {
   return state.combatants.reduce((sum, ally) => {
     if (!ally.alive || ally.side !== caster.side || ally.uid === caster.uid || controlRemaining(ally, state.time) > 0) return sum;
     const casting = ally.castProgress;
     if (!casting) return sum;
     const skillId = casting.skillId;
-    const targetUid = ally.castSupportUid;
     const skill = skillId ? SKILL_MAP[skillId] : undefined;
-    if (!skill || skill.effect?.kind !== 'heal' || skill.effect.target !== 'ally' || targetUid !== patient.uid) return sum;
+    if (!skill || skill.effect?.kind !== 'heal') return sum;
+    const targetUid = skill.effect.target === 'self' ? ally.uid : ally.castSupportUid;
+    if (targetUid !== patient.uid) return sum;
     const wait = casting.remaining;
-    if (wait > C.healReservationWindow || distCells(ally.pixel, patient.pixel) > rangeInCells(skill)
+    const arrival = Math.max(caster.actionReadyRemaining ?? 0, caster.actionLockRemaining ?? 0) + (skillToCast.castTime ?? 0);
+    if (patient.currentHp / patient.maxHp <= C.healEmergencyRatio && wait > arrival) return sum;
+    if (wait > Math.max(C.healReservationWindow, arrival) || distCells(ally.pixel, patient.pixel) > rangeInCells(skill)
       || distCells(ally.pixel, ally.position) > .05) return sum;
     return sum + effectiveStat(ally, 'atk') * (skill.effect.healingPower ?? 100) / 100;
   }, 0);
@@ -32,7 +35,7 @@ export function selectHealingTarget(caster: BattleCombatant, skill: Skill, state
   for (const patient of state.combatants) {
     if (!patient.alive || patient.side !== caster.side) continue;
     const travel = Math.max(0, distCells(caster.pixel, patient.pixel) - rangeInCells(skill));
-    const missing = Math.max(0, patient.maxHp - patient.currentHp - incomingHealing(caster, patient, state));
+    const missing = Math.max(0, patient.maxHp - patient.currentHp - incomingHealing(caster, patient, skill, state));
     if (travel > C.healSearchExtra || missing < patient.maxHp * C.healMinimumMissingRatio) continue;
     const score = 25 + missing / patient.maxHp * C.healUrgencyWeight + Math.min(1, missing / amount) * C.healEfficiencyWeight
       + Math.min(2, pressureOn(patient, state)) * C.healPressureWeight - travel * C.healTravelPenalty;
@@ -53,7 +56,7 @@ export function nearbyBacklineThreat(caster: BattleCombatant, state: BattleState
 
 /** 只奖励已经站稳且来得及释放的进攻，不用逻辑落点预测命中。 */
 export function canUseControlWindow(caster: BattleCombatant, target: BattleCombatant, skill: Skill, now: number): boolean {
-  const wait = Math.max(0, caster.actionReadyRemaining ?? 0, caster.cooldowns[skill.id] ?? 0) + (skill.castTime ?? 0);
+  const wait = Math.max(0, caster.actionReadyRemaining ?? 0, caster.actionLockRemaining ?? 0, caster.cooldowns[skill.id] ?? 0) + (skill.castTime ?? 0);
   return skill.power > 0 && distCells(caster.pixel, caster.position) <= .05
     && distCells(caster.pixel, target.pixel) <= rangeInCells(skill)
     && controlRemaining(target, now) > wait + C.controlSafetyMargin;

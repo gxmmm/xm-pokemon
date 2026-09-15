@@ -11,7 +11,7 @@ import { tacticalSkillsForInstance } from './instance.ts';
 import { computeDamage } from './damage.ts';
 import { clampCombatAmount, roundCombatAmount } from './combat-numbers.ts';
 import { skillVictims } from './skill-space.ts';
-import { decide, isHardCc } from './ai.ts';
+import { decide } from './ai.ts';
 import { rangeInCells, distCells, MELEE_RANGE_CELLS, MOVE_BUFFER, isCellInArena, travelPathDistance, findGridApproachStep } from './grid.ts';
 
 export interface BattleSimOptions {
@@ -908,11 +908,6 @@ export class BattleSim {
     const primary = targets.includes(target as BattleCombatant) ? target : targets[0];
     const targetUids = targets.map((x) => x.uid);
 
-    // Mark every potential victim of a spread hard-CC so allied AI does not
-    // pile redundant crowd-control onto the same incoming area cast.
-    if (skill.effect?.target === 'enemy' && isHardCc(skill)) {
-      for (const victim of targets) victim.ccIncomingUntil = this.state.time + 0.6;
-    }
     if (skill.power > 0) {
       if (!aim) return;
       let visualAim = { ...aim };

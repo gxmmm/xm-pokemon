@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import type { BattleCombatant } from '@pokemon-online/shared';
 import { BattleSim, createWildInstance } from '@pokemon-online/engine';
 import { SKILL_MAP } from '@pokemon-online/config';
 import { decide } from '../packages/engine/src/ai.ts';
-import { canInterruptCast, releaseReliability } from '../packages/engine/src/skill-opportunity.ts';
+import { canInterruptCast, releaseReliability, incomingControl, interruptChance } from '../packages/engine/src/skill-opportunity.ts';
 
 function fixture() {
   const make = (uid: string) => ({ ...createWildInstance(25, 50, { rng: () => .5 }), uid, passiveSkills: [], ability: 'keen-eye', personality: 'cool' as const });
@@ -15,8 +16,9 @@ function fixture() {
   actor!.basicSkillId = 'decision-fast'; actor!.activeSkills = ['decision-fast', 'decision-area'];
   return { sim, actor: actor!, enemies };
 }
-const ids = ['decision-fast', 'decision-area'];
-SKILL_MAP[ids[0]!] = { ...SKILL_MAP.ember!, id: ids[0]!, type: 'normal', power: 40, accuracy: 100, effect: undefined, castTime: 0, cooldown: 2 };
+const ids = ['decision-fast', 'decision-area', 'decision-control'];
+SKILL_MAP['decision-control'] = { ...SKILL_MAP['mind-lock']!, id: 'decision-control', accuracy: 100, effect: { kind: 'stun', target: 'enemy', chance: 1, duration: 1 } };
+SKILL_MAP[ids[0]!] = { ...SKILL_MAP.ember!, id: ids[0]!, type: 'normal', power: 40, accuracy: 100, effect: undefined, space: { shape: 'single', reach: 6 }, castTime: 0, cooldown: 2 };
 SKILL_MAP[ids[1]!] = { ...SKILL_MAP['hyper-beam']!, id: ids[1]!, type: 'normal', power: 100, accuracy: 100, effect: undefined, castTime: .6, cooldown: 6, space: { shape: 'line', width: 1.2 } };
 try {
   const { sim, actor, enemies } = fixture();
@@ -65,6 +67,63 @@ try {
     assert.equal(decide(tank, f.sim.state, () => .5)?.preferredSkillId, 'decision-fast', '已有真实护盾时继续进攻');
     tank.shields = 0;
     assert.equal(decide(tank, f.sim.state, () => .5)?.preferredSkillId, 'heavy-guard', '护盾破裂后恢复大招救急价值');
+  }
+  {
+    const f = fixture();
+    f.actor.position = f.actor.pixel = { x: 5, y: 7 };
+    f.enemies[0]!.position = f.enemies[0]!.pixel = { x: 9, y: 5 };
+    f.enemies[1]!.position = f.enemies[1]!.pixel = { x: 10, y: 9 };
+    f.enemies[2]!.position = f.enemies[2]!.pixel = { x: 12, y: 10 };
+    f.actor.currentTargetUid = 'a'; f.actor.targetCommitUntil = 999;
+    const plan = decide(f.actor, f.sim.state, () => .5)!;
+    assert.equal(plan.preferredSkillId, 'decision-area', '旁侧集群值得范围释放');
+    assert.notEqual(plan.targetUid, 'a', '从原地改用实际覆盖两人的方向');
+    assert(plan.desiredRangeCells >= 3.5, '调整瞄准仍维持远程站位');
+    const area = SKILL_MAP['decision-area']!;
+    SKILL_MAP['decision-area'] = { ...area, effect: { kind: 'stun', target: 'enemy', chance: 1, duration: 1 } };
+    f.enemies[0]!.flinchUntil = 2;
+    const fresh = decide(f.actor, f.sim.state, () => .5)!;
+    assert.equal(fresh.preferredSkillId, 'decision-area', '旧目标已受控不会压低新方向的控制收益');
+    assert.notEqual(fresh.targetUid, 'a');
+    f.enemies[0]!.flinchUntil = 0;
+    f.enemies[0]!.position = f.enemies[0]!.pixel = { x: 18, y: 3 };
+    const nearby = decide(f.actor, f.sim.state, () => .5)!;
+    assert.equal(nearby.preferredSkillId, 'decision-area', '旧目标在远处不误扣新方向的追距成本');
+    assert.notEqual(nearby.targetUid, 'a');
+    SKILL_MAP['decision-area'] = area;
+    for (const enemy of f.enemies) { enemy.status = 'sleep'; enemy.statusTimer = 3; for (const id of enemy.activeSkills) enemy.cooldowns[id] = 999; }
+    for (let i = 0; i < 30; i++) f.sim.tick(.05);
+    const hit = new Set(f.sim.state.events.filter(event => event.type === 'damage' && event.actor === f.actor.uid && event.skillId === 'decision-area').map(event => event.target));
+    assert(hit.has('b') && hit.has('c') && !hit.has('a'), '实际释放命中新瞄准覆盖的两只，未命中远处旧目标');
+
+  }
+  {
+    const f = fixture();
+    f.actor.activeSkills = ['decision-fast', 'mind-lock'];
+    f.actor.currentTargetUid = 'a';
+    for (const enemy of f.enemies) enemy.cooldowns = {};
+    f.enemies[2]!.position = f.enemies[2]!.pixel = { x: 19, y: 13 };
+    f.enemies[2]!.activeSkills = ['hyper-beam']; f.enemies[2]!.cooldowns['hyper-beam'] = .8;
+    assert.notEqual(decide(f.actor, f.sim.state, () => .5)?.targetUid, 'c', '不为远处即将冷却的大招跨场转火');
+    const ally: BattleCombatant = { ...f.actor, uid: 'helper', castProgress: { skillId: 'decision-control', remaining: .2 }, currentTargetUid: 'a', castAim: { ...f.enemies[0]!.pixel } };
+    f.sim.state.combatants.push(ally);
+    assert(incomingControl(f.actor, f.enemies[0]!, f.sim.state) > 0, '队友真实控制蓄力形成预约');
+    ally.castProgress = null;
+    assert.equal(incomingControl(f.actor, f.enemies[0]!, f.sim.state), 0, '控制蓄力中断立即释放预约');
+    ally.castProgress = { skillId: 'decision-control', remaining: 1 };
+    f.enemies[0]!.castProgress = { skillId: 'hyper-beam', remaining: .5 };
+    assert.equal(incomingControl(f.actor, f.enemies[0]!, f.sim.state), 0, '来不及打断的队友不阻止补救');
+    f.enemies[0]!.ability = 'inner-focus';
+    assert.equal(interruptChance(SKILL_MAP['mind-lock']!, f.actor, f.enemies[0]!), 0, '免疫畏缩不给控制收益');
+  }
+  {
+    const f = fixture();
+    for (const enemy of f.enemies.slice(1)) enemy.alive = false;
+    f.enemies[0]!.position = f.enemies[0]!.pixel = { x: 10.1, y: 7 };
+    const original = SKILL_MAP['decision-fast']!;
+    SKILL_MAP['decision-fast'] = { ...original, power: 48, space: { shape: 'single', reach: 5 } };
+    assert.equal(decide(f.actor, f.sim.state, () => .5)?.preferredSkillId, 'decision-area', '收益接近时使用原地可释放招式，不为短招反复追距');
+    SKILL_MAP['decision-fast'] = original;
   }
   console.log('✓ 聚集/分散选招、残血收尾与基础冷却衔接、移动风险与性格、控制窗口与免疫');
 } finally { for (const id of ids) delete SKILL_MAP[id]; }
